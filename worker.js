@@ -6,8 +6,8 @@
  * changes, or cancels exchange orders.
  */
 
-const BUILD = "crypto-alpha-worker-v17.1.0";
-const API_VERSION = "2.1.0";
+const BUILD = "crypto-alpha-worker-v17.1.1";
+const API_VERSION = "2.1.1";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_BASE = "https://fapi.binance.com";
 
@@ -2920,7 +2920,13 @@ function openApiDocument(origin) {
       errorMessage: { type: ["string", "null"] },
     },
   };
-  const flexibleObject = { type: "object", additionalProperties: true };
+  // GPT Actions requires every object schema to declare `properties`, even
+  // when the payload intentionally permits provider-specific extra fields.
+  const flexibleObject = {
+    type: "object",
+    additionalProperties: true,
+    properties: {},
+  };
   const target = {
     type: "object",
     required: ["price"],
@@ -3019,7 +3025,11 @@ function openApiDocument(origin) {
                       requestId: { type: "string" },
                       generatedAt: { type: "string", format: "date-time" },
                       dataQuality: flexibleObject,
-                      assets: { type: "object", additionalProperties: flexibleObject },
+                      assets: {
+                        type: "object",
+                        additionalProperties: flexibleObject,
+                        properties: {},
+                      },
                       macro: flexibleObject,
                       setupCandidates: { type: "array", items: flexibleObject },
                     },
