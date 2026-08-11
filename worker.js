@@ -6,8 +6,8 @@
  * changes, or cancels exchange orders.
  */
 
-const BUILD = "crypto-alpha-worker-v17.1.1";
-const API_VERSION = "2.1.1";
+const BUILD = "crypto-alpha-worker-v17.1.2";
+const API_VERSION = "2.1.2";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_BASE = "https://fapi.binance.com";
 
@@ -336,6 +336,7 @@ async function resilientModule(options) {
     freshSec,
     staleSec,
     refresh = false,
+    cacheOnly = false,
     primary,
     fallback,
     ctx,
@@ -348,6 +349,24 @@ async function resilientModule(options) {
       ...cached.value,
       cache: { hit: true, stale: false, ageSec: round(cachedAge, 2) },
     };
+  }
+
+  if (cacheOnly) {
+    if (cached?.value && cachedAge <= staleSec) {
+      return {
+        ...cached.value,
+        cache: {
+          hit: true,
+          stale: cachedAge > freshSec,
+          ageSec: round(cachedAge, 2),
+        },
+      };
+    }
+    throw new AlphaError("CACHE_MISS", `No usable cached value for ${key}`, {
+      httpStatus: 503,
+      retryable: true,
+      details: { key, cacheOnly: true },
+    });
   }
 
   let primaryError = null;
@@ -661,7 +680,10 @@ async function okxGet(path, options = {}) {
   return rawFetchJson(`${OKX_BASE}${path}`, {
     provider: "OKX",
     timeoutMs: options.timeoutMs || 3200,
-    retries: options.retries ?? 1,
+    // A full BTC + ETH snapshot already uses many independent endpoints.
+    // Do not spend a second external subrequest on the same failed endpoint;
+    // module-level cache/fallback handling is safer on the Workers Free limit.
+    retries: options.retries ?? 0,
     cacheTtlSec: options.cacheTtlSec || 0,
     validator: validateOkx,
   });
@@ -671,7 +693,7 @@ async function binanceGet(path, options = {}) {
   return rawFetchJson(`${BINANCE_BASE}${path}`, {
     provider: "BINANCE_FUTURES_FALLBACK",
     timeoutMs: options.timeoutMs || 3200,
-    retries: options.retries ?? 1,
+    retries: options.retries ?? 0,
     cacheTtlSec: options.cacheTtlSec || 0,
     validator: validateBinance,
   });
@@ -1149,12 +1171,13 @@ function sumSince(rows, field, sinceMs) {
   return rows.filter((x) => x.ts >= cutoff).reduce((sum, x) => sum + (finite(x[field], 0) || 0), 0);
 }
 
-async function fetchPositioning(asset, refresh, ctx) {
+async function fetchPositioning(asset, refresh, ctx, cacheOnly = false) {
   const result = await resilientModule({
     key: `positioning:${asset.instrumentId}`,
     freshSec: 50,
     staleSec: 600,
     refresh,
+    cacheOnly,
     ctx,
     primary: async () => {
       const [ratioResult, takerResult] = await Promise.allSettled([
@@ -1250,12 +1273,13 @@ function orderBookStats(bids, asks) {
   };
 }
 
-async function fetchOrderBook(asset, refresh, ctx) {
+async function fetchOrderBook(asset, refresh, ctx, cacheOnly = false) {
   const result = await resilientModule({
     key: `book:${asset.instrumentId}`,
     freshSec: 5,
     staleSec: 90,
     refresh,
+    cacheOnly,
     ctx,
     primary: async () => {
       const response = await okxGet(`/api/v5/market/books?instId=${asset.instrumentId}&sz=20`, {
@@ -1297,13 +1321,14 @@ function flowLabel(ratio, imbalance) {
   return "BALANCED";
 }
 
-async function fetchLiquidations(asset, priceHint, refresh, ctx) {
+async function fetchLiquidations(asset, priceHint, refresh, ctx, cacheOnly = false) {
   try {
     const result = await resilientModule({
       key: `liquidations:${asset.instrumentId}`,
       freshSec: 50,
       staleSec: 600,
       refresh,
+      cacheOnly,
       ctx,
       primary: async () => {
         const response = await okxGet(
@@ -1496,22 +1521,17 @@ function buildOrderFlow(book, positioning) {
   };
 }
 
-async function fetchAssetSnapshot(asset, requestedTimeframes, refresh, ctx) {
-  // All independent modules run together. OI/liquidation adapters prefer their
-  // upstream USD fields, so they do not need to wait for the ticker first.
-  // This keeps a total upstream outage well inside the GPT Action time budget.
-  const results = await Promise.allSettled([
+async function fetchAssetCore(asset, requestedTimeframes, refresh, ctx) {
+  // Phase 1 is the decision-critical core. It must finish before optional
+  // derivatives/order-flow modules can consume the remaining subrequest budget.
+  // This prevents an optional endpoint from crowding out a BTC/ETH K-line call.
+  const coreResults = await Promise.allSettled([
     fetchTicker(asset, refresh, ctx),
     ...requestedTimeframes.map((timeframe) => fetchTimeframe(asset, timeframe, refresh, ctx)),
-    fetchOpenInterest(asset, null, refresh, ctx),
-    fetchFunding(asset, refresh, ctx),
-    fetchPositioning(asset, refresh, ctx),
-    fetchOrderBook(asset, refresh, ctx),
-    fetchLiquidations(asset, null, refresh, ctx),
   ]);
   const ticker =
-    settledValue(results[0]) ||
-    rejectedModule(results[0].reason, {
+    settledValue(coreResults[0]) ||
+    rejectedModule(coreResults[0].reason, {
       last: null,
       bid: null,
       ask: null,
@@ -1524,7 +1544,7 @@ async function fetchAssetSnapshot(asset, requestedTimeframes, refresh, ctx) {
     });
   const timeframes = {};
   requestedTimeframes.forEach((timeframe, index) => {
-    const result = results[index + 1];
+    const result = coreResults[index + 1];
     timeframes[timeframe] =
       settledValue(result) ||
       rejectedModule(result.reason, {
@@ -1548,10 +1568,33 @@ async function fetchAssetSnapshot(asset, requestedTimeframes, refresh, ctx) {
       });
   });
 
-  const secondaryStart = 1 + requestedTimeframes.length;
+  return { ticker, timeframes };
+}
+
+async function fetchAssetSnapshot(
+  asset,
+  requestedTimeframes,
+  refresh,
+  ctx,
+  preloadedCore = null,
+  allowFullOptionalNetwork = true,
+) {
+  const { ticker, timeframes } =
+    preloadedCore || (await fetchAssetCore(asset, requestedTimeframes, refresh, ctx));
+
+  // Phase 2 is cache-first even when the caller asks for a forced refresh.
+  // Its freshness windows are short (5-60 seconds), so this preserves useful
+  // derivatives data without repeatedly exhausting external subrequests.
+  const secondaryResults = await Promise.allSettled([
+    fetchOpenInterest(asset, ticker.last, false, ctx),
+    fetchFunding(asset, false, ctx),
+    fetchPositioning(asset, false, ctx, !allowFullOptionalNetwork),
+    fetchOrderBook(asset, false, ctx, !allowFullOptionalNetwork),
+    fetchLiquidations(asset, ticker.last, false, ctx, !allowFullOptionalNetwork),
+  ]);
   const oi =
-    settledValue(results[secondaryStart]) ||
-    rejectedModule(results[secondaryStart].reason, {
+    settledValue(secondaryResults[0]) ||
+    rejectedModule(secondaryResults[0].reason, {
       currentCoin: null,
       currentUsd: null,
       change5mPct: null,
@@ -1562,8 +1605,8 @@ async function fetchAssetSnapshot(asset, requestedTimeframes, refresh, ctx) {
       historyPoints: 0,
     });
   const funding =
-    settledValue(results[secondaryStart + 1]) ||
-    rejectedModule(results[secondaryStart + 1].reason, {
+    settledValue(secondaryResults[1]) ||
+    rejectedModule(secondaryResults[1].reason, {
       currentRate: null,
       currentRatePct: null,
       nextRate: null,
@@ -1573,23 +1616,23 @@ async function fetchAssetSnapshot(asset, requestedTimeframes, refresh, ctx) {
       historyPoints: 0,
     });
   const positioning =
-    settledValue(results[secondaryStart + 2]) ||
-    rejectedModule(results[secondaryStart + 2].reason, {
+    settledValue(secondaryResults[2]) ||
+    rejectedModule(secondaryResults[2].reason, {
       globalLongShortRatio: null,
       topTraderLongShortRatio: null,
       takerBuySellRatio1h: null,
     });
   const book =
-    settledValue(results[secondaryStart + 3]) ||
-    rejectedModule(results[secondaryStart + 3].reason, {
+    settledValue(secondaryResults[3]) ||
+    rejectedModule(secondaryResults[3].reason, {
       bidNotional: null,
       askNotional: null,
       bookImbalancePct: null,
       depthLevels: 0,
     });
   const liquidations =
-    settledValue(results[secondaryStart + 4]) ||
-    rejectedModule(results[secondaryStart + 4].reason, {
+    settledValue(secondaryResults[4]) ||
+    rejectedModule(secondaryResults[4].reason, {
       liquidation15mUsd: null,
       liquidation1hUsd: null,
       liquidation4hUsd: null,
@@ -2365,8 +2408,29 @@ async function buildSnapshot(options = {}, ctx = null) {
     });
   }
   const refresh = options.refresh === true;
+  // With both BTC and ETH requested, the worst-case primary + fallback cost of
+  // every optional module can exceed the Workers external-subrequest ceiling.
+  // Keep OI/funding live for both assets and read the remaining optional modules
+  // from cache. A focused one-asset snapshot may refresh the full optional set.
+  const allowFullOptionalNetwork = requestedSymbols.length === 1;
+  // Complete the decision-critical ticker/K-line phase for every requested
+  // asset before any optional module is allowed to start.
+  const coreResults = await Promise.allSettled(
+    requestedSymbols.map((symbol) => fetchAssetCore(ASSETS[symbol], requestedTimeframes, refresh, ctx)),
+  );
   const results = await Promise.allSettled(
-    requestedSymbols.map((symbol) => fetchAssetSnapshot(ASSETS[symbol], requestedTimeframes, refresh, ctx)),
+    requestedSymbols.map((symbol, index) => {
+      const core = settledValue(coreResults[index]);
+      if (!core) return Promise.reject(coreResults[index].reason);
+      return fetchAssetSnapshot(
+        ASSETS[symbol],
+        requestedTimeframes,
+        refresh,
+        ctx,
+        core,
+        allowFullOptionalNetwork,
+      );
+    }),
   );
   const assets = {};
   requestedSymbols.forEach((symbol, index) => {
@@ -2410,6 +2474,8 @@ async function buildSnapshot(options = {}, ctx = null) {
       primary: "OKX",
       fallback: "BINANCE_FUTURES",
       fallbackIsAlwaysLabelled: true,
+      requestBudgetPolicy:
+        "Core ticker/K-lines first; BTC+ETH keeps OI/funding live and reads lower-priority modules from cache; no same-endpoint retry.",
       crossVenueCaveat:
         "Fallback values are continuity data from a different venue and must not be represented as OKX values.",
     },
