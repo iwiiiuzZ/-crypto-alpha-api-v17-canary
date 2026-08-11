@@ -6,5 +6,16 @@
   "workers_dev": true,
   "observability": {
     "enabled": true
+  },
+  "kv_namespaces": [
+    {
+      "binding": "ALERTS_KV",
+      "id": "f36960606aa147afab9d808408c7e3c0"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
   }
 }
