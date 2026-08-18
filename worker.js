@@ -1,10 +1,10 @@
-const BUILD = "crypto-alpha-worker-v18.2.0-final-stable-kline";
-const API_VERSION = "3.2.0";
+const BUILD = "crypto-alpha-worker-v18.3.0-cloudflare-stable-kline";
+const API_VERSION = "3.3.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const OKX_BASE = "https://www.okx.com";
-const BYBIT_BASE = "https://api.bybit.com";
-const BINANCE_USDM_BASE = "https://fapi.binance.com";
-const CACHE_NAMESPACE = "v18.2.0-final-stable-kline";
+const BYBIT_BASE = "https://api.bytick.com";
+const BITGET_BASE = "https://api.bitget.com";
+const CACHE_NAMESPACE = "v18.3.0-cloudflare-stable-kline";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -19,9 +19,9 @@ const CACHE_POLICY = {
   bybitCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 2, timeoutMs: 3500 },
   bybitCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 2, timeoutMs: 3500 },
   bybitCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 2, timeoutMs: 3500 },
-  binanceCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 2, timeoutMs: 3500 },
-  binanceCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 2, timeoutMs: 3500 },
-  binanceCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 2, timeoutMs: 3500 },
+  bitgetCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 2, timeoutMs: 3500 },
+  bitgetCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 2, timeoutMs: 3500 },
+  bitgetCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 2, timeoutMs: 3500 },
 };
 
 const memoryCache = new Map();
@@ -35,9 +35,9 @@ const ASSETS = {
 };
 
 const TIMEFRAMES = {
-  "15m": { bybitInterval: "15", binanceInterval: "15m", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
-  "1h": { bybitInterval: "60", binanceInterval: "1h", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
-  "4h": { bybitInterval: "240", binanceInterval: "4h", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
+  "15m": { bybitInterval: "15", bitgetGranularity: "15m", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
+  "1h": { bybitInterval: "60", bitgetGranularity: "1H", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
+  "4h": { bybitInterval: "240", bitgetGranularity: "4H", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
 };
 
 const JSON_HEADERS = {
@@ -78,8 +78,8 @@ function bybitPolicyForTimeframe(timeframe) {
   return timeframe === "15m" ? CACHE_POLICY.bybitCandle15m : timeframe === "1h" ? CACHE_POLICY.bybitCandle1h : CACHE_POLICY.bybitCandle4h;
 }
 
-function binancePolicyForTimeframe(timeframe) {
-  return timeframe === "15m" ? CACHE_POLICY.binanceCandle15m : timeframe === "1h" ? CACHE_POLICY.binanceCandle1h : CACHE_POLICY.binanceCandle4h;
+function bitgetPolicyForTimeframe(timeframe) {
+  return timeframe === "15m" ? CACHE_POLICY.bitgetCandle15m : timeframe === "1h" ? CACHE_POLICY.bitgetCandle1h : CACHE_POLICY.bitgetCandle4h;
 }
 
 function cacheRequest(key) {
@@ -172,7 +172,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.1.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.3.0" },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -305,15 +305,17 @@ async function bybitKlines(symbol, timeframe, tfConfig) {
   return attachCacheMeta(body.result.list, body.__cache);
 }
 
-async function binanceKlines(symbol, timeframe, tfConfig) {
-  const rows = await upstream(
-    BINANCE_USDM_BASE,
-    `/fapi/v1/klines?symbol=${symbol}&interval=${tfConfig.binanceInterval}&limit=${CANDLE_LIMIT}`,
-    "Binance USD-M",
-    binancePolicyForTimeframe(timeframe),
+async function bitgetKlines(symbol, timeframe, tfConfig) {
+  const body = await upstream(
+    BITGET_BASE,
+    `/api/v2/mix/market/candles?symbol=${symbol}&productType=USDT-FUTURES&granularity=${tfConfig.bitgetGranularity}&limit=${CANDLE_LIMIT}`,
+    "Bitget USDT Futures",
+    bitgetPolicyForTimeframe(timeframe),
   );
-  if (!Array.isArray(rows)) throw new Error("Binance USD-M candles are empty");
-  return rows;
+  if (body?.code !== "00000" || !Array.isArray(body?.data)) {
+    throw new Error(`Bitget USDT Futures ${body?.code ?? "invalid response"}: ${body?.msg || "no data"}`);
+  }
+  return attachCacheMeta(body.data, body.__cache);
 }
 
 function parseBybitCandles(rows) {
@@ -336,8 +338,8 @@ function parseBybitCandles(rows) {
   return attachCacheMeta(candles, rows.__cache);
 }
 
-function parseBinanceCandles(rows) {
-  if (!Array.isArray(rows)) throw new Error("Binance USD-M candles are empty");
+function parseBitgetCandles(rows) {
+  if (!Array.isArray(rows)) throw new Error("Bitget USDT Futures candles are empty");
   const candles = rows
     .map((row) => ({
       ts: new Date(Number(row[0])).toISOString(),
@@ -346,12 +348,13 @@ function parseBinanceCandles(rows) {
       low: finite(row[3]),
       close: finite(row[4]),
       volumeBase: finite(row[5]),
-      volumeQuote: finite(row[7]),
-      volumeContracts: finite(row[8]),
-      confirmed: Number(row[6]) <= Date.now(),
+      volumeQuote: finite(row[6]),
+      volumeContracts: null,
+      confirmed: true,
     }))
     .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  if (candles.length) candles[candles.length - 1].confirmed = false;
   return attachCacheMeta(candles, rows.__cache);
 }
 
@@ -780,12 +783,12 @@ async function buildSnapshot() {
       }
       const attempts = [
         {
-          source: "BINANCE_USDM_PERPETUAL",
-          load: async () => parseBinanceCandles(await binanceKlines(config.bybitSymbol, timeframe, tfConfig)),
-        },
-        {
           source: "BYBIT_USDT_PERPETUAL",
           load: async () => parseBybitCandles(await bybitKlines(config.bybitSymbol, timeframe, tfConfig)),
+        },
+        {
+          source: "BITGET_USDT_PERPETUAL",
+          load: async () => parseBitgetCandles(await bitgetKlines(config.bybitSymbol, timeframe, tfConfig)),
         },
       ];
       const rejected = [];
@@ -802,12 +805,12 @@ async function buildSnapshot() {
         }
       }
       if (!selected) throw new Error(`No quality-approved USDT perpetual candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
-      const fallbackUsed = selected.source !== "BINANCE_USDM_PERPETUAL";
+      const fallbackUsed = selected.source !== "BYBIT_USDT_PERPETUAL";
       if (fallbackUsed) {
         fallbacks.push({
           symbol,
           timeframe,
-          primary: "BINANCE_USDM_PERPETUAL",
+          primary: "BYBIT_USDT_PERPETUAL",
           fallback: selected.source,
           reason: rejected.map((item) => `${item.source}: ${item.error}`).join("; "),
         });
@@ -914,7 +917,7 @@ async function buildSnapshot() {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution price, mark price, OI and funding; Binance USD-M primary candles; Bybit Linear USDT perpetual backup candles",
+    source: "OKX USDT perpetual execution price, mark price, OI and funding; Bybit Linear USDT perpetual primary candles via api.bytick.com; Bitget USDT perpetual backup candles",
     requestBudget: { plannedOkx: 5, plannedTotal: 11, maximumWithAllFallbacks: 18, previousPlannedTotal: 11 },
     reliability: {
       okxConcurrency: MAX_OKX_CONCURRENCY,
@@ -961,7 +964,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH perpetual data for OKX execution. Binance USD-M is the primary candle source; quality-approved Bybit Linear USDT perpetual candles are the backup. OKX candles are not requested.",
+      description: "Realtime BTC/ETH perpetual data for OKX execution. Bybit Linear USDT perpetual via the official api.bytick.com endpoint is the primary candle source; Bitget USDT perpetual is the validated backup. Binance and OKX candles are not requested.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -970,7 +973,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX BTC/ETH USDT perpetual prices, OI and funding with validated Binance/Bybit 15m/1h/4h candles. DATA_READY requires fresh OKX execution prices and approved candles. No authentication.",
+          description: "Returns OKX BTC/ETH USDT perpetual prices, OI and funding with validated Bybit/Bitget 15m/1h/4h candles. DATA_READY requires fresh OKX execution prices and approved candles. No authentication.",
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -1048,7 +1051,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、未平仓量和资金费率。主K线使用 Binance USD-M 永续，备用K线使用 Bybit Linear USDT 永续；所有K线必须通过价格偏差、时间连续性、成交量和新鲜度校验。服务不请求 OKX K线。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、未平仓量和资金费率。主K线使用 Bybit Linear USDT 永续的官方 api.bytick.com 线路，备用K线使用 Bitget USDT 永续；所有K线必须通过价格偏差、时间连续性、成交量和新鲜度校验。服务不请求 Binance 或 OKX K线。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
 }
 
 async function handleSnapshot(request, ctx) {
@@ -1078,7 +1081,7 @@ export default {
     if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405, { allow: "GET,OPTIONS" });
     if (path === "/") return handleSnapshot(request, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution and derivatives + Binance USD-M primary candles + Bybit Linear backup candles", normalOkxRequests: 5, okxCandlesRequested: false, actionCount: 1, authentication: "none" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution and derivatives + Bybit api.bytick.com primary candles + Bitget USDT perpetual backup candles", normalOkxRequests: 5, okxCandlesRequested: false, binanceRequested: false, actionCount: 1, authentication: "none" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
