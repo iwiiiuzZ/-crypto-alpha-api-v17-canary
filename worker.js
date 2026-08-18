@@ -1,11 +1,10 @@
-const BUILD = "crypto-alpha-worker-v18.4.0-cloudflare-verified-route";
-const API_VERSION = "3.4.0";
+const BUILD = "crypto-alpha-worker-v18.5.0-gate-primary-final";
+const API_VERSION = "3.5.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
-const BYBIT_BASE = "https://api.bybit.com";
 const GATE_BASE = "https://api.gateio.ws";
-const CACHE_NAMESPACE = "v18.4.0-cloudflare-verified-route";
+const CACHE_NAMESPACE = "v18.5.0-gate-primary-final";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -17,9 +16,6 @@ const CACHE_POLICY = {
   openInterest: { freshSeconds: 30, staleSeconds: 180, attempts: 1 },
   funding: { freshSeconds: 120, staleSeconds: 900, attempts: 1 },
   krakenTicker: { freshSeconds: 15, staleSeconds: 120, attempts: 1 },
-  bybitCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 2, timeoutMs: 3500 },
-  bybitCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 2, timeoutMs: 3500 },
-  bybitCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 2, timeoutMs: 3500 },
   gateCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 1, timeoutMs: 3500 },
   gateCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 1, timeoutMs: 3500 },
   gateCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 1, timeoutMs: 3500 },
@@ -34,14 +30,14 @@ let okxActive = 0;
 const okxWaiters = [];
 
 const ASSETS = {
-  BTCUSDT: { instrumentId: "BTC-USDT-SWAP", futuresSymbol: "PI_XBTUSD", bybitSymbol: "BTCUSDT", gateSymbol: "BTC_USDT", krakenSpotPair: "XBTUSD" },
-  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", futuresSymbol: "PI_ETHUSD", bybitSymbol: "ETHUSDT", gateSymbol: "ETH_USDT", krakenSpotPair: "ETHUSD" },
+  BTCUSDT: { instrumentId: "BTC-USDT-SWAP", futuresSymbol: "PI_XBTUSD", gateSymbol: "BTC_USDT", krakenSpotPair: "XBTUSD" },
+  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", futuresSymbol: "PI_ETHUSD", gateSymbol: "ETH_USDT", krakenSpotPair: "ETHUSD" },
 };
 
 const TIMEFRAMES = {
-  "15m": { bybitInterval: "15", gateInterval: "15m", krakenSpotInterval: "15", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
-  "1h": { bybitInterval: "60", gateInterval: "1h", krakenSpotInterval: "60", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
-  "4h": { bybitInterval: "240", gateInterval: "4h", krakenSpotInterval: "240", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
+  "15m": { gateInterval: "15m", krakenSpotInterval: "15", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
+  "1h": { gateInterval: "1h", krakenSpotInterval: "60", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
+  "4h": { gateInterval: "4h", krakenSpotInterval: "240", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
 };
 
 const JSON_HEADERS = {
@@ -76,10 +72,6 @@ function pct(value) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function bybitPolicyForTimeframe(timeframe) {
-  return timeframe === "15m" ? CACHE_POLICY.bybitCandle15m : timeframe === "1h" ? CACHE_POLICY.bybitCandle1h : CACHE_POLICY.bybitCandle4h;
 }
 
 function gatePolicyForTimeframe(timeframe) {
@@ -180,7 +172,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.4.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.5.0" },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -300,19 +292,6 @@ function krakenFutures(path, policy = CACHE_POLICY.krakenTicker) {
   return upstream(KRAKEN_FUTURES_BASE, path, "Kraken Futures", policy);
 }
 
-async function bybitKlines(symbol, timeframe, tfConfig) {
-  const body = await upstream(
-    BYBIT_BASE,
-    `/v5/market/kline?category=linear&symbol=${symbol}&interval=${tfConfig.bybitInterval}&limit=${CANDLE_LIMIT}`,
-    "Bybit Linear",
-    bybitPolicyForTimeframe(timeframe),
-  );
-  if (body?.retCode !== 0 || !Array.isArray(body?.result?.list)) {
-    throw new Error(`Bybit Linear ${body?.retCode ?? "invalid response"}: ${body?.retMsg || "no data"}`);
-  }
-  return attachCacheMeta(body.result.list, body.__cache);
-}
-
 async function gateKlines(symbol, timeframe, tfConfig) {
   const body = await upstream(
     GATE_BASE,
@@ -338,26 +317,6 @@ async function krakenSpotKlines(pair, timeframe, tfConfig) {
   const rows = key ? body.result[key] : null;
   if (!Array.isArray(rows)) throw new Error("Kraken Spot candles are empty");
   return attachCacheMeta(rows.slice(-CANDLE_LIMIT), body.__cache);
-}
-
-function parseBybitCandles(rows) {
-  if (!Array.isArray(rows)) throw new Error("Bybit Linear candles are empty");
-  const candles = rows
-    .map((row) => ({
-      ts: new Date(Number(row[0])).toISOString(),
-      open: finite(row[1]),
-      high: finite(row[2]),
-      low: finite(row[3]),
-      close: finite(row[4]),
-      volumeBase: finite(row[5]),
-      volumeQuote: finite(row[6]),
-      volumeContracts: null,
-      confirmed: true,
-    }))
-    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
-    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
-  if (candles.length) candles[candles.length - 1].confirmed = false;
-  return attachCacheMeta(candles, rows.__cache);
 }
 
 function parseGateCandles(rows) {
@@ -829,10 +788,6 @@ async function buildSnapshot() {
       }
       const attempts = [
         {
-          source: "BYBIT_USDT_PERPETUAL",
-          load: async () => parseBybitCandles(await bybitKlines(config.bybitSymbol, timeframe, tfConfig)),
-        },
-        {
           source: "GATE_USDT_PERPETUAL",
           load: async () => parseGateCandles(await gateKlines(config.gateSymbol, timeframe, tfConfig)),
         },
@@ -854,13 +809,13 @@ async function buildSnapshot() {
           rejected.push({ source: candidate.source, error: error?.message || String(error) });
         }
       }
-      if (!selected) throw new Error(`No quality-approved USDT perpetual candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
-      const fallbackUsed = selected.source !== "BYBIT_USDT_PERPETUAL";
+      if (!selected) throw new Error(`No quality-approved candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
+      const fallbackUsed = selected.source !== "GATE_USDT_PERPETUAL";
       if (fallbackUsed) {
         fallbacks.push({
           symbol,
           timeframe,
-          primary: "BYBIT_USDT_PERPETUAL",
+          primary: "GATE_USDT_PERPETUAL",
           fallback: selected.source,
           reason: rejected.map((item) => `${item.source}: ${item.error}`).join("; "),
         });
@@ -967,8 +922,8 @@ async function buildSnapshot() {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution price, mark price, OI and funding; Bybit Linear USDT perpetual primary candles via api.bybit.com; Gate USDT perpetual backup; Kraken Spot emergency fallback",
-    requestBudget: { plannedOkx: 5, plannedTotal: 11, maximumWithAllFallbacks: 23, previousPlannedTotal: 11 },
+    source: "OKX USDT perpetual execution price, mark price, OI and funding; Gate USDT perpetual primary candles; Kraken Spot emergency fallback",
+    requestBudget: { plannedOkx: 5, plannedTotal: 11, maximumWithAllFallbacks: 17, previousPlannedTotal: 11 },
     reliability: {
       okxConcurrency: MAX_OKX_CONCURRENCY,
       persistentRouteCache: true,
@@ -1014,7 +969,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH perpetual data for OKX execution. Bybit Linear USDT perpetual via api.bybit.com is the primary candle source; Gate USDT perpetual is the backup. Kraken Spot is emergency-only and must pass the same strict quality gate. Binance, Bytick, Bitget and OKX candles are not requested.",
+      description: "Realtime BTC/ETH perpetual data for OKX execution. Gate USDT perpetual is the Cloudflare-verified primary candle source. Kraken Spot is emergency-only and must pass the same strict quality gate. Binance, Bybit, Bytick, Bitget and OKX candles are not requested.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -1023,7 +978,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX BTC/ETH USDT perpetual prices, OI and funding with validated Bybit/Gate 15m/1h/4h candles and a quality-gated Kraken Spot emergency fallback. DATA_READY requires fresh OKX execution prices and approved candles. No authentication.",
+          description: "Returns OKX BTC/ETH USDT perpetual prices, OI and funding with validated Gate 15m/1h/4h candles and a quality-gated Kraken Spot emergency fallback. DATA_READY requires fresh OKX execution prices and approved candles. No authentication.",
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -1101,7 +1056,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、未平仓量和资金费率。主K线使用 Bybit Linear USDT 永续 api.bybit.com，备用K线使用 Gate USDT 永续；Kraken 现货仅作严格质量校验后的紧急保底。所有K线必须通过价格偏差、时间连续性、成交量和新鲜度校验。服务不请求 Binance、Bytick、Bitget 或 OKX K线。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、未平仓量和资金费率。主K线使用经 Cloudflare 线上验证的 Gate USDT 永续；Kraken 现货仅作严格质量校验后的紧急保底。所有K线必须通过价格偏差、时间连续性、成交量和新鲜度校验。服务不请求 Binance、Bybit、Bytick、Bitget 或 OKX K线。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
 }
 
 async function handleSnapshot(request, ctx) {
@@ -1131,7 +1086,7 @@ export default {
     if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405, { allow: "GET,OPTIONS" });
     if (path === "/") return handleSnapshot(request, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution and derivatives + Bybit api.bybit.com primary candles + Gate USDT perpetual backup + Kraken Spot emergency fallback", normalOkxRequests: 5, okxCandlesRequested: false, binanceRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 1, authentication: "none" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution and derivatives + Gate USDT perpetual primary candles + Kraken Spot emergency fallback", normalOkxRequests: 5, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 1, authentication: "none" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
