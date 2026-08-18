@@ -1,9 +1,10 @@
-const BUILD = "crypto-alpha-worker-v18.0.0-final";
-const API_VERSION = "3.0.0";
+const BUILD = "crypto-alpha-worker-v18.1.0-final-quality-gate";
+const API_VERSION = "3.1.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
-const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
-const CACHE_NAMESPACE = "v18.0.0-final";
+const BYBIT_BASE = "https://api.bybit.com";
+const BINANCE_USDM_BASE = "https://fapi.binance.com";
+const CACHE_NAMESPACE = "v18.1.0-final-quality-gate";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -18,7 +19,12 @@ const CACHE_POLICY = {
   candle1h: { freshSeconds: 90, staleSeconds: 600, attempts: 1 },
   candle4h: { freshSeconds: 120, staleSeconds: 900, attempts: 1 },
   krakenTicker: { freshSeconds: 15, staleSeconds: 120, attempts: 1 },
-  krakenCandle: { freshSeconds: 60, staleSeconds: 900, attempts: 1 },
+  bybitCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 2, timeoutMs: 3500 },
+  bybitCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 2, timeoutMs: 3500 },
+  bybitCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 2, timeoutMs: 3500 },
+  binanceCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 2, timeoutMs: 3500 },
+  binanceCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 2, timeoutMs: 3500 },
+  binanceCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 2, timeoutMs: 3500 },
 };
 
 const memoryCache = new Map();
@@ -27,14 +33,14 @@ let okxActive = 0;
 const okxWaiters = [];
 
 const ASSETS = {
-  BTCUSDT: { instrumentId: "BTC-USDT-SWAP", futuresSymbol: "PI_XBTUSD", spotPair: "XBTUSD" },
-  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", futuresSymbol: "PI_ETHUSD", spotPair: "ETHUSD" },
+  BTCUSDT: { instrumentId: "BTC-USDT-SWAP", futuresSymbol: "PI_XBTUSD", bybitSymbol: "BTCUSDT" },
+  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", futuresSymbol: "PI_ETHUSD", bybitSymbol: "ETHUSDT" },
 };
 
 const TIMEFRAMES = {
-  "15m": { okxBar: "15m", futuresResolution: "15m", spotInterval: "15" },
-  "1h": { okxBar: "1H", futuresResolution: "1h", spotInterval: "60" },
-  "4h": { okxBar: "4H", futuresResolution: "4h", spotInterval: "240" },
+  "15m": { okxBar: "15m", bybitInterval: "15", binanceInterval: "15m", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
+  "1h": { okxBar: "1H", bybitInterval: "60", binanceInterval: "1h", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
+  "4h": { okxBar: "4H", bybitInterval: "240", binanceInterval: "4h", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
 };
 
 const JSON_HEADERS = {
@@ -52,6 +58,7 @@ function json(body, status = 200, extraHeaders = {}) {
 }
 
 function finite(value, fallback = null) {
+  if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -72,6 +79,14 @@ function delay(ms) {
 
 function policyForTimeframe(timeframe) {
   return timeframe === "15m" ? CACHE_POLICY.candle15m : timeframe === "1h" ? CACHE_POLICY.candle1h : CACHE_POLICY.candle4h;
+}
+
+function bybitPolicyForTimeframe(timeframe) {
+  return timeframe === "15m" ? CACHE_POLICY.bybitCandle15m : timeframe === "1h" ? CACHE_POLICY.bybitCandle1h : CACHE_POLICY.bybitCandle4h;
+}
+
+function binancePolicyForTimeframe(timeframe) {
+  return timeframe === "15m" ? CACHE_POLICY.binanceCandle15m : timeframe === "1h" ? CACHE_POLICY.binanceCandle1h : CACHE_POLICY.binanceCandle4h;
 }
 
 function cacheRequest(key) {
@@ -156,15 +171,15 @@ async function mapLimit(items, limit, mapper) {
   return results;
 }
 
-async function fetchJson(url, label, attempts, isOkx, validate) {
+async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (isOkx) await acquireOkxPermit();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(`${label} timeout`), 4500);
+    const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.0.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.1.0" },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -200,7 +215,7 @@ async function cachedJson({ key, url, label, policy, isOkx = false, validate }) 
   if (inflight.has(key)) return inflight.get(key);
   const work = (async () => {
     try {
-      const value = await fetchJson(url, label, policy.attempts, isOkx, validate);
+      const value = await fetchJson(url, label, policy.attempts, isOkx, validate, policy.timeoutMs);
       const stored = await writePersistentCache(key, value, policy.staleSeconds);
       return cacheResult(stored, "live");
     } catch (error) {
@@ -211,6 +226,35 @@ async function cachedJson({ key, url, label, policy, isOkx = false, validate }) 
           Object.defineProperty(value, "__refreshError", { value: error?.message || String(error), enumerable: false, configurable: true });
           return value;
         }
+      }
+      throw error;
+    }
+  })();
+  inflight.set(key, work);
+  try {
+    return await work;
+  } finally {
+    inflight.delete(key);
+  }
+}
+
+async function cachedComputed({ key, policy, loader }) {
+  const cached = await readPersistentCache(key);
+  if (cached) {
+    const ageSeconds = (Date.now() - cached.storedAt) / 1000;
+    if (ageSeconds <= policy.freshSeconds) return cacheResult(cached, "fresh-cache");
+  }
+  if (inflight.has(key)) return inflight.get(key);
+  const work = (async () => {
+    try {
+      const value = await loader();
+      const stored = await writePersistentCache(key, value, policy.staleSeconds);
+      return cacheResult(stored, "live");
+    } catch (error) {
+      if (cached && (Date.now() - cached.storedAt) / 1000 <= policy.staleSeconds) {
+        const value = cacheResult(cached, "stale-on-error");
+        Object.defineProperty(value, "__refreshError", { value: error?.message || String(error), enumerable: false, configurable: true });
+        return value;
       }
       throw error;
     }
@@ -255,52 +299,28 @@ function krakenFutures(path, policy = CACHE_POLICY.krakenTicker) {
   return upstream(KRAKEN_FUTURES_BASE, path, "Kraken Futures", policy);
 }
 
-async function krakenSpot(path, policy = CACHE_POLICY.krakenCandle) {
-  const body = await upstream(KRAKEN_SPOT_BASE, path, "Kraken Spot", policy);
-  if (!body || !Array.isArray(body.error) || body.error.length) {
-    throw new Error(`Kraken Spot ${body?.error?.join(", ") || "invalid response"}`);
+async function bybitKlines(symbol, timeframe, tfConfig) {
+  const body = await upstream(
+    BYBIT_BASE,
+    `/v5/market/kline?category=linear&symbol=${symbol}&interval=${tfConfig.bybitInterval}&limit=${CANDLE_LIMIT}`,
+    "Bybit Linear",
+    bybitPolicyForTimeframe(timeframe),
+  );
+  if (body?.retCode !== 0 || !Array.isArray(body?.result?.list)) {
+    throw new Error(`Bybit Linear ${body?.retCode ?? "invalid response"}: ${body?.retMsg || "no data"}`);
   }
-  return attachCacheMeta(body.result, body.__cache);
+  return attachCacheMeta(body.result.list, body.__cache);
 }
 
-function parseFuturesCandles(body) {
-  if (!Array.isArray(body?.candles)) throw new Error("Kraken Futures candles are empty");
-  const candles = body.candles
-    .map((row) => ({
-      ts: new Date(Number(row.time)).toISOString(),
-      open: finite(row.open),
-      high: finite(row.high),
-      low: finite(row.low),
-      close: finite(row.close),
-      volumeContracts: finite(row.volume),
-      volumeBase: null,
-      confirmed: true,
-    }))
-    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
-    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
-  if (candles.length) candles[candles.length - 1].confirmed = false;
-  return attachCacheMeta(candles, body.__cache);
-}
-
-function parseSpotCandles(result) {
-  const key = Object.keys(result || {}).find((name) => name !== "last");
-  const rows = key ? result[key] : null;
-  if (!Array.isArray(rows)) throw new Error("Kraken Spot candles are empty");
-  const candles = rows
-    .map((row) => ({
-      ts: new Date(Number(row[0]) * 1000).toISOString(),
-      open: finite(row[1]),
-      high: finite(row[2]),
-      low: finite(row[3]),
-      close: finite(row[4]),
-      volumeContracts: null,
-      volumeBase: finite(row[6]),
-      confirmed: true,
-    }))
-    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
-    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
-  if (candles.length) candles[candles.length - 1].confirmed = false;
-  return attachCacheMeta(candles, result.__cache);
+async function binanceKlines(symbol, timeframe, tfConfig) {
+  const rows = await upstream(
+    BINANCE_USDM_BASE,
+    `/fapi/v1/klines?symbol=${symbol}&interval=${tfConfig.binanceInterval}&limit=${CANDLE_LIMIT}`,
+    "Binance USD-M",
+    binancePolicyForTimeframe(timeframe),
+  );
+  if (!Array.isArray(rows)) throw new Error("Binance USD-M candles are empty");
+  return rows;
 }
 
 function parseOkxCandles(rows) {
@@ -320,6 +340,87 @@ function parseOkxCandles(rows) {
     .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
   return attachCacheMeta(candles, rows.__cache);
+}
+
+function parseBybitCandles(rows) {
+  if (!Array.isArray(rows)) throw new Error("Bybit Linear candles are empty");
+  const candles = rows
+    .map((row) => ({
+      ts: new Date(Number(row[0])).toISOString(),
+      open: finite(row[1]),
+      high: finite(row[2]),
+      low: finite(row[3]),
+      close: finite(row[4]),
+      volumeBase: finite(row[5]),
+      volumeQuote: finite(row[6]),
+      volumeContracts: null,
+      confirmed: true,
+    }))
+    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  if (candles.length) candles[candles.length - 1].confirmed = false;
+  return attachCacheMeta(candles, rows.__cache);
+}
+
+function parseBinanceCandles(rows) {
+  if (!Array.isArray(rows)) throw new Error("Binance USD-M candles are empty");
+  const candles = rows
+    .map((row) => ({
+      ts: new Date(Number(row[0])).toISOString(),
+      open: finite(row[1]),
+      high: finite(row[2]),
+      low: finite(row[3]),
+      close: finite(row[4]),
+      volumeBase: finite(row[5]),
+      volumeQuote: finite(row[7]),
+      volumeContracts: finite(row[8]),
+      confirmed: Number(row[6]) <= Date.now(),
+    }))
+    .filter((c) => [c.open, c.high, c.low, c.close].every(Number.isFinite))
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  return attachCacheMeta(candles, rows.__cache);
+}
+
+function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
+  const reasons = [];
+  const last = candles.at(-1);
+  const lastTimestamp = Date.parse(last?.ts || "");
+  const latestCandleAgeSeconds = Number.isFinite(lastTimestamp) ? Math.max(0, (Date.now() - lastTimestamp) / 1000) : null;
+  const priceDeviationPct = Number.isFinite(last?.close) && Number.isFinite(referencePrice) && referencePrice > 0
+    ? Math.abs(last.close - referencePrice) / referencePrice * 100
+    : null;
+  const recent = candles.slice(-24);
+  const nonZeroVolumes = recent.filter((c) => finite(c.volumeBase, finite(c.volumeContracts, 0)) > 0).length;
+  const nonZeroVolumeRatio = recent.length ? nonZeroVolumes / recent.length : 0;
+  const recentContinuity = candles.slice(-50);
+  let validGaps = 0;
+  for (let i = 1; i < recentContinuity.length; i += 1) {
+    const gap = Date.parse(recentContinuity[i].ts) - Date.parse(recentContinuity[i - 1].ts);
+    if (gap >= tfConfig.intervalMs * 0.9 && gap <= tfConfig.intervalMs * 1.1) validGaps += 1;
+  }
+  const continuityRatio = recentContinuity.length > 1 ? validGaps / (recentContinuity.length - 1) : 0;
+  const validOhlc = candles.every((c) =>
+    [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.high >= Math.max(c.open, c.close) && c.low <= Math.min(c.open, c.close) && c.low > 0,
+  );
+
+  if (candles.length < 200) reasons.push(`candle_count_${candles.length}_below_200`);
+  if (!Number.isFinite(latestCandleAgeSeconds) || latestCandleAgeSeconds > tfConfig.maxAgeSeconds) reasons.push("latest_candle_stale");
+  if (!Number.isFinite(priceDeviationPct) || priceDeviationPct > 0.75) reasons.push("price_deviation_above_0.75pct");
+  if (nonZeroVolumeRatio < 0.8) reasons.push("recent_volume_quality_below_80pct");
+  if (continuityRatio < 0.95) reasons.push("time_continuity_below_95pct");
+  if (!validOhlc) reasons.push("invalid_ohlc");
+
+  return {
+    passed: reasons.length === 0,
+    referenceSource: "OKX_USDT_PERPETUAL",
+    referencePrice: round(referencePrice, 8),
+    priceDeviationPct: round(priceDeviationPct, 4),
+    latestCandleAgeSeconds: round(latestCandleAgeSeconds, 3),
+    nonZeroVolumeRatio: round(nonZeroVolumeRatio, 4),
+    continuityRatio: round(continuityRatio, 4),
+    contractCompatibility: source === "OKX_USDT_PERPETUAL" ? "EXACT_OKX_USDT_PERPETUAL" : "USDT_PERPETUAL_CROSS_EXCHANGE",
+    reasons,
+  };
 }
 
 function ema(values, period) {
@@ -699,40 +800,61 @@ async function buildSnapshot() {
   );
   const candleWork = mapLimit(candleDefinitions, 3, async ({ symbol, config, timeframe, tfConfig }) => {
     try {
-      let candles;
-      let source = "OKX_USDT_PERPETUAL";
-      let fallbackUsed = false;
-      try {
-        const rows = await okx(
-          `/api/v5/market/candles?instId=${config.instrumentId}&bar=${tfConfig.okxBar}&limit=${CANDLE_LIMIT}`,
-          policyForTimeframe(timeframe),
-        );
-        if (rows.__refreshError) supplementalErrors.push({ source: "OKX", symbol, module: "candlesRefresh", timeframe, servedFromCache: true, error: rows.__refreshError });
-        candles = parseOkxCandles(rows);
-        if (candles.length < 200) throw new Error(`OKX returned only ${candles.length} candles`);
-      } catch (okxError) {
-        fallbackUsed = true;
+      const executionPrice = assets[symbol].ticker;
+      if (executionPrice.status !== "ok" || executionPrice.source !== "OKX_USDT_PERPETUAL" || !Number.isFinite(executionPrice.last)) {
+        throw new Error("Exact OKX USDT perpetual reference price unavailable for candle validation");
+      }
+      const attempts = [
+        {
+          source: "OKX_USDT_PERPETUAL",
+          load: async () => {
+            const rows = await okx(
+              `/api/v5/market/candles?instId=${config.instrumentId}&bar=${tfConfig.okxBar}&limit=${CANDLE_LIMIT}`,
+              policyForTimeframe(timeframe),
+            );
+            if (rows.__refreshError) supplementalErrors.push({ source: "OKX", symbol, module: "candlesRefresh", timeframe, servedFromCache: true, error: rows.__refreshError });
+            return parseOkxCandles(rows);
+          },
+        },
+        {
+          source: "BINANCE_USDM_PERPETUAL",
+          load: async () => parseBinanceCandles(await binanceKlines(config.bybitSymbol, timeframe, tfConfig)),
+        },
+        {
+          source: "BYBIT_USDT_PERPETUAL",
+          load: async () => parseBybitCandles(await bybitKlines(config.bybitSymbol, timeframe, tfConfig)),
+        },
+      ];
+      const rejected = [];
+      let selected = null;
+      for (const candidate of attempts) {
         try {
-          const body = await krakenFutures(
-            `/api/charts/v1/trade/${config.futuresSymbol}/${tfConfig.futuresResolution}?count=${CANDLE_LIMIT}`,
-            CACHE_POLICY.krakenCandle,
-          );
-          candles = parseFuturesCandles(body);
-          if (candles.length < 200) throw new Error(`Kraken Futures returned only ${candles.length} candles`);
-          source = "KRAKEN_FUTURES";
-          fallbacks.push({ symbol, timeframe, primary: "OKX_USDT_PERPETUAL", fallback: "KRAKEN_FUTURES", reason: okxError?.message || String(okxError) });
-        } catch (futuresError) {
-          const result = await krakenSpot(
-            `/0/public/OHLC?pair=${config.spotPair}&interval=${tfConfig.spotInterval}`,
-            CACHE_POLICY.krakenCandle,
-          );
-          candles = parseSpotCandles(result).slice(-CANDLE_LIMIT);
-          attachCacheMeta(candles, result.__cache);
-          source = "KRAKEN_SPOT";
-          fallbacks.push({ symbol, timeframe, primary: "OKX_USDT_PERPETUAL", fallback: "KRAKEN_SPOT", reason: `${okxError?.message || String(okxError)}; ${futuresError?.message || String(futuresError)}` });
+          const candles = await candidate.load();
+          const quality = candleQuality(candles, executionPrice.last, timeframe, tfConfig, candidate.source);
+          if (!quality.passed) throw new Error(`quality rejected: ${quality.reasons.join(",")}`);
+          selected = { candles, source: candidate.source, quality };
+          break;
+        } catch (error) {
+          rejected.push({ source: candidate.source, error: error?.message || String(error) });
         }
       }
-      assets[symbol].timeframes[timeframe] = { ...summarizeTimeframe(candles), source, fallbackUsed };
+      if (!selected) throw new Error(`No quality-approved USDT perpetual candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
+      const fallbackUsed = selected.source !== "OKX_USDT_PERPETUAL";
+      if (fallbackUsed) {
+        fallbacks.push({
+          symbol,
+          timeframe,
+          primary: "OKX_USDT_PERPETUAL",
+          fallback: selected.source,
+          reason: rejected.map((item) => `${item.source}: ${item.error}`).join("; "),
+        });
+      }
+      assets[symbol].timeframes[timeframe] = {
+        ...summarizeTimeframe(selected.candles),
+        source: selected.source,
+        fallbackUsed,
+        quality: selected.quality,
+      };
     } catch (error) {
       const message = error?.message || String(error);
       assets[symbol].timeframes[timeframe] = errorModule(message);
@@ -812,12 +934,15 @@ async function buildSnapshot() {
   const executionPriceReady = Object.entries(assets).every(([symbol, asset]) =>
     asset.ticker.status === "ok" && asset.ticker.source === "OKX_USDT_PERPETUAL" && Number.isFinite(priceAgeSeconds[symbol]) && priceAgeSeconds[symbol] <= 35,
   );
+  const semanticQualityReady = Object.values(assets).every((asset) =>
+    Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true),
+  );
   const criticalReady = Object.values(assets).every((asset) =>
     asset.ticker.status === "ok" &&
-    Object.values(asset.timeframes).every((tf) => tf.status === "ok") &&
+    Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true) &&
     asset.derivatives.openInterest.status === "ok" &&
     asset.derivatives.funding.status === "ok",
-  ) && executionPriceReady;
+  ) && executionPriceReady && semanticQualityReady;
 
   return {
     status: criticalReady ? "ok" : "partial",
@@ -826,15 +951,16 @@ async function buildSnapshot() {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "Official OKX USDT perpetual batch ticker and batch mark price for execution; OKX perpetual candles primary; Kraken Futures and Spot labelled reserves",
-    requestBudget: { plannedOkx: 11, plannedTotal: 11, maximumWithAllFallbacks: 24, previousPlannedTotal: 15 },
+    source: "OKX USDT perpetual execution and primary candles; Binance USD-M then Bybit Linear USDT perpetual candles as strictly validated reserves",
+    requestBudget: { plannedOkx: 11, plannedTotal: 11, maximumWithAllFallbacks: 24, previousPlannedTotal: 11 },
     reliability: {
       okxConcurrency: MAX_OKX_CONCURRENCY,
       persistentRouteCache: true,
       staleOnError: true,
       exactExecutionPriceMaxAgeSeconds: 35,
+      candleQualityGate: { maxPriceDeviationPct: 0.75, minimumNonZeroVolumeRatio: 0.8, minimumContinuityRatio: 0.95 },
     },
-    coverage: { availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, priceAgeSeconds, criticalReady },
+    coverage: { availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, semanticQualityReady, priceAgeSeconds, criticalReady },
     assets,
     fallbacks,
     supplementalErrors,
@@ -872,7 +998,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH perpetual data for OKX execution. Official OKX batch ticker and mark-price routes reduce request volume. Persistent route caching, stale-on-error and labelled Kraken reserves protect repeated ChatGPT Action calls.",
+      description: "Realtime BTC/ETH perpetual data for OKX execution. OKX candles are primary; only quality-approved Binance USD-M or Bybit Linear USDT perpetual candles may be used as reserves.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -881,7 +1007,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX BTC/ETH USDT perpetual last, bid, ask and mark prices plus 15m/1h/4h indicators, candles, OI and funding. DATA_READY requires an OKX execution price no older than 35 seconds. No authentication.",
+          description: "Returns OKX BTC/ETH USDT perpetual prices, 15m/1h/4h candles, indicators, OI and funding. DATA_READY requires fresh OKX execution prices and quality-approved USDT perpetual candles. No authentication.",
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -912,6 +1038,7 @@ function openApi(origin) {
                           totalModules: { type: "integer" },
                           coveragePct: { type: "number" },
                           executionPriceReady: { type: "boolean" },
+                          semanticQualityReady: { type: "boolean" },
                           criticalReady: { type: "boolean" },
                         },
                       },
@@ -958,7 +1085,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行价格与主K线来源：OKX USDT 永续。系统对上游结果进行短时缓存，并在刷新限流时使用限定时效内的最近成功数据；K线备用来源：Kraken Futures 与 Kraken Spot。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行价格与主K线来源：OKX USDT 永续。K线备用仅限 Binance USD-M 永续与 Bybit Linear USDT 永续，并且必须通过价格、时间连续性、成交量和新鲜度校验。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
 }
 
 async function handleSnapshot(request, ctx) {
@@ -988,7 +1115,7 @@ export default {
     if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405, { allow: "GET,OPTIONS" });
     if (path === "/") return handleSnapshot(request, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX batch ticker + batch mark price + persistent route cache + Kraken reserve", normalOkxRequests: 11, actionCount: 1, authentication: "none" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX USDT perpetual + validated Binance USD-M and Bybit Linear candle reserves", normalOkxRequests: 11, actionCount: 1, authentication: "none" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
