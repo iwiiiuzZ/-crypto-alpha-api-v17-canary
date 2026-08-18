@@ -1,10 +1,10 @@
-const BUILD = "crypto-alpha-worker-v18.5.0-gate-primary-final";
-const API_VERSION = "3.5.0";
+const BUILD = "crypto-alpha-worker-v18.6.0-oi-change";
+const API_VERSION = "3.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
-const CACHE_NAMESPACE = "v18.5.0-gate-primary-final";
+const CACHE_NAMESPACE = "v18.6.0-oi-change";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -14,6 +14,7 @@ const CACHE_POLICY = {
   ticker: { freshSeconds: 4, staleSeconds: 20, attempts: 2 },
   markPrice: { freshSeconds: 8, staleSeconds: 30, attempts: 2 },
   openInterest: { freshSeconds: 30, staleSeconds: 180, attempts: 1 },
+  openInterestHistory: { freshSeconds: 60, staleSeconds: 600, attempts: 2, timeoutMs: 5000 },
   funding: { freshSeconds: 120, staleSeconds: 900, attempts: 1 },
   krakenTicker: { freshSeconds: 15, staleSeconds: 120, attempts: 1 },
   gateCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 1, timeoutMs: 3500 },
@@ -172,7 +173,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.5.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.6.0" },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -679,6 +680,48 @@ function parseOkxOpenInterest(rows, instrumentId) {
   };
 }
 
+function parseOkxOpenInterestChanges(rows) {
+  const points = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      ts: finite(Array.isArray(row) ? row[0] : row?.ts),
+      contracts: finite(Array.isArray(row) ? row[1] : row?.oi),
+      baseCurrency: finite(Array.isArray(row) ? row[2] : row?.oiCcy),
+      usdValue: finite(Array.isArray(row) ? row[3] : row?.oiUsd),
+    }))
+    .filter((point) => Number.isFinite(point.ts) && Number.isFinite(point.usdValue) && point.usdValue > 0)
+    .sort((a, b) => a.ts - b.ts);
+  if (points.length < 13) throw new Error(`OKX OI history has only ${points.length} valid 5m samples`);
+
+  const latest = points.at(-1);
+  const atOrBefore = (minutes) => {
+    const target = latest.ts - minutes * 60_000;
+    const eligible = points.filter((point) => point.ts <= target);
+    return eligible.at(-1) || null;
+  };
+  const changePct = (reference) => reference && reference.usdValue > 0
+    ? round((latest.usdValue - reference.usdValue) / reference.usdValue * 100, 6)
+    : null;
+  const reference5m = atOrBefore(5);
+  const reference15m = atOrBefore(15);
+  const reference1h = atOrBefore(60);
+  const ageSeconds = Math.max(0, (Date.now() - latest.ts) / 1000);
+  if (ageSeconds > 15 * 60) throw new Error(`OKX OI history is stale by ${round(ageSeconds, 1)} seconds`);
+
+  return {
+    status: "ok",
+    source: "OKX",
+    period: "5m",
+    sampleCount: points.length,
+    latestUsdValue: round(latest.usdValue, 2),
+    change5mPct: changePct(reference5m),
+    change15mPct: changePct(reference15m),
+    change1hPct: changePct(reference1h),
+    latestAt: new Date(latest.ts).toISOString(),
+    ageSeconds: round(ageSeconds, 3),
+    dataFreshness: freshness(rows),
+  };
+}
+
 function parseOkxFunding(rows) {
   const row = rows[0];
   if (!row) throw new Error("OKX funding rate is empty");
@@ -836,6 +879,7 @@ async function buildSnapshot() {
   const derivativeDefinitions = [
     { type: "openInterestBatch", path: "/api/v5/public/open-interest?instType=SWAP", policy: CACHE_POLICY.openInterest },
     ...Object.entries(ASSETS).map(([symbol, config]) => ({ symbol, type: "funding", path: `/api/v5/public/funding-rate?instId=${config.instrumentId}`, policy: CACHE_POLICY.funding })),
+    ...Object.entries(ASSETS).map(([symbol, config]) => ({ symbol, type: "openInterestHistory", path: `/api/v5/rubik/stat/contracts/open-interest-history?instId=${config.instrumentId}&period=5m&limit=20`, policy: CACHE_POLICY.openInterestHistory })),
   ];
   const derivativeWork = Promise.allSettled(derivativeDefinitions.map((item) => okx(item.path, item.policy)));
   const [, derivativeResults] = await Promise.all([candleWork, derivativeWork]);
@@ -850,6 +894,24 @@ async function buildSnapshot() {
       }
     } else {
       supplementalErrors.push({ source: "OKX", symbol, module: "openInterest", error: openInterestResult.reason?.message || String(openInterestResult.reason) });
+    }
+    const historyIndex = derivativeDefinitions.findIndex((item) => item.symbol === symbol && item.type === "openInterestHistory");
+    const historyResult = derivativeResults[historyIndex];
+    if (historyResult?.status === "fulfilled") {
+      try {
+        const changes = parseOkxOpenInterestChanges(historyResult.value);
+        assets[symbol].derivatives.openInterest.changes = changes;
+        assets[symbol].derivatives.openInterest.change5mPct = changes.change5mPct;
+        assets[symbol].derivatives.openInterest.change15mPct = changes.change15mPct;
+        assets[symbol].derivatives.openInterest.change1hPct = changes.change1hPct;
+      } catch (error) {
+        assets[symbol].derivatives.openInterest.changes = errorModule(error?.message || String(error));
+        supplementalErrors.push({ source: "OKX", symbol, module: "openInterestHistory", error: error?.message || String(error) });
+      }
+    } else {
+      const message = historyResult?.reason?.message || String(historyResult?.reason || "No result");
+      assets[symbol].derivatives.openInterest.changes = errorModule(message);
+      supplementalErrors.push({ source: "OKX", symbol, module: "openInterestHistory", error: message });
     }
     const fundingIndex = derivativeDefinitions.findIndex((item) => item.symbol === symbol && item.type === "funding");
     const fundingResult = derivativeResults[fundingIndex];
@@ -922,8 +984,8 @@ async function buildSnapshot() {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution price, mark price, OI and funding; Gate USDT perpetual primary candles; Kraken Spot emergency fallback",
-    requestBudget: { plannedOkx: 5, plannedTotal: 11, maximumWithAllFallbacks: 17, previousPlannedTotal: 11 },
+    source: "OKX USDT perpetual execution price, mark price, current OI, OI 5m/15m/1h changes and funding; Gate USDT perpetual primary candles; Kraken Spot emergency fallback",
+    requestBudget: { plannedOkx: 7, plannedTotal: 13, maximumWithAllFallbacks: 19, previousPlannedTotal: 11 },
     reliability: {
       okxConcurrency: MAX_OKX_CONCURRENCY,
       persistentRouteCache: true,
@@ -969,7 +1031,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH perpetual data for OKX execution. Gate USDT perpetual is the Cloudflare-verified primary candle source. Kraken Spot is emergency-only and must pass the same strict quality gate. Binance, Bybit, Bytick, Bitget and OKX candles are not requested.",
+      description: "Realtime BTC/ETH perpetual data for OKX execution, including current OI and OI changes over 5m/15m/1h. Gate USDT perpetual is the Cloudflare-verified primary candle source. Kraken Spot is emergency-only and quality-gated.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -978,7 +1040,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX BTC/ETH USDT perpetual prices, OI and funding with validated Gate 15m/1h/4h candles and a quality-gated Kraken Spot emergency fallback. DATA_READY requires fresh OKX execution prices and approved candles. No authentication.",
+          description: "Returns OKX BTC/ETH USDT perpetual prices, current OI, OI 5m/15m/1h changes and funding with validated Gate 15m/1h/4h candles. DATA_READY requires fresh OKX execution prices and approved candles. No authentication.",
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -1056,7 +1118,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、未平仓量和资金费率。主K线使用经 Cloudflare 线上验证的 Gate USDT 永续；Kraken 现货仅作严格质量校验后的紧急保底。所有K线必须通过价格偏差、时间连续性、成交量和新鲜度校验。服务不请求 Binance、Bybit、Bytick、Bitget 或 OKX K线。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务仅提供只读的 BTC/ETH 市场数据，不执行交易，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、当前未平仓量、5分钟/15分钟/1小时未平仓量变化和资金费率。主K线使用经 Cloudflare 线上验证的 Gate USDT 永续；Kraken 现货仅作严格质量校验后的紧急保底。所有K线必须通过价格偏差、时间连续性、成交量和新鲜度校验。服务地址：${origin}</p><p>最后更新：2026-08-18</p></body></html>`;
 }
 
 async function handleSnapshot(request, ctx) {
@@ -1086,7 +1148,7 @@ export default {
     if (request.method !== "GET") return json({ error: "METHOD_NOT_ALLOWED" }, 405, { allow: "GET,OPTIONS" });
     if (path === "/") return handleSnapshot(request, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution and derivatives + Gate USDT perpetual primary candles + Kraken Spot emergency fallback", normalOkxRequests: 5, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 1, authentication: "none" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution, current OI, OI changes and funding + Gate USDT perpetual primary candles + Kraken Spot emergency fallback", normalOkxRequests: 7, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 1, authentication: "none" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
