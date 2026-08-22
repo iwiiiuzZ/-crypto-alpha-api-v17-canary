@@ -1,5 +1,5 @@
-const BUILD = "crypto-alpha-worker-v18.8.0-plan-linked-alerts";
-const API_VERSION = "3.8.0";
+const BUILD = "crypto-alpha-worker-v18.8.1-openapi-compat";
+const API_VERSION = "3.8.1";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
@@ -1947,6 +1947,7 @@ function openApi(origin) {
       },
     },
     components: {
+      schemas: {},
       securitySchemes: {
         bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "Scanner token" },
       },
