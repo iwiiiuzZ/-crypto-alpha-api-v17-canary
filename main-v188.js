@@ -1,10 +1,10 @@
-const BUILD = "crypto-alpha-worker-v18.9.0-entry-touch-alert";
-const API_VERSION = "3.9.0";
+const BUILD = "crypto-alpha-worker-v18.10.0-strict-double-okx-liquidity-news-contract";
+const API_VERSION = "3.10.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
-const CACHE_NAMESPACE = "v18.9.0-entry-touch-alert";
+const CACHE_NAMESPACE = "v18.10.0-strict-double-okx-liquidity-news-contract";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -13,6 +13,7 @@ const ACTIVE_PLAN_KEY = "scanner:active-plan";
 const SCANNER_RUNTIME_KEY = "scanner:runtime";
 const CONFIRMATION_COOLDOWN_MS = 14 * 60_000;
 const DEFAULT_PLAN_HOURS = 24;
+const SCANNER_DOUBLE_SAMPLE_DELAY_MS = 400;
 
 const CACHE_POLICY = {
   ticker: { freshSeconds: 4, staleSeconds: 20, attempts: 2 },
@@ -184,7 +185,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.8.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.10.0" },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -584,6 +585,51 @@ function buildGateCapitalFlow(raw, config) {
   };
 }
 
+function buildExecutionLiquidity(asset) {
+  const ticker = asset?.ticker || {};
+  const orderBook = asset?.capitalFlow?.orderBook || {};
+  const last = finite(ticker.last);
+  const markPrice = finite(ticker.markPrice);
+  const bid = finite(ticker.bid);
+  const ask = finite(ticker.ask);
+  const midpoint = Number.isFinite(bid) && Number.isFinite(ask) && bid <= ask ? (bid + ask) / 2 : null;
+  const executionReady = ticker.status === "ok"
+    && ticker.source === "OKX_USDT_PERPETUAL"
+    && [last, markPrice, bid, ask, midpoint].every((value) => Number.isFinite(value) && value > 0);
+  const auxiliaryReady = orderBook.status === "ok";
+  return {
+    status: executionReady ? "ok" : "unavailable",
+    executionPrimary: executionReady ? {
+      source: "OKX_USDT_PERPETUAL",
+      last: round(last, 8),
+      markPrice: round(markPrice, 8),
+      bid: round(bid, 8),
+      ask: round(ask, 8),
+      midpoint: round(midpoint, 8),
+      spreadBps: round((ask - bid) / midpoint * 10_000, 4),
+      markBasisBps: round((last - markPrice) / markPrice * 10_000, 4),
+      exchangeTimestamp: ticker.exchangeTimestamp || null,
+    } : errorModule("Exact OKX bid/ask/mark execution liquidity unavailable"),
+    auxiliaryDepth: auxiliaryReady ? {
+      source: "GATE_USDT_PERPETUAL_PUBLIC",
+      role: "AUXILIARY_CONFIRMATION_ONLY",
+      bidDepthUsdEstimate: orderBook.bidDepthUsdEstimate,
+      askDepthUsdEstimate: orderBook.askDepthUsdEstimate,
+      imbalancePct: orderBook.imbalancePct,
+      largestBidWall: orderBook.largestBidWall,
+      largestAskWall: orderBook.largestAskWall,
+      spreadBps: orderBook.spreadBps,
+      exchangeTimestamp: orderBook.exchangeTimestamp,
+    } : errorModule("Gate auxiliary order-book depth unavailable"),
+    policy: {
+      executionAndSlippage: "Use OKX bid/ask and mark price only",
+      depthAndWalls: "Gate single-exchange order book is auxiliary confirmation only",
+      standaloneSignal: false,
+      automaticOrderPlacement: false,
+    },
+  };
+}
+
 async function krakenSpotKlines(pair, timeframe, tfConfig) {
   const body = await upstream(
     KRAKEN_SPOT_BASE,
@@ -903,6 +949,123 @@ function parseOkxExecutionPrice(markRows, tickerRows, instrumentId) {
   };
 }
 
+async function verifyOkxScannerPrice(symbol) {
+  const asset = ASSETS[symbol];
+  if (!asset) throw new Error(`Unsupported scanner symbol ${symbol}`);
+  const instId = asset.instrumentId;
+  const validate = (body) => {
+    if (body?.code !== "0" || !Array.isArray(body?.data) || body.data.length === 0) {
+      throw new Error(`OKX direct response invalid for ${instId}`);
+    }
+    return body.data;
+  };
+  const [tickerRows, markRows] = await Promise.all([
+    fetchJson(
+      `${OKX_BASE}/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`,
+      `OKX direct ticker ${instId}`,
+      2,
+      true,
+      validate,
+      3500,
+    ),
+    fetchJson(
+      `${OKX_BASE}/api/v5/public/mark-price?instType=SWAP&instId=${encodeURIComponent(instId)}`,
+      `OKX direct mark price ${instId}`,
+      2,
+      true,
+      validate,
+      3500,
+    ),
+  ]);
+  const ticker = tickerRows.find((row) => row?.instId === instId);
+  const mark = markRows.find((row) => row?.instId === instId);
+  if (!ticker || !mark) throw new Error(`OKX exact instrument ${instId} missing from direct response`);
+  const last = finite(ticker?.last);
+  const markPrice = finite(mark?.markPx);
+  const bid = finite(ticker?.bidPx);
+  const ask = finite(ticker?.askPx);
+  const tickerTs = finite(ticker?.ts);
+  const markTs = finite(mark?.ts);
+  const checkedAtMs = Date.now();
+  const tickerAgeSeconds = Number.isFinite(tickerTs) ? Math.max(0, (checkedAtMs - tickerTs) / 1000) : Infinity;
+  const markAgeSeconds = Number.isFinite(markTs) ? Math.max(0, (checkedAtMs - markTs) / 1000) : Infinity;
+  if (![last, markPrice, bid, ask].every((value) => Number.isFinite(value) && value > 0)) throw new Error(`OKX direct last/mark/bid/ask missing for ${instId}`);
+  if (bid > ask) throw new Error(`OKX direct bid exceeds ask for ${instId}`);
+  if (tickerAgeSeconds > 20 || markAgeSeconds > 20) throw new Error(`OKX direct price stale for ${instId}`);
+  const deviationPct = Math.abs(last - markPrice) / markPrice * 100;
+  if (!Number.isFinite(deviationPct) || deviationPct > 0.35) throw new Error(`OKX direct ticker/mark deviation ${round(deviationPct, 6)}% for ${instId}`);
+  const midpoint = (bid + ask) / 2;
+  const spreadBps = (ask - bid) / midpoint * 10_000;
+  const lastToMidBps = Math.abs(last - midpoint) / midpoint * 10_000;
+  if (!Number.isFinite(spreadBps) || spreadBps > 20) throw new Error(`OKX direct spread ${round(spreadBps, 4)}bps is abnormal for ${instId}`);
+  if (!Number.isFinite(lastToMidBps) || lastToMidBps > 25) throw new Error(`OKX last/mid deviation ${round(lastToMidBps, 4)}bps is abnormal for ${instId}`);
+  const open24h = finite(ticker?.open24h);
+  const checkedAt = new Date(checkedAtMs).toISOString();
+  return {
+    status: "ok",
+    source: "OKX_USDT_PERPETUAL_DIRECT_VERIFIED",
+    priceType: "LAST_AND_MARK_DIRECT_VERIFIED",
+    primaryEndpoint: `/api/v5/market/ticker?instId=${instId}`,
+    fallbackEndpoint: null,
+    last: round(last, 8),
+    markPrice: round(markPrice, 8),
+    bid: round(bid, 8),
+    ask: round(ask, 8),
+    midpoint: round(midpoint, 8),
+    spreadBps: round(spreadBps, 4),
+    high24h: round(finite(ticker?.high24h), 8),
+    low24h: round(finite(ticker?.low24h), 8),
+    volume24hContracts: round(finite(ticker?.vol24h), 4),
+    change24hPct: open24h ? round(((last - open24h) / open24h) * 100, 4) : null,
+    exchangeTimestamp: new Date(tickerTs).toISOString(),
+    dataFreshness: { state: "live-direct", ageSeconds: round(tickerAgeSeconds, 3), storedAt: checkedAt },
+    verification: {
+      passed: true,
+      checkedAt,
+      deviationPct: round(deviationPct, 6),
+      spreadBps: round(spreadBps, 4),
+      lastToMidBps: round(lastToMidBps, 4),
+      tickerAgeSeconds: round(tickerAgeSeconds, 3),
+      markAgeSeconds: round(markAgeSeconds, 3),
+    },
+  };
+}
+
+function priceInsideEntryZone(price, entryZone) {
+  return Number.isFinite(price)
+    && Number.isFinite(finite(entryZone?.min))
+    && Number.isFinite(finite(entryZone?.max))
+    && price >= finite(entryZone.min)
+    && price <= finite(entryZone.max);
+}
+
+async function verifyOkxScannerZone(symbol, entryZone) {
+  const first = await verifyOkxScannerPrice(symbol);
+  await delay(SCANNER_DOUBLE_SAMPLE_DELAY_MS);
+  const second = await verifyOkxScannerPrice(symbol);
+  const samples = [first, second].map((sample) => ({
+    last: sample.last,
+    markPrice: sample.markPrice,
+    bid: sample.bid,
+    ask: sample.ask,
+    midpoint: sample.midpoint,
+    exchangeTimestamp: sample.exchangeTimestamp,
+    checkedAt: sample.verification?.checkedAt,
+    insideEntryZone: priceInsideEntryZone(sample.last, entryZone),
+  }));
+  const confirmed = samples.every((sample) => sample.insideEntryZone === true);
+  return {
+    status: "ok",
+    passed: true,
+    confirmed,
+    rule: "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE",
+    delayMs: SCANNER_DOUBLE_SAMPLE_DELAY_MS,
+    entryZone,
+    samples,
+    current: second,
+  };
+}
+
 function parseFuturesTicker(row, rows = null) {
   if (!row) throw new Error("Kraken Futures ticker is empty");
   const last = finite(row.last, finite(row.markPrice));
@@ -1058,6 +1221,7 @@ async function buildSnapshot(options = {}) {
       timeframes: Object.fromEntries(Object.keys(TIMEFRAMES).map((tf) => [tf, errorModule("Not loaded")])),
       derivatives: { openInterest: errorModule("Not loaded"), funding: errorModule("Not loaded") },
       capitalFlow: errorModule("Not loaded"),
+      executionLiquidity: errorModule("Not loaded"),
     };
   }
 
@@ -1247,6 +1411,7 @@ async function buildSnapshot(options = {}) {
         errors.push({ symbol, module: type, timeframe: null, error: message });
       }
     }
+    asset.executionLiquidity = buildExecutionLiquidity(asset);
   }
 
   const modules = [];
@@ -1295,6 +1460,38 @@ async function buildSnapshot(options = {}) {
       exactExecutionPriceMaxAgeSeconds: 35,
       candleQualityGate: { maxPriceDeviationPct: 0.75, minimumNonZeroVolumeRatio: 0.8, minimumContinuityRatio: 0.95 },
       capitalFlowPolicy: "Gate single-exchange estimate, confirmation only, never a standalone trigger or DATA_READY blocker",
+    },
+    analysisContract: {
+      timeframeFramework: {
+        defaultHorizon: "FLEXIBLE_NOT_MECHANICALLY_SHORT_TERM",
+        marketTrendAndEnvironment: "4H",
+        structureAndDirectionValidity: "1H",
+        entryLocationAndTrigger: "15M",
+        btcRole: "ETH_ENVIRONMENT_FILTER",
+        dailyDataPolicy: "MISSING_1D_ALONE_MUST_NOT_CAUSE_DATA_BLOCKED_UNLESS_USER_EXPLICITLY_REQUESTS_LONGER_HORIZON",
+      },
+      newsResearchContract: {
+        requiredEveryTradingAnalysis: ["JIN10", "COINDESK"],
+        primaryOfficialSources: ["FEDERAL_RESERVE", "BLS", "BEA", "SEC", "CFTC"],
+        secondaryVerification: ["REUTERS"],
+        policy: [
+          "Search current relevant news and upcoming event windows before the final plan",
+          "Distinguish publication time from event time and cite direct sources",
+          "If Jin10 or CoinDesk is unavailable, state that explicitly instead of inventing a result",
+          "News is a risk filter and must not replace live market structure",
+        ],
+      },
+      microstructureContract: {
+        executionPrimary: "OKX_BID_ASK_MARK_PRICE",
+        auxiliary: ["GATE_ORDER_BOOK_DEPTH", "GATE_LARGE_TAKER_TRADES", "GATE_ACTIVE_FLOW"],
+        standaloneSignal: false,
+        automaticOrderPlacement: false,
+      },
+      scannerPriceContract: {
+        rule: "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE",
+        historicalCrossingAllowed: false,
+        oneMinuteCandleTouchAllowed: false,
+      },
     },
     coverage: { availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, semanticQualityReady, priceAgeSeconds, criticalReady, capitalFlowReady, capitalFlowAvailable, capitalFlowTotal: Object.keys(assets).length },
     assets,
@@ -1531,12 +1728,14 @@ function capitalFlowEvidence(direction, asset, btcAsset) {
   };
 }
 
-function evaluateTradingPlan(plan, snapshot, previousRuntime = null, touchProbe = null) {
+function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerification = null) {
   const now = Date.now();
   const asset = snapshot?.assets?.[plan.symbol];
   const btc = snapshot?.assets?.BTCUSDT;
   const price = finite(asset?.ticker?.last);
   const btcPrice = finite(btc?.ticker?.last);
+  const priceSource = asset?.ticker?.source || "UNKNOWN";
+  const priceExchangeTimestamp = asset?.ticker?.exchangeTimestamp || null;
   const tf15 = asset?.timeframes?.["15m"];
   const tf1h = asset?.timeframes?.["1h"];
   const tf4h = asset?.timeframes?.["4h"];
@@ -1547,29 +1746,26 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, touchProbe 
   const targetIndex = Number.isFinite(price)
     ? plan.takeProfits.reduce((hit, target, index) => directionLong ? (price >= target.price ? index : hit) : (price <= target.price ? index : hit), -1)
     : -1;
-  if (expired) return { state: "EXPIRED", valid: false, price, btcPrice, reason: "GPT plan expired", planId: plan.planId, checkedAt: new Date(now).toISOString() };
-  if (invalidated) return { state: "INVALIDATED", valid: false, price, btcPrice, reason: "Price crossed the GPT plan invalidation level", planId: plan.planId, checkedAt: new Date(now).toISOString() };
+  if (expired) return { state: "EXPIRED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, reason: "GPT plan expired", planId: plan.planId, checkedAt: new Date(now).toISOString() };
+  if (invalidated) return { state: "INVALIDATED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, reason: "Price crossed the GPT plan invalidation level", planId: plan.planId, checkedAt: new Date(now).toISOString() };
   if (targetIndex >= 0 && (previousRuntime?.state === "CONFIRMED" || previousRuntime?.activatedAt)) {
-    return { state: `TP${targetIndex + 1}_HIT`, valid: true, price, btcPrice, reason: `Take-profit ${targetIndex + 1} reached`, targetIndex, planId: plan.planId, checkedAt: new Date(now).toISOString() };
+    return { state: `TP${targetIndex + 1}_HIT`, valid: true, price, btcPrice, priceSource, priceExchangeTimestamp, reason: `Take-profit ${targetIndex + 1} reached`, targetIndex, planId: plan.planId, checkedAt: new Date(now).toISOString() };
   }
-  const currentInZone = Number.isFinite(price) && price >= plan.entryZone.min && price <= plan.entryZone.max;
-  const previousPrice = finite(previousRuntime?.lastObservedPrice);
-  const crossedZone = Number.isFinite(previousPrice) && Number.isFinite(price)
-    && Math.min(previousPrice, price) <= plan.entryZone.max
-    && Math.max(previousPrice, price) >= plan.entryZone.min;
-  const candleTouchedZone = touchProbe?.status === "ok"
-    && finite(touchProbe.low) <= plan.entryZone.max
-    && finite(touchProbe.high) >= plan.entryZone.min;
-  const zoneTouched = currentInZone || crossedZone || candleTouchedZone;
-  const touchMethod = currentInZone ? "CURRENT_PRICE" : crossedZone ? "PRICE_CROSSING" : candleTouchedZone ? "ONE_MINUTE_HIGH_LOW" : null;
+  const currentInZone = zoneVerification?.confirmed === true
+    && zoneVerification?.rule === "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE";
+  const zoneTouched = currentInZone;
   const touch = {
     touched: zoneTouched,
-    method: touchMethod,
+    method: currentInZone ? "DOUBLE_CURRENT_OKX" : null,
     currentInZone,
-    crossedZone,
-    candleTouchedZone,
-    previousPrice: round(previousPrice, 8),
-    probe: touchProbe,
+    confirmedByTwoCurrentSamples: currentInZone,
+    samples: Array.isArray(zoneVerification?.samples) ? zoneVerification.samples : [],
+    crossedZone: false,
+    candleTouchedZone: false,
+    previousPrice: null,
+    probe: null,
+    historicalCrossingIgnored: true,
+    oneMinuteCandleTouchIgnored: true,
   };
   if (zoneTouched && !previousRuntime?.zoneAlertSentAt) {
     return {
@@ -1577,15 +1773,17 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, touchProbe 
       valid: false,
       price: round(price, 8),
       btcPrice: round(btcPrice, 8),
+      priceSource,
+      priceExchangeTimestamp,
       entryZone: plan.entryZone,
       touch,
-      reason: "GPT plan entry zone reached; waiting for execution confirmation",
+      reason: "Two independent current OKX samples are inside the GPT plan entry zone; waiting for execution confirmation",
       planId: plan.planId,
       checkedAt: new Date(now).toISOString(),
     };
   }
   if (snapshot?.decisionState !== "DATA_READY" || !Number.isFinite(price) || !confirmed15m) {
-    return { state: zoneTouched ? "WATCHING" : "DATA_BLOCKED", valid: false, price, btcPrice, touch, reason: "Realtime core data is not decision-ready", planId: plan.planId, checkedAt: new Date(now).toISOString() };
+    return { state: zoneTouched ? "WATCHING" : "DATA_BLOCKED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, touch, reason: "Realtime core data is not decision-ready", planId: plan.planId, checkedAt: new Date(now).toISOString() };
   }
   const inZone = currentInZone;
   const atr15 = finite(tf15?.indicators?.atr14, price * 0.003);
@@ -1619,6 +1817,8 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, touchProbe 
     valid: confirmationPassed,
     price: round(price, 8),
     btcPrice: round(btcPrice, 8),
+    priceSource,
+    priceExchangeTimestamp,
     entryZone: plan.entryZone,
     netRR: rr,
     confirmed15mAt: confirmed15m.ts,
@@ -1642,8 +1842,8 @@ function scannerNotification(plan, evaluation) {
     level: "timeSensitive",
   };
   if (evaluation.state === "ZONE_REACHED") return {
-    title: `🔔 ${plan.symbol} 已进入GPT计划价格区`,
-    body: `现价 ${price}，计划区 ${plan.entryZone.min}-${plan.entryZone.max}。检测方式：${evaluation.touch?.method || "实时价格"}。\n已经到价，但尚未完成15M、BTC、RR和资金流确认；先打开行情，不要机械开仓。`,
+    title: `🔔 ${plan.symbol} 两次OKX当前价确认进入GPT计划区`,
+    body: `两次独立OKX当前成交价 ${evaluation.touch?.samples?.map((sample) => sample.last).join(" / ") || price}，计划区 ${plan.entryZone.min}-${plan.entryZone.max}。\n第二次复核价 ${price}｜交易所时间 ${evaluation.priceExchangeTimestamp || evaluation.checkedAt}。\n本提醒不使用历史价格穿越或1分钟K线影线；已到价但仍需完成15M、BTC、RR和资金流确认。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "WATCHING") return {
@@ -1709,6 +1909,9 @@ async function saveTradingPlan(env, input) {
     lastConfirmedCandleAt: null,
     lastObservedPrice: null,
     lastObservedAt: null,
+    lastObservedPriceVerified: false,
+    lastObservedPriceSource: null,
+    lastObservedExchangeTimestamp: null,
     zoneReachedAt: null,
     zoneAlertSentAt: null,
     evaluation: { state: "ARMED", reason: "GPT plan saved; waiting for scanner" },
@@ -1758,15 +1961,45 @@ async function runScanner(env) {
   } catch (error) {
     snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) };
   }
-  const touchProbe = await scannerTouchProbe(plan, snapshot);
-  const evaluation = evaluateTradingPlan(plan, snapshot, previous, touchProbe);
+  let zoneVerification;
+  try {
+    zoneVerification = await verifyOkxScannerZone(plan.symbol, plan.entryZone);
+    if (!snapshot.assets) snapshot.assets = {};
+    if (!snapshot.assets[plan.symbol]) snapshot.assets[plan.symbol] = {};
+    snapshot.assets[plan.symbol].ticker = zoneVerification.current;
+  } catch (error) {
+    zoneVerification = { passed: false, error: error?.message || String(error), checkedAt: new Date(Date.now()).toISOString(), samples: [] };
+  }
+  const directVerified = zoneVerification?.passed === true
+    && zoneVerification?.current?.source === "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"
+    && zoneVerification?.current?.verification?.passed === true;
+  const evaluation = directVerified
+    ? evaluateTradingPlan(plan, snapshot, previous, zoneVerification)
+    : {
+      state: "DATA_BLOCKED",
+      valid: false,
+      price: null,
+      btcPrice: finite(snapshot?.assets?.BTCUSDT?.ticker?.last),
+      priceSource: null,
+      priceExchangeTimestamp: null,
+      touch: { touched: false, method: null, currentInZone: false, confirmedByTwoCurrentSamples: false, samples: [], crossedZone: false, candleTouchedZone: false, previousPrice: null, probe: null, historicalCrossingIgnored: true, oneMinuteCandleTouchIgnored: true },
+      verification: zoneVerification,
+      reason: "DIRECT_OKX_PRICE_VERIFICATION_FAILED",
+      planId: plan.planId,
+      checkedAt: new Date(Date.now()).toISOString(),
+    };
   const shouldNotify = scannerShouldNotify(previous, evaluation);
   let notification = { sent: false, reason: "NO_STATE_TRANSITION" };
   if (shouldNotify) {
     try { notification = await sendBark(env, scannerNotification(plan, evaluation)); }
     catch (error) { notification = { sent: false, reason: error?.message || String(error) }; }
   }
-  const nowIso = new Date().toISOString();
+  // Use the same clock source as direct verification/evaluation. Mixing the
+  // implicit Date constructor clock with Date.now() can make the prior sample
+  // appear to come from the future and corrupt crossing detection.
+  const nowIso = new Date(Date.now()).toISOString();
+  const verifiedObservation = evaluation.priceSource === "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"
+    && Number.isFinite(evaluation.price);
   const nextRuntime = {
     planId: plan.planId,
     state: evaluation.state,
@@ -1776,8 +2009,11 @@ async function runScanner(env) {
     lastAttemptAt: shouldNotify ? nowIso : previous?.lastAttemptAt || null,
     lastConfirmedCandleAt: evaluation.state === "CONFIRMED" ? evaluation.confirmed15mAt : previous?.lastConfirmedCandleAt || null,
     activatedAt: evaluation.state === "CONFIRMED" ? previous?.activatedAt || nowIso : previous?.activatedAt || null,
-    lastObservedPrice: Number.isFinite(evaluation.price) ? evaluation.price : previous?.lastObservedPrice || null,
-    lastObservedAt: Number.isFinite(evaluation.price) ? nowIso : previous?.lastObservedAt || null,
+    lastObservedPrice: verifiedObservation ? evaluation.price : previous?.lastObservedPrice || null,
+    lastObservedAt: verifiedObservation ? nowIso : previous?.lastObservedAt || null,
+    lastObservedPriceVerified: verifiedObservation ? true : previous?.lastObservedPriceVerified === true,
+    lastObservedPriceSource: verifiedObservation ? evaluation.priceSource : previous?.lastObservedPriceSource || null,
+    lastObservedExchangeTimestamp: verifiedObservation ? evaluation.priceExchangeTimestamp : previous?.lastObservedExchangeTimestamp || null,
     zoneReachedAt: evaluation.touch?.touched ? previous?.zoneReachedAt || nowIso : previous?.zoneReachedAt || null,
     zoneAlertSentAt: evaluation.state === "ZONE_REACHED" && notification.sent ? nowIso : previous?.zoneAlertSentAt || null,
     evaluation,
@@ -1827,6 +2063,7 @@ function openApi(origin) {
         properties: { openInterest: moduleSchema, funding: moduleSchema },
       },
       capitalFlow: moduleSchema,
+      executionLiquidity: moduleSchema,
     },
   };
   const planSchema = {
@@ -1836,7 +2073,7 @@ function openApi(origin) {
       planId: { type: "string", description: "Stable identifier for this exact final GPT plan; omit to auto-generate." },
       symbol: { type: "string", enum: ["ETHUSDT", "BTCUSDT"] },
       direction: { type: "string", enum: ["LONG", "SHORT"] },
-      timeframe: { type: "string", description: "Holding horizon such as SHORT_TERM or SWING." },
+      timeframe: { type: "string", description: "Flexible holding horizon selected from current structure; do not mechanically force short-term or swing." },
       expiresAt: { type: "string", format: "date-time", description: "Hard expiry, no more than seven days from now." },
       entryZone: {
         type: "object",
@@ -1899,7 +2136,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX BTC/ETH prices, OI changes and funding; Gate candles and auxiliary capital flow. Use this to analyze. If the answer contains an ARMED or executable plan, call saveTradingPlan with the exact final parameters before giving the final answer.",
+          description: "Returns OKX execution prices/OI/funding plus Gate candles, capital flow and auxiliary liquidity. Apply the returned 4H/1H/15M analysis contract. If the answer contains an ARMED or executable plan, save the exact final parameters before replying.",
           security: [],
           responses: {
             200: {
@@ -1915,6 +2152,7 @@ function openApi(origin) {
                       apiVersion: { type: "string" },
                       generatedAt: { type: "string", format: "date-time" },
                       source: { type: "string" },
+                      analysisContract: moduleSchema,
                       requestBudget: {
                         type: "object",
                         properties: {
