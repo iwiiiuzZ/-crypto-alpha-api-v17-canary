@@ -1,0 +1,32 @@
+Crypto Alpha V18.10 最终部署说明
+
+目标版本：crypto-alpha-worker-v18.10.0-strict-double-okx-liquidity-news-contract
+API：3.10.0
+
+一、实际入口
+- wrangler.jsonc 的 main 已固定为 main-v188.js。
+- 正常升级时只覆盖 main-v188.js，不要上传 worker.js，也不要改文件名。
+- wrangler.jsonc 仅在丢失或配置被改坏时才需要重新上传。
+
+二、Cloudflare 配置
+- Durable Object 绑定：SCANNER_STATE / ScannerState
+- Cron：* * * * *（每分钟一次）
+- Secret：BARK_DEVICE_KEY、SCANNER_TOKEN
+- 不要把任何 Secret 原值写入代码、截图或公开文件。
+
+三、GPT Action
+- 从 /openapi.json 导入架构。
+- 身份验证选择 API Key / Bearer，填写与 Cloudflare SCANNER_TOKEN 完全相同的原值。
+- 把 GPT_INSTRUCTIONS_V18.10.txt 的内容加入 GPT Instructions。
+
+四、验收标准
+- /health 显示 V18.10.0 / API 3.10.0。
+- scanner.stateConfigured、barkConfigured、scannerTokenConfigured 均为 true。
+- 保存正式方案后收到一次“方案已布防”。
+- 只有连续两次独立、当前的 OKX USDT 永续最新成交价都处于入场区，才发送到价提醒。
+- 提醒里的现价必须等于第二次 OKX 复核价。
+- 历史跨区、1M K线高低点、Gate 价格、标记价格、缓存价格均不得触发“当前进入价格区”。
+- 15M、BTC、资金流、流动性、净 RR 等条件通过后，才另发“条件已确认”。
+
+五、安全动作
+- 之前曾在截图中暴露过 SCANNER_TOKEN；最终验收后应旋转一次，并同步更新 GPT Bearer 密钥。
