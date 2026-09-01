@@ -1,19 +1,21 @@
-const BUILD = "crypto-alpha-worker-v18.10.0-strict-double-okx-liquidity-news-contract";
-const API_VERSION = "3.10.0";
+const BUILD = "crypto-alpha-worker-v18.11.0-liquidity-crowding-protection";
+const API_VERSION = "3.11.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
-const CACHE_NAMESPACE = "v18.10.0-strict-double-okx-liquidity-news-contract";
+const CACHE_NAMESPACE = "v18.11.0-liquidity-crowding-protection";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
 const MAX_OKX_CONCURRENCY = 2;
 const ACTIVE_PLAN_KEY = "scanner:active-plan";
 const SCANNER_RUNTIME_KEY = "scanner:runtime";
+const SCANNER_FAILURE_HISTORY_KEY = "scanner:failure-history";
 const CONFIRMATION_COOLDOWN_MS = 14 * 60_000;
 const DEFAULT_PLAN_HOURS = 24;
 const SCANNER_DOUBLE_SAMPLE_DELAY_MS = 400;
+const FAILURE_HISTORY_DAYS = 7;
 
 const CACHE_POLICY = {
   ticker: { freshSeconds: 4, staleSeconds: 20, attempts: 2 },
@@ -626,6 +628,142 @@ function buildExecutionLiquidity(asset) {
       depthAndWalls: "Gate single-exchange order book is auxiliary confirmation only",
       standaloneSignal: false,
       automaticOrderPlacement: false,
+    },
+  };
+}
+
+function confirmedRecentCandles(timeframe, limit = 24) {
+  const rows = Array.isArray(timeframe?.recentCandles) ? timeframe.recentCandles : [];
+  return rows.filter((candle) => candle?.confirmed === true).slice(-limit);
+}
+
+function clusteredLiquidityLevels(values, tolerance, minimumTouches = 2) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  const clusters = [];
+  for (const value of sorted) {
+    const cluster = clusters.find((item) => Math.abs(value - item.average) <= tolerance);
+    if (cluster) {
+      cluster.values.push(value);
+      cluster.average = cluster.values.reduce((sum, item) => sum + item, 0) / cluster.values.length;
+    } else clusters.push({ values: [value], average: value });
+  }
+  return clusters
+    .filter((cluster) => cluster.values.length >= minimumTouches)
+    .map((cluster) => ({ price: round(cluster.average, 8), touches: cluster.values.length }))
+    .sort((a, b) => b.touches - a.touches);
+}
+
+function detectRecentLiquiditySweep(timeframe) {
+  const rows = confirmedRecentCandles(timeframe, 24);
+  const atrValue = finite(timeframe?.indicators?.atr14);
+  if (rows.length < 14 || !Number.isFinite(atrValue) || atrValue <= 0) {
+    return { status: "unavailable", bullishSweepReclaim: false, bearishSweepReclaim: false, reason: "Insufficient confirmed candles or ATR" };
+  }
+  const candidate = rows.at(-1);
+  const prior = rows.slice(-13, -1);
+  const priorLow = Math.min(...prior.map((candle) => finite(candle.l)).filter(Number.isFinite));
+  const priorHigh = Math.max(...prior.map((candle) => finite(candle.h)).filter(Number.isFinite));
+  const open = finite(candidate?.o);
+  const high = finite(candidate?.h);
+  const low = finite(candidate?.l);
+  const close = finite(candidate?.c);
+  if (![open, high, low, close, priorLow, priorHigh].every(Number.isFinite)) {
+    return { status: "unavailable", bullishSweepReclaim: false, bearishSweepReclaim: false, reason: "Invalid confirmed candle values" };
+  }
+  const body = Math.max(Math.abs(close - open), atrValue * 0.04);
+  const lowerWick = Math.min(open, close) - low;
+  const upperWick = high - Math.max(open, close);
+  const bullishSweepReclaim = low < priorLow - atrValue * 0.03 && close > priorLow && close > open && lowerWick >= body * 0.8;
+  const bearishSweepReclaim = high > priorHigh + atrValue * 0.03 && close < priorHigh && close < open && upperWick >= body * 0.8;
+  return {
+    status: "ok",
+    candleAt: candidate.ts,
+    priorLow: round(priorLow, 8),
+    priorHigh: round(priorHigh, 8),
+    bullishSweepReclaim,
+    bearishSweepReclaim,
+    sweptLow: bullishSweepReclaim ? round(low, 8) : null,
+    sweptHigh: bearishSweepReclaim ? round(high, 8) : null,
+    close: round(close, 8),
+    policy: "Only a closed 15m candle that pierces a prior 12-candle extreme and closes back inside counts as a sweep-and-reclaim",
+  };
+}
+
+function directionalCrowding(direction, asset) {
+  const long = direction === "LONG";
+  const fundingRate = finite(asset?.derivatives?.funding?.rate);
+  const positioning = asset?.capitalFlow?.positioning || {};
+  const period15 = asset?.capitalFlow?.periods?.["15m"] || {};
+  const period1h = asset?.capitalFlow?.periods?.["1h"] || {};
+  const accountRatio = finite(positioning.accountLongShortRatio);
+  const topPositionRatio = finite(positioning.topTraderPositionLongShortRatio);
+  const takerRatio = finite(period15.takerBuySellRatio);
+  const oi15m = finite(period15.openInterestChangePct);
+  const oi1h = finite(period1h.openInterestChangePct);
+  const signals = [];
+  if (Number.isFinite(fundingRate) && (long ? fundingRate >= 0.0003 : fundingRate <= -0.0003)) signals.push("EXTREME_DIRECTIONAL_FUNDING");
+  if (Number.isFinite(accountRatio) && (long ? accountRatio >= 1.3 : accountRatio <= 0.77)) signals.push("CROWDED_ACCOUNTS");
+  if (Number.isFinite(topPositionRatio) && (long ? topPositionRatio >= 1.35 : topPositionRatio <= 0.74)) signals.push("CROWDED_TOP_TRADER_POSITION_PROXY");
+  if (Number.isFinite(takerRatio) && (long ? takerRatio >= 1.25 : takerRatio <= 0.8)) signals.push("ONE_SIDED_TAKER_FLOW");
+  if ((Number.isFinite(oi15m) && oi15m >= 0.8) || (Number.isFinite(oi1h) && oi1h >= 1.5)) signals.push("FAST_OI_BUILDUP");
+  return {
+    direction,
+    score: signals.length,
+    hardAdverse: signals.length >= 3,
+    signals,
+    metrics: {
+      fundingRate,
+      fundingRatePct: Number.isFinite(fundingRate) ? round(fundingRate * 100, 6) : null,
+      accountLongShortRatio: accountRatio,
+      topTraderPositionLongShortRatio: topPositionRatio,
+      takerBuySellRatio15m: takerRatio,
+      openInterestChange15mPct: oi15m,
+      openInterestChange1hPct: oi1h,
+    },
+    identityWarning: "Exchange positioning and large-trade fields are crowding proxies, not exact whale account positions.",
+  };
+}
+
+function largeParticipantFootprint(direction, asset) {
+  const large = asset?.capitalFlow?.largeTrades?.largeTrades || {};
+  const net = finite(large.netFlowUsdEstimate);
+  const buy = finite(large.buyUsdEstimate, 0);
+  const sell = finite(large.sellUsdEstimate, 0);
+  const total = buy + sell;
+  const directionalShare = total > 0 ? (direction === "LONG" ? buy : sell) / total : null;
+  const adverseShare = Number.isFinite(directionalShare) ? 1 - directionalShare : null;
+  return {
+    status: Number.isFinite(net) && total > 0 ? "ok" : "unavailable",
+    classification: !Number.isFinite(directionalShare) ? "UNKNOWN" : directionalShare >= 0.62 ? "SUPPORTIVE" : adverseShare >= 0.62 ? "ADVERSE" : "MIXED",
+    directionalSharePct: Number.isFinite(directionalShare) ? round(directionalShare * 100, 3) : null,
+    netFlowUsdEstimate: net,
+    sampleNotionalUsdEstimate: total > 0 ? round(total, 2) : null,
+    identityWarning: "This is a percentile-based large taker-trade footprint, not proof of a named institution or whale position.",
+  };
+}
+
+function buildMarketLiquidityContext(asset) {
+  const timeframe = asset?.timeframes?.["15m"];
+  const rows = confirmedRecentCandles(timeframe, 24);
+  const atrValue = finite(timeframe?.indicators?.atr14);
+  const tolerance = Number.isFinite(atrValue) ? Math.max(atrValue * 0.12, finite(asset?.ticker?.last, 0) * 0.0005) : 0;
+  const lows = clusteredLiquidityLevels(rows.map((candle) => finite(candle.l)), tolerance).slice(0, 4);
+  const highs = clusteredLiquidityLevels(rows.map((candle) => finite(candle.h)), tolerance).slice(0, 4);
+  return {
+    status: rows.length >= 14 && Number.isFinite(atrValue) ? "ok" : "partial",
+    source: "CLOSED_15M_CANDLES_PLUS_FREE_DERIVATIVES_PROXIES",
+    visibleLiquidityPools: { equalLowClusters: lows, equalHighClusters: highs, tolerance: round(tolerance, 8) },
+    recentSweep: detectRecentLiquiditySweep(timeframe),
+    crowding: { long: directionalCrowding("LONG", asset), short: directionalCrowding("SHORT", asset) },
+    largeParticipantFootprint: {
+      long: largeParticipantFootprint("LONG", asset),
+      short: largeParticipantFootprint("SHORT", asset),
+    },
+    policy: {
+      exactWhalePositionsAvailable: false,
+      inferredPsychologyOnly: true,
+      standaloneDirectionSignal: false,
+      noFutureData: true,
     },
   };
 }
@@ -1412,6 +1550,7 @@ async function buildSnapshot(options = {}) {
       }
     }
     asset.executionLiquidity = buildExecutionLiquidity(asset);
+    asset.liquidityRisk = buildMarketLiquidityContext(asset);
   }
 
   const modules = [];
@@ -1460,6 +1599,7 @@ async function buildSnapshot(options = {}) {
       exactExecutionPriceMaxAgeSeconds: 35,
       candleQualityGate: { maxPriceDeviationPct: 0.75, minimumNonZeroVolumeRatio: 0.8, minimumContinuityRatio: 0.95 },
       capitalFlowPolicy: "Gate single-exchange estimate, confirmation only, never a standalone trigger or DATA_READY blocker",
+      liquidityRiskPolicy: "Closed-candle sweep/reclaim, visible stop-pool proximity, quantified crowding and large-taker footprints are veto/context layers; no exact whale identity is claimed",
     },
     analysisContract: {
       timeframeFramework: {
@@ -1484,6 +1624,8 @@ async function buildSnapshot(options = {}) {
       microstructureContract: {
         executionPrimary: "OKX_BID_ASK_MARK_PRICE",
         auxiliary: ["GATE_ORDER_BOOK_DEPTH", "GATE_LARGE_TAKER_TRADES", "GATE_ACTIVE_FLOW"],
+        liquidityProtection: ["CLOSED_15M_SWEEP_RECLAIM", "VISIBLE_EQUAL_HIGH_LOW_POOLS", "QUANTIFIED_CROWDING", "REPEATED_FAILURE_ZONE_COOLDOWN"],
+        exactWhaleAccountPositionsClaimed: false,
         standaloneSignal: false,
         automaticOrderPlacement: false,
       },
@@ -1663,6 +1805,14 @@ function normalizeTradingPlan(input) {
       btcMinimumPrice: Number.isFinite(finite(confirmation.btcMinimumPrice)) ? round(finite(confirmation.btcMinimumPrice), 8) : null,
       btcMaximumPrice: Number.isFinite(finite(confirmation.btcMaximumPrice)) ? round(finite(confirmation.btcMaximumPrice), 8) : null,
     },
+    liquidityProtection: {
+      blockDangerousStopPool: input.liquidityProtection?.blockDangerousStopPool !== false,
+      blockExtremeCrowding: input.liquidityProtection?.blockExtremeCrowding !== false,
+      blockAdverseSweep: input.liquidityProtection?.blockAdverseSweep !== false,
+      blockRepeatedFailureZone: input.liquidityProtection?.blockRepeatedFailureZone !== false,
+      failureCooldownHours: round(Math.min(168, Math.max(12, finite(input.liquidityProtection?.failureCooldownHours, 72))), 2),
+      maximumFailuresNearZone: Math.min(5, Math.max(1, Math.floor(finite(input.liquidityProtection?.maximumFailuresNearZone, 2)))),
+    },
     strategySummary: scannerText(input.strategySummary, `${symbol} ${direction} plan`, 500),
     triggerExplanation: scannerText(input.triggerExplanation, "Wait for the registered 15m confirmation inside the entry zone", 500),
     strongestCounterEvidence: scannerText(input.strongestCounterEvidence, "", 500),
@@ -1693,6 +1843,85 @@ function planNetRR(plan, entryPrice) {
   const target = plan.takeProfits[0]?.price;
   const reward = Math.abs(target - entryPrice) - cost;
   return risk > 0 ? round(reward / risk, 3) : null;
+}
+
+function failureZoneEvidence(plan, failureHistory = []) {
+  const midpoint = (plan.entryZone.min + plan.entryZone.max) / 2;
+  const cutoff = Date.now() - plan.liquidityProtection.failureCooldownHours * 60 * 60_000;
+  const matching = (Array.isArray(failureHistory) ? failureHistory : []).filter((item) => {
+    if (item?.symbol !== plan.symbol || item?.direction !== plan.direction) return false;
+    const failedAt = Date.parse(item.failedAt || "");
+    if (!Number.isFinite(failedAt) || failedAt < cutoff) return false;
+    const previousMidpoint = finite(item.entryMidpoint);
+    const overlaps = finite(item.entryMin) <= plan.entryZone.max && finite(item.entryMax) >= plan.entryZone.min;
+    return overlaps || (Number.isFinite(previousMidpoint) && Math.abs(previousMidpoint - midpoint) / midpoint <= 0.0035);
+  });
+  return {
+    count: matching.length,
+    blocked: plan.liquidityProtection.blockRepeatedFailureZone && matching.length >= plan.liquidityProtection.maximumFailuresNearZone,
+    cooldownHours: plan.liquidityProtection.failureCooldownHours,
+    maximumFailuresNearZone: plan.liquidityProtection.maximumFailuresNearZone,
+    matches: matching.slice(-5),
+  };
+}
+
+function planLiquidityRisk(plan, asset, failureHistory = []) {
+  const context = asset?.liquidityRisk || buildMarketLiquidityContext(asset);
+  const timeframe = asset?.timeframes?.["15m"];
+  const atrValue = finite(timeframe?.indicators?.atr14);
+  const long = plan.direction === "LONG";
+  const pools = long ? context?.visibleLiquidityPools?.equalLowClusters : context?.visibleLiquidityPools?.equalHighClusters;
+  const fallbackLevels = long
+    ? [finite(timeframe?.levels?.support20), finite(timeframe?.levels?.support50)]
+    : [finite(timeframe?.levels?.resistance20), finite(timeframe?.levels?.resistance50)];
+  const allPools = [
+    ...(Array.isArray(pools) ? pools.map((pool) => ({ price: finite(pool.price), touches: finite(pool.touches, 2), source: "EQUAL_EXTREME_CLUSTER" })) : []),
+    ...fallbackLevels.filter(Number.isFinite).map((price) => ({ price, touches: 1, source: "ROLLING_RANGE_EXTREME" })),
+  ].filter((pool) => Number.isFinite(pool.price));
+  const nearestPool = allPools.sort((a, b) => Math.abs(plan.stopLoss - a.price) - Math.abs(plan.stopLoss - b.price))[0] || null;
+  const stopDistance = nearestPool ? Math.abs(plan.stopLoss - nearestPool.price) : null;
+  const stopDistanceAtr = Number.isFinite(stopDistance) && Number.isFinite(atrValue) && atrValue > 0 ? stopDistance / atrValue : null;
+  const stopNearPool = Number.isFinite(stopDistanceAtr) && stopDistanceAtr <= 0.35;
+  const stopInsideStructure = nearestPool && (long ? plan.stopLoss >= nearestPool.price : plan.stopLoss <= nearestPool.price);
+  const dangerousStop = Boolean(stopNearPool && (nearestPool.touches >= 2 || stopInsideStructure));
+  const sweep = context?.recentSweep || {};
+  const alignedSweep = long ? sweep.bullishSweepReclaim === true : sweep.bearishSweepReclaim === true;
+  const adverseSweep = long ? sweep.bearishSweepReclaim === true : sweep.bullishSweepReclaim === true;
+  const crowding = directionalCrowding(plan.direction, asset);
+  const participant = largeParticipantFootprint(plan.direction, asset);
+  const failures = failureZoneEvidence(plan, failureHistory);
+  const blockers = [];
+  if (plan.liquidityProtection.blockDangerousStopPool && dangerousStop && !alignedSweep) blockers.push("STOP_INSIDE_OR_JUST_BEYOND_VISIBLE_LIQUIDITY_POOL_WITHOUT_RECLAIM");
+  if (plan.liquidityProtection.blockExtremeCrowding && crowding.hardAdverse) blockers.push("DIRECTION_EXTREMELY_CROWDED");
+  if (plan.liquidityProtection.blockAdverseSweep && adverseSweep) blockers.push("RECENT_ADVERSE_LIQUIDITY_SWEEP_AND_RECLAIM");
+  if (failures.blocked) blockers.push("REPEATED_FAILURE_ZONE_COOLDOWN");
+  const warnings = [];
+  if (stopNearPool && !dangerousStop) warnings.push("STOP_NEAR_VISIBLE_RANGE_EXTREME");
+  if (crowding.score === 2) warnings.push("DIRECTION_MODERATELY_CROWDED");
+  if (participant.classification === "ADVERSE") warnings.push("LARGE_TAKER_FOOTPRINT_ADVERSE");
+  if (!alignedSweep) warnings.push("NO_CONFIRMED_ALIGNED_15M_SWEEP_RECLAIM");
+  return {
+    passed: blockers.length === 0,
+    verdict: blockers.length ? "BLOCK" : warnings.length ? "CAUTION" : "PASS",
+    blockers,
+    warnings,
+    stopPlacement: {
+      stopLoss: plan.stopLoss,
+      nearestVisiblePool: nearestPool,
+      distance: Number.isFinite(stopDistance) ? round(stopDistance, 8) : null,
+      distanceAtr: Number.isFinite(stopDistanceAtr) ? round(stopDistanceAtr, 4) : null,
+      dangerous: dangerousStop,
+      rule: "A stop within 0.35 ATR of a repeated/structural extreme is blocked unless a closed 15m sweep-and-reclaim supports the trade",
+    },
+    sweep: { ...sweep, alignedWithPlan: alignedSweep, adverseToPlan: adverseSweep },
+    crowding,
+    largeParticipantFootprint: participant,
+    historicalFailureZone: failures,
+    limitations: [
+      "No free public endpoint reveals exact whale liquidation or account-level holdings across exchanges.",
+      "Gate positioning, taker flow and large trades are single-exchange proxies and cannot independently create direction.",
+    ],
+  };
 }
 
 function capitalFlowEvidence(direction, asset, btcAsset) {
@@ -1728,7 +1957,7 @@ function capitalFlowEvidence(direction, asset, btcAsset) {
   };
 }
 
-function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerification = null) {
+function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerification = null, failureHistory = []) {
   const now = Date.now();
   const asset = snapshot?.assets?.[plan.symbol];
   const btc = snapshot?.assets?.BTCUSDT;
@@ -1808,9 +2037,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     Number.isFinite(flow.ratios.orderBookImbalancePct)
     && (directionLong ? flow.ratios.orderBookImbalancePct >= 0 : flow.ratios.orderBookImbalancePct <= 0)
   );
-  const checks = { inZone, nearZone, executionCapPassed, candlePassed, btcPricePassed, trendPassed, rrPassed, flowPassed, orderBookPassed };
+  const liquidityRisk = planLiquidityRisk(plan, asset, failureHistory);
+  const liquidityRiskPassed = liquidityRisk.passed;
+  const checks = { inZone, nearZone, executionCapPassed, candlePassed, btcPricePassed, trendPassed, rrPassed, flowPassed, orderBookPassed, liquidityRiskPassed };
   const confirmationPassed = Object.entries(checks).filter(([name]) => name !== "nearZone").every(([, passed]) => passed);
-  const state = confirmationPassed ? "CONFIRMED" : nearZone ? "WATCHING" : "ARMED";
+  const state = confirmationPassed ? "CONFIRMED" : nearZone && !liquidityRiskPassed ? "RISK_BLOCKED" : nearZone ? "WATCHING" : "ARMED";
   const failedChecks = Object.entries(checks).filter(([name, passed]) => name !== "nearZone" && !passed).map(([name]) => name);
   return {
     state,
@@ -1826,8 +2057,9 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     checks,
     failedChecks,
     flow,
+    liquidityRisk,
     touch,
-    reason: confirmationPassed ? "All GPT-plan and realtime confirmation checks passed" : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
+    reason: confirmationPassed ? "All GPT-plan and realtime confirmation checks passed" : state === "RISK_BLOCKED" ? `Liquidity/crowding protection blocked entry: ${liquidityRisk.blockers.join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
     planId: plan.planId,
     checkedAt: new Date(now).toISOString(),
   };
@@ -1850,6 +2082,11 @@ function scannerNotification(plan, evaluation) {
     title: `👀 ${plan.symbol} 已接近GPT方案区`,
     body: `现价 ${price}，计划区 ${plan.entryZone.min}-${plan.entryZone.max}。尚未确认：${evaluation.failedChecks?.join("、") || evaluation.reason}。先不要开仓。`,
     level: "active",
+  };
+  if (evaluation.state === "RISK_BLOCKED") return {
+    title: `⛔ ${plan.symbol} 流动性风险否决开仓`,
+    body: `现价 ${price}，虽已到计划区，但禁止开仓。\n硬阻断：${evaluation.liquidityRisk?.blockers?.join("、") || "流动性风险未通过"}\n止损池距离：${evaluation.liquidityRisk?.stopPlacement?.distanceAtr ?? "未知"} ATR｜拥挤分 ${evaluation.liquidityRisk?.crowding?.score ?? "未知"}\n等待扫损并收回、拥挤降温或重新生成方案；不要自行放宽止损。`,
+    level: "timeSensitive",
   };
   if (evaluation.state === "INVALIDATED") return {
     title: `⛔ ${plan.symbol} GPT方案已失效`,
@@ -1931,7 +2168,7 @@ async function saveTradingPlan(env, input) {
 }
 
 function scannerShouldNotify(previous, evaluation) {
-  if (!["ZONE_REACHED", "CONFIRMED", "INVALIDATED", "EXPIRED"].includes(evaluation.state) && !/^TP\d+_HIT$/.test(evaluation.state)) return false;
+  if (!["ZONE_REACHED", "CONFIRMED", "RISK_BLOCKED", "INVALIDATED", "EXPIRED"].includes(evaluation.state) && !/^TP\d+_HIT$/.test(evaluation.state)) return false;
   if (!previous || previous.planId !== evaluation.planId) return evaluation.state !== "ARMED";
   if (evaluation.state !== previous.state) return true;
   if (previous.notification?.sent === false) {
@@ -1949,9 +2186,10 @@ async function runScanner(env) {
   if (!scannerStateStub(env) && (!env?.ALERT_STATE?.get || !env?.ALERT_STATE?.put)) {
     return { status: "configuration_required", build: BUILD, reason: "SCANNER_STATE_BINDING_MISSING", configuration: scannerConfiguration(env) };
   }
-  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY]);
+  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY, SCANNER_FAILURE_HISTORY_KEY]);
   const plan = state[ACTIVE_PLAN_KEY];
   const previous = state[SCANNER_RUNTIME_KEY];
+  let failureHistory = Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [];
   if (!plan || plan.status !== "ARMED") {
     return { status: "idle", build: BUILD, reason: "NO_ACTIVE_GPT_PLAN", configuration: scannerConfiguration(env) };
   }
@@ -1974,7 +2212,7 @@ async function runScanner(env) {
     && zoneVerification?.current?.source === "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"
     && zoneVerification?.current?.verification?.passed === true;
   const evaluation = directVerified
-    ? evaluateTradingPlan(plan, snapshot, previous, zoneVerification)
+    ? evaluateTradingPlan(plan, snapshot, previous, zoneVerification, failureHistory)
     : {
       state: "DATA_BLOCKED",
       valid: false,
@@ -1988,6 +2226,26 @@ async function runScanner(env) {
       planId: plan.planId,
       checkedAt: new Date(Date.now()).toISOString(),
     };
+  if (evaluation.state === "INVALIDATED" && previous?.state !== "INVALIDATED") {
+    const cutoff = Date.now() - FAILURE_HISTORY_DAYS * 24 * 60 * 60_000;
+    failureHistory = failureHistory
+      .filter((item) => Date.parse(item?.failedAt || "") >= cutoff)
+      .concat({
+        planId: plan.planId,
+        symbol: plan.symbol,
+        direction: plan.direction,
+        entryMin: plan.entryZone.min,
+        entryMax: plan.entryZone.max,
+        entryMidpoint: round((plan.entryZone.min + plan.entryZone.max) / 2, 8),
+        stopLoss: plan.stopLoss,
+        invalidationPrice: plan.invalidationPrice,
+        failedAt: new Date(Date.now()).toISOString(),
+        failurePrice: evaluation.price,
+        reason: evaluation.reason,
+      })
+      .slice(-50);
+    await scannerStatePut(env, SCANNER_FAILURE_HISTORY_KEY, failureHistory, FAILURE_HISTORY_DAYS * 24 * 60 * 60);
+  }
   const shouldNotify = scannerShouldNotify(previous, evaluation);
   let notification = { sent: false, reason: "NO_STATE_TRANSITION" };
   if (shouldNotify) {
@@ -2032,10 +2290,10 @@ async function runScanner(env) {
 }
 
 async function scannerStatus(env) {
-  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY]);
+  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY, SCANNER_FAILURE_HISTORY_KEY]);
   const plan = state[ACTIVE_PLAN_KEY];
   const runtime = state[SCANNER_RUNTIME_KEY];
-  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), activePlan: plan || null, runtime: runtime || null };
+  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), activePlan: plan || null, runtime: runtime || null, failureHistory: Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [] };
 }
 
 function openApi(origin) {
@@ -2064,6 +2322,7 @@ function openApi(origin) {
       },
       capitalFlow: moduleSchema,
       executionLiquidity: moduleSchema,
+      liquidityRisk: moduleSchema,
     },
   };
   const planSchema = {
@@ -2082,6 +2341,18 @@ function openApi(origin) {
       },
       stopLoss: { type: "number" },
       invalidationPrice: { type: "number" },
+      liquidityProtection: {
+        type: "object",
+        description: "Optional overrides for the default free liquidity/crowding veto layer. Defaults are protective and should normally remain enabled.",
+        properties: {
+          blockDangerousStopPool: { type: "boolean" },
+          blockExtremeCrowding: { type: "boolean" },
+          blockAdverseSweep: { type: "boolean" },
+          blockRepeatedFailureZone: { type: "boolean" },
+          failureCooldownHours: { type: "number", minimum: 12, maximum: 168 },
+          maximumFailuresNearZone: { type: "integer", minimum: 1, maximum: 5 },
+        },
+      },
       maximumExecutionPrice: { type: ["number", "null"] },
       minimumExecutionPrice: { type: ["number", "null"] },
       takeProfits: {
@@ -2127,7 +2398,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH perpetual data plus a GPT-plan-linked alert scanner. After producing a formal trading plan, GPT must save that exact plan with saveTradingPlan before replying, so minute scans preserve the original thesis, trigger, counter-evidence, invalidation and targets.",
+      description: "Realtime BTC/ETH perpetual data plus a GPT-plan-linked alert scanner with free liquidity-sweep, visible stop-pool, crowding and repeated-failure protection. After producing a formal trading plan, GPT must save that exact plan with saveTradingPlan before replying.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -2136,7 +2407,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX execution prices/OI/funding plus Gate candles, capital flow and auxiliary liquidity. Apply the returned 4H/1H/15M analysis contract. If the answer contains an ARMED or executable plan, save the exact final parameters before replying.",
+          description: "Returns OKX price/OI/funding plus Gate candles, flow, visible liquidity pools, closed-candle sweep/reclaim, crowding and large-taker proxies. Apply the 4H/1H/15M contract; hard liquidityRisk blockers veto entry. Save every formal plan before replying.",
           security: [],
           responses: {
             200: {
