@@ -1,10 +1,10 @@
-const BUILD = "crypto-alpha-worker-v18.11.0-liquidity-crowding-protection";
-const API_VERSION = "3.11.0";
+const BUILD = "crypto-alpha-worker-v19.1.0-regime-submodel-router";
+const API_VERSION = "4.1.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
-const CACHE_NAMESPACE = "v18.11.0-liquidity-crowding-protection";
+const CACHE_NAMESPACE = "v19.1.0-regime-submodel-router";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -16,6 +16,39 @@ const CONFIRMATION_COOLDOWN_MS = 14 * 60_000;
 const DEFAULT_PLAN_HOURS = 24;
 const SCANNER_DOUBLE_SAMPLE_DELAY_MS = 400;
 const FAILURE_HISTORY_DAYS = 7;
+
+const LEGACY_CONFIG = {
+  status: "LEGACY_CONFIG_UNVALIDATED",
+  accountEquityUsdt: 17_000,
+  absolutePlanRiskCapPct: 8,
+  correlatedRiskCapPct: 8,
+  dailyRiskStopPct: 8,
+  consecutiveFullStopLimit: 2,
+  riskByGradePct: { "A+": [5, 6], A: [4, 5], B: [2.5, 3.5], C: [0, 0], D: [0, 0] },
+  minimumNetRR: {
+    SHORT: { B: 1.5, A: 1.8, "A+": 2.2 },
+    MEDIUM_SHORT: { B: 1.7, A: 2.0, "A+": 2.5 },
+    SWING: { B: 2.0, A: 2.3, "A+": 2.8 },
+  },
+  policy: "These values remain configurable safety defaults pending separate Model A/B/C backtests; they are not course truths.",
+};
+
+const SUBMODEL_DEFINITIONS = {
+  A1: { parent: "A", name: "DEEP_TREND_PULLBACK", directRegimes: ["TREND"] },
+  A2: { parent: "A", name: "SHALLOW_TREND_CONTINUATION", directRegimes: ["TREND"] },
+  B1: { parent: "B", name: "RANGE_BREAKOUT_RETEST", directRegimes: ["TREND"], watchRegimes: ["RANGE", "COMPRESSION", "TRANSITION"] },
+  B2: { parent: "B", name: "VOLATILITY_COMPRESSION_BREAKOUT_RETEST", directRegimes: ["TREND"], watchRegimes: ["COMPRESSION", "RANGE", "TRANSITION"] },
+  C1: { parent: "C", name: "EXTERNAL_LIQUIDITY_SWEEP_REVERSAL", directRegimes: ["RANGE"], watchRegimes: ["TRANSITION"] },
+  C2: { parent: "C", name: "FAILED_BREAKOUT_REVERSION", directRegimes: ["RANGE"], watchRegimes: ["TRANSITION"] },
+};
+
+function submodelRegimePermission(model, submodel, regime) {
+  const definition = SUBMODEL_DEFINITIONS[submodel];
+  if (!definition || definition.parent !== model) return "BLOCKED";
+  if (definition.directRegimes.includes(regime)) return "DIRECT";
+  if ((definition.watchRegimes || []).includes(regime)) return "WAIT_ONLY";
+  return "BLOCKED";
+}
 
 const CACHE_POLICY = {
   ticker: { freshSeconds: 4, staleSeconds: 20, attempts: 2 },
@@ -187,7 +220,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/18.10.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.1.0" },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -592,6 +625,7 @@ function buildExecutionLiquidity(asset) {
   const orderBook = asset?.capitalFlow?.orderBook || {};
   const last = finite(ticker.last);
   const markPrice = finite(ticker.markPrice);
+  const indexPrice = finite(asset?.indexPrice?.price);
   const bid = finite(ticker.bid);
   const ask = finite(ticker.ask);
   const midpoint = Number.isFinite(bid) && Number.isFinite(ask) && bid <= ask ? (bid + ask) / 2 : null;
@@ -610,6 +644,8 @@ function buildExecutionLiquidity(asset) {
       midpoint: round(midpoint, 8),
       spreadBps: round((ask - bid) / midpoint * 10_000, 4),
       markBasisBps: round((last - markPrice) / markPrice * 10_000, 4),
+      indexPrice: Number.isFinite(indexPrice) ? round(indexPrice, 8) : null,
+      perpetualIndexBasisBps: Number.isFinite(indexPrice) && indexPrice > 0 ? round((last - indexPrice) / indexPrice * 10_000, 4) : null,
       exchangeTimestamp: ticker.exchangeTimestamp || null,
     } : errorModule("Exact OKX bid/ask/mark execution liquidity unavailable"),
     auxiliaryDepth: auxiliaryReady ? {
@@ -765,6 +801,89 @@ function buildMarketLiquidityContext(asset) {
       standaloneDirectionSignal: false,
       noFutureData: true,
     },
+  };
+}
+
+function buildEffortVsResult(asset) {
+  const tf15 = asset?.timeframes?.["15m"];
+  const rows = confirmedRecentCandles(tf15, 12);
+  const flow15 = asset?.capitalFlow?.periods?.["15m"] || {};
+  const netFlow = finite(flow15.activeNetFlowUsdEstimate);
+  const buyUsd = finite(flow15.activeBuyUsdEstimate);
+  const sellUsd = finite(flow15.activeSellUsdEstimate);
+  const atrValue = finite(tf15?.indicators?.atr14);
+  const start = finite(rows[0]?.c);
+  const end = finite(rows.at(-1)?.c);
+  const priceChange = Number.isFinite(start) && Number.isFinite(end) ? end - start : null;
+  const priceResultAtr = Number.isFinite(priceChange) && Number.isFinite(atrValue) && atrValue > 0 ? priceChange / atrValue : null;
+  const totalAggression = Number.isFinite(buyUsd) && Number.isFinite(sellUsd) ? buyUsd + sellUsd : null;
+  const imbalanceShare = Number.isFinite(netFlow) && Number.isFinite(totalAggression) && totalAggression > 0 ? netFlow / totalAggression : null;
+  if (![netFlow, priceResultAtr, imbalanceShare].every(Number.isFinite)) {
+    return { status: "unavailable", classification: "UNKNOWN", reason: "Taker-flow or confirmed price-response data unavailable" };
+  }
+  const strongBuyEffort = imbalanceShare >= 0.12;
+  const strongSellEffort = imbalanceShare <= -0.12;
+  const poorUpResult = priceResultAtr <= 0.2;
+  const poorDownResult = priceResultAtr >= -0.2;
+  const classification = strongSellEffort && poorDownResult
+    ? "SELL_ABSORPTION_CANDIDATE"
+    : strongBuyEffort && poorUpResult
+      ? "BUY_ABSORPTION_CANDIDATE"
+      : "EFFORT_AND_RESULT_ALIGNED_OR_INCONCLUSIVE";
+  return {
+    status: "ok",
+    source: "GATE_TAKER_FLOW_PLUS_CONFIRMED_15M_PRICE_RESPONSE",
+    classification,
+    activeNetFlowUsdEstimate: round(netFlow, 2),
+    aggressionImbalancePct: round(imbalanceShare * 100, 4),
+    priceChangeAtr: round(priceResultAtr, 4),
+    windowStartAt: rows[0]?.ts || null,
+    windowEndAt: rows.at(-1)?.ts || null,
+    standaloneSignal: false,
+    limitation: "Candidate confirmation only; it cannot create direction, a setup or an entry without meaningful structure.",
+  };
+}
+
+function buildMarketRegimeRouter(asset) {
+  const tf4h = asset?.timeframes?.["4h"];
+  const tf1h = asset?.timeframes?.["1h"];
+  const tf15 = asset?.timeframes?.["15m"];
+  if (![tf4h, tf1h, tf15].every((timeframe) => timeframe?.status === "ok")) {
+    return { status: "unavailable", regime: "UNKNOWN", directSubmodels: [], watchSubmodels: [], reason: "Required 4H/1H/15M structure is unavailable", standaloneSignal: false };
+  }
+  const adx1h = finite(tf1h?.indicators?.adx14);
+  const adx15m = finite(tf15?.indicators?.adx14);
+  const fourHourRange = tf4h.structure === "RANGE";
+  const oneHourRange = tf1h.structure === "RANGE";
+  const compressed = fourHourRange && oneHourRange && Number.isFinite(adx1h) && Number.isFinite(adx15m) && adx1h < 20 && adx15m < 18;
+  const fourHourUp = ["UP", "STRONG_UP"].includes(tf4h.trend) || tf4h.structure === "HH_HL";
+  const fourHourDown = ["DOWN", "STRONG_DOWN"].includes(tf4h.trend) || tf4h.structure === "LH_LL";
+  const oneHourOpposes = fourHourUp
+    ? ["DOWN", "STRONG_DOWN"].includes(tf1h.trend) && tf1h.structure === "LH_LL"
+    : fourHourDown
+      ? ["UP", "STRONG_UP"].includes(tf1h.trend) && tf1h.structure === "HH_HL"
+      : false;
+  const regime = compressed
+    ? "COMPRESSION"
+    : fourHourRange && oneHourRange
+      ? "RANGE"
+      : (fourHourUp || fourHourDown) && !oneHourOpposes
+        ? "TREND"
+        : "TRANSITION";
+  const entries = Object.entries(SUBMODEL_DEFINITIONS);
+  const directSubmodels = entries.filter(([, definition]) => definition.directRegimes.includes(regime)).map(([key]) => key);
+  const watchSubmodels = entries.filter(([, definition]) => (definition.watchRegimes || []).includes(regime)).map(([key]) => key);
+  return {
+    status: "ok",
+    source: "CONFIRMED_4H_1H_15M_STRUCTURE_ADX_ROUTER",
+    regime,
+    directSubmodels,
+    watchSubmodels,
+    permission: directSubmodels.length ? "EVALUATE_DIRECT_MODELS" : watchSubmodels.length ? "WAIT_FOR_COMPLETION" : "NO_TRADE",
+    evidence: { trend4h: tf4h.trend, structure4h: tf4h.structure, trend1h: tf1h.trend, structure1h: tf1h.structure, adx1h: Number.isFinite(adx1h) ? round(adx1h, 4) : null, adx15m: Number.isFinite(adx15m) ? round(adx15m, 4) : null },
+    eventAndLiquidityOverrideRequired: true,
+    standaloneSignal: false,
+    limitation: "Technical router only. News, exchange anomalies and execution liquidity can still downgrade or veto every submodel.",
   };
 }
 
@@ -975,6 +1094,110 @@ function localSwings(candles, left = 2, right = 2) {
   return { highs, lows };
 }
 
+function indexedSwings(candles, left = 2, right = 2) {
+  const highs = [];
+  const lows = [];
+  for (let i = left; i < candles.length - right; i += 1) {
+    const window = candles.slice(i - left, i + right + 1);
+    if (window.every((c, j) => j === left || candles[i].high >= c.high)) highs.push({ index: i, price: candles[i].high, ts: candles[i].ts });
+    if (window.every((c, j) => j === left || candles[i].low <= c.low)) lows.push({ index: i, price: candles[i].low, ts: candles[i].ts });
+  }
+  return { highs, lows };
+}
+
+function volumeProfile(candles, binCount = 32) {
+  const rows = candles.filter((candle) => candle?.confirmed === true && Number.isFinite(finite(candle.volumeBase, finite(candle.volumeContracts))));
+  if (rows.length < 30) return errorModule("Insufficient confirmed candles for volume-profile estimate");
+  const low = Math.min(...rows.map((candle) => candle.low));
+  const high = Math.max(...rows.map((candle) => candle.high));
+  const width = (high - low) / binCount;
+  if (!Number.isFinite(width) || width <= 0) return errorModule("Invalid price range for volume-profile estimate");
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    index,
+    low: low + index * width,
+    high: low + (index + 1) * width,
+    volume: 0,
+  }));
+  for (const candle of rows) {
+    const typical = (candle.high + candle.low + candle.close) / 3;
+    const index = Math.min(binCount - 1, Math.max(0, Math.floor((typical - low) / width)));
+    bins[index].volume += Math.max(0, finite(candle.volumeBase, finite(candle.volumeContracts, 0)));
+  }
+  const totalVolume = bins.reduce((sum, bin) => sum + bin.volume, 0);
+  if (!totalVolume) return errorModule("No usable volume for volume-profile estimate");
+  const pocIndex = bins.reduce((best, bin) => bin.volume > bins[best].volume ? bin.index : best, 0);
+  const selected = new Set([pocIndex]);
+  let selectedVolume = bins[pocIndex].volume;
+  let left = pocIndex - 1;
+  let right = pocIndex + 1;
+  while (selectedVolume / totalVolume < 0.7 && (left >= 0 || right < bins.length)) {
+    const leftVolume = left >= 0 ? bins[left].volume : -1;
+    const rightVolume = right < bins.length ? bins[right].volume : -1;
+    if (rightVolume > leftVolume) { selected.add(right); selectedVolume += Math.max(0, rightVolume); right += 1; }
+    else { selected.add(left); selectedVolume += Math.max(0, leftVolume); left -= 1; }
+  }
+  const selectedIndexes = [...selected].sort((a, b) => a - b);
+  const midpoint = (bin) => round((bin.low + bin.high) / 2, 8);
+  const rankedHigh = [...bins].sort((a, b) => b.volume - a.volume).slice(0, 3);
+  const rankedLow = [...bins].filter((bin) => bin.volume > 0).sort((a, b) => a.volume - b.volume).slice(0, 3);
+  return {
+    status: "ok",
+    source: "CANDLE_TYPICAL_PRICE_VOLUME_BIN_ESTIMATE",
+    exactExchangeVolumeProfile: false,
+    lookbackCandles: rows.length,
+    binCount,
+    valueAreaPct: 70,
+    poc: midpoint(bins[pocIndex]),
+    vah: midpoint(bins[selectedIndexes.at(-1)]),
+    val: midpoint(bins[selectedIndexes[0]]),
+    hvn: rankedHigh.map((bin) => ({ price: midpoint(bin), sharePct: round(bin.volume / totalVolume * 100, 4) })),
+    lvn: rankedLow.map((bin) => ({ price: midpoint(bin), sharePct: round(bin.volume / totalVolume * 100, 4) })),
+    limitation: "Estimated from candle volume assigned to typical-price bins; not tick-level traded volume at price.",
+  };
+}
+
+function structureDetail(candles, atrValue) {
+  const rows = candles.filter((candle) => candle?.confirmed === true).slice(-100);
+  if (rows.length < 20) return errorModule("Insufficient confirmed candles for structure detail");
+  const swings = indexedSwings(rows);
+  const latest = rows.at(-1);
+  const controlHigh = swings.highs.at(-1) || null;
+  const controlLow = swings.lows.at(-1) || null;
+  const lastTwoHighs = swings.highs.slice(-2);
+  const lastTwoLows = swings.lows.slice(-2);
+  const baseStructure = lastTwoHighs.length >= 2 && lastTwoLows.length >= 2
+    ? lastTwoHighs[1].price > lastTwoHighs[0].price && lastTwoLows[1].price > lastTwoLows[0].price
+      ? "HH_HL"
+      : lastTwoHighs[1].price < lastTwoHighs[0].price && lastTwoLows[1].price < lastTwoLows[0].price
+        ? "LH_LL"
+        : "RANGE"
+    : "RANGE";
+  const upwardBreak = controlHigh && latest.close > controlHigh.price;
+  const downwardBreak = controlLow && latest.close < controlLow.price;
+  const breakDistance = upwardBreak ? latest.close - controlHigh.price : downwardBreak ? controlLow.price - latest.close : 0;
+  const meaningful = Boolean((upwardBreak || downwardBreak) && Number.isFinite(atrValue) && atrValue > 0 && breakDistance >= atrValue * 0.15);
+  const event = upwardBreak
+    ? baseStructure === "LH_LL" ? "BULLISH_CHOCH_CANDIDATE" : "BULLISH_BOS_CANDIDATE"
+    : downwardBreak
+      ? baseStructure === "HH_HL" ? "BEARISH_CHOCH_CANDIDATE" : "BEARISH_BOS_CANDIDATE"
+      : "NONE";
+  return {
+    status: "ok",
+    source: "CONFIRMED_CANDLE_SWING_CANDIDATE",
+    baseStructure,
+    event,
+    meaningfulCandidate: meaningful,
+    internalStructureWarning: event !== "NONE" && !meaningful,
+    latestConfirmedAt: latest.ts,
+    latestConfirmedClose: round(latest.close, 8),
+    controlHigh: controlHigh ? { price: round(controlHigh.price, 8), ts: controlHigh.ts } : null,
+    controlLow: controlLow ? { price: round(controlLow.price, 8), ts: controlLow.ts } : null,
+    protectiveLowCandidate: swings.lows.at(-1) ? { price: round(swings.lows.at(-1).price, 8), ts: swings.lows.at(-1).ts } : null,
+    protectiveHighCandidate: swings.highs.at(-1) ? { price: round(swings.highs.at(-1).price, 8), ts: swings.highs.at(-1).ts } : null,
+    limitation: "Candidate only. GPT must verify location, acceptance/rejection and whether the swing meaningfully controls the setup.",
+  };
+}
+
 function structure(candles) {
   const sample = candles.slice(-80);
   const swings = localSwings(sample);
@@ -995,7 +1218,8 @@ function summarizeTimeframe(candles) {
   const e200 = ema(closes, 200);
   const a14 = atr(candles, 14);
   const d14 = adx(candles, 14);
-  const currentStructure = structure(candles);
+  const confirmed = candles.filter((candle) => candle?.confirmed === true);
+  const currentStructure = structure(confirmed);
   const recent20 = candles.slice(-20);
   const recent50 = candles.slice(-50);
   let trend = "RANGE";
@@ -1014,6 +1238,8 @@ function summarizeTimeframe(candles) {
     change20BarsPct: base ? round(((last.close - base) / base) * 100, 4) : null,
     trend,
     structure: currentStructure,
+    structureDetail: structureDetail(candles, a14),
+    volumeProfile: volumeProfile(candles),
     indicators: {
       ema20: round(e20, 8),
       ema50: round(e50, 8),
@@ -1084,6 +1310,24 @@ function parseOkxExecutionPrice(markRows, tickerRows, instrumentId) {
     change24hPct: open24h ? round(((last - open24h) / open24h) * 100, 4) : null,
     dataFreshness: freshness(usableTicker ? tickerRows : markRows),
     exchangeTimestamp: new Date(usableTicker ? tickerTimestamp : markTimestamp).toISOString(),
+  };
+}
+
+function parseOkxIndexPrice(rows, symbol) {
+  const instId = symbol === "BTCUSDT" ? "BTC-USDT" : "ETH-USDT";
+  const row = (Array.isArray(rows) ? rows : []).find((item) => item?.instId === instId);
+  const price = finite(row?.idxPx);
+  const timestamp = finite(row?.ts);
+  if (!row || !Number.isFinite(price) || price <= 0 || !Number.isFinite(timestamp)) throw new Error(`OKX index price unavailable for ${instId}`);
+  const ageSeconds = Math.max(0, (Date.now() - timestamp) / 1000);
+  if (ageSeconds > 60) throw new Error(`OKX index price stale for ${instId}`);
+  return {
+    status: "ok",
+    source: "OKX_INDEX_TICKER",
+    instrumentId: instId,
+    price: round(price, 8),
+    exchangeTimestamp: new Date(timestamp).toISOString(),
+    dataFreshness: { state: "live-direct", ageSeconds: round(ageSeconds, 3), storedAt: new Date().toISOString() },
   };
 }
 
@@ -1356,6 +1600,7 @@ async function buildSnapshot(options = {}) {
       instrumentId: config.instrumentId,
       futuresSymbol: config.futuresSymbol,
       ticker: errorModule("Not loaded"),
+      indexPrice: errorModule("Not loaded"),
       timeframes: Object.fromEntries(Object.keys(TIMEFRAMES).map((tf) => [tf, errorModule("Not loaded")])),
       derivatives: { openInterest: errorModule("Not loaded"), funding: errorModule("Not loaded") },
       capitalFlow: errorModule("Not loaded"),
@@ -1378,11 +1623,24 @@ async function buildSnapshot(options = {}) {
   const priceResults = await Promise.allSettled([
     okx("/api/v5/market/tickers?instType=SWAP", CACHE_POLICY.ticker),
     okx("/api/v5/public/mark-price?instType=SWAP", CACHE_POLICY.markPrice),
+    fetchJson(
+      `${OKX_BASE}/api/v5/market/index-tickers?quoteCcy=USDT`,
+      "OKX index tickers",
+      1,
+      true,
+      (body) => {
+        if (body?.code !== "0" || !Array.isArray(body?.data)) throw new Error(`OKX index ${body?.code || "invalid response"}`);
+        return body.data;
+      },
+      3500,
+    ),
   ]);
   const tickerRows = priceResults[0].status === "fulfilled" ? priceResults[0].value : null;
   const markRows = priceResults[1].status === "fulfilled" ? priceResults[1].value : null;
+  const indexRows = priceResults[2].status === "fulfilled" ? priceResults[2].value : null;
   if (priceResults[0].status === "rejected") supplementalErrors.push({ source: "OKX", module: "tickerBatch", error: priceResults[0].reason?.message || String(priceResults[0].reason) });
   if (priceResults[1].status === "rejected") supplementalErrors.push({ source: "OKX", module: "markPriceBatch", error: priceResults[1].reason?.message || String(priceResults[1].reason) });
+  if (priceResults[2].status === "rejected") supplementalErrors.push({ source: "OKX", module: "indexPriceBatch", error: priceResults[2].reason?.message || String(priceResults[2].reason) });
   for (const rows of [tickerRows, markRows]) {
     if (rows?.__refreshError) supplementalErrors.push({ source: "OKX", module: "priceRefresh", servedFromCache: true, error: rows.__refreshError });
   }
@@ -1400,6 +1658,12 @@ async function buildSnapshot(options = {}) {
       } catch {
         assets[symbol].ticker = errorModule(message);
       }
+    }
+    try {
+      assets[symbol].indexPrice = parseOkxIndexPrice(indexRows, symbol);
+    } catch (error) {
+      assets[symbol].indexPrice = errorModule(error?.message || String(error));
+      supplementalErrors.push({ source: "OKX", symbol, module: "indexPrice", error: error?.message || String(error) });
     }
   }
 
@@ -1551,6 +1815,15 @@ async function buildSnapshot(options = {}) {
     }
     asset.executionLiquidity = buildExecutionLiquidity(asset);
     asset.liquidityRisk = buildMarketLiquidityContext(asset);
+    asset.effortVsResult = buildEffortVsResult(asset);
+    asset.marketRegimeRouter = buildMarketRegimeRouter(asset);
+    asset.dataGaps = {
+      spotCvd: { status: "unavailable", reason: "No free stable spot trade feed is connected; Gate taker flow must not be relabeled as spot CVD." },
+      perpetualCvd: { status: "unavailable", reason: "Active taker net flow is available, but true cumulative perpetual CVD is not returned." },
+      globalLiquidationMap: { status: "unavailable", reason: "No free stable cross-exchange liquidation-map endpoint is connected; Gate reports only single-exchange realized liquidations." },
+      exactWhalePositions: { status: "unavailable", reason: "Public data cannot identify exact whale account holdings." },
+      newsAndMacro: { status: "external_research_required", reason: "GPT must verify current official/news sources separately before a final trade decision." },
+    };
   }
 
   const modules = [];
@@ -1583,12 +1856,12 @@ async function buildSnapshot(options = {}) {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution price, mark price, current OI, OI 5m/15m/1h changes and funding; Gate USDT perpetual primary candles and free auxiliary capital flow; Kraken Spot emergency fallback",
+    source: "OKX USDT perpetual execution/index/mark price, current OI, OI 5m/15m/1h changes and funding; Gate USDT perpetual primary candles and free auxiliary capital flow; Kraken Spot emergency fallback",
     requestBudget: {
-      plannedOkx: 7,
-      plannedUpstreamFetches: 19,
-      plannedCloudflareSubrequestsCold: 35,
-      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 48,
+      plannedOkx: 8,
+      plannedUpstreamFetches: 20,
+      plannedCloudflareSubrequestsCold: 36,
+      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 49,
       cloudflareFreeLimit: 50,
       persistentPerModuleCache: "OKX_ONLY",
     },
@@ -1602,6 +1875,23 @@ async function buildSnapshot(options = {}) {
       liquidityRiskPolicy: "Closed-candle sweep/reclaim, visible stop-pool proximity, quantified crowding and large-taker footprints are veto/context layers; no exact whale identity is claimed",
     },
     analysisContract: {
+      decisionOrder: ["DATA_TRUTH", "STRUCTURE", "MODEL", "LOCATION", "TRIGGER", "CONFIRMATION", "BTC_ENVIRONMENT", "EXECUTION", "HARD_BLOCKER", "RR_RISK", "FINAL_DECISION"],
+      allowedModels: {
+        priority: ["MODEL_A_TREND_PULLBACK", "MODEL_B_BREAKOUT_RETEST_CONTINUATION", "MODEL_C_LIQUIDITY_SWEEP_REVERSAL"],
+        submodels: SUBMODEL_DEFINITIONS,
+        noModelPolicy: "NO_MODEL_EQUALS_NO_TRADE",
+        confirmationCannotCreateModel: true,
+      },
+      marketRegimeRouter: {
+        regimes: ["TREND", "RANGE", "COMPRESSION", "TRANSITION"],
+        eventRiskAndAbnormalLiquidity: "HARD_BLOCKER_OVERRIDE",
+        policy: "The router selects which A/B/C submodels may be evaluated; it never creates direction or bypasses structure.",
+      },
+      stateMapping: {
+        courseStates: ["LONG", "SHORT", "WAIT", "NO_TRADE"],
+        operational: { OPEN_NOW: "LONG_OR_SHORT", ARMED: "WAIT", NO_TRADE: "NO_TRADE", DATA_BLOCKED: "NO_TRADE_WITH_DATA_GAP" },
+      },
+      legacyConfig: LEGACY_CONFIG,
       timeframeFramework: {
         defaultHorizon: "FLEXIBLE_NOT_MECHANICALLY_SHORT_TERM",
         marketTrendAndEnvironment: "4H",
@@ -1748,6 +2038,35 @@ function normalizeTradingPlan(input) {
   if (!ASSETS[symbol]) throw new Error("symbol must be BTCUSDT or ETHUSDT");
   const direction = scannerText(input.direction, "", 16).toUpperCase();
   if (!['LONG', 'SHORT'].includes(direction)) throw new Error("direction must be LONG or SHORT");
+  const modelAliases = { A: "A", MODEL_A: "A", B: "B", MODEL_B: "B", C: "C", MODEL_C: "C" };
+  const model = modelAliases[scannerText(input.model, "", 24).toUpperCase()];
+  if (!model) throw new Error("model must be A, B or C; no model means no trading plan");
+  const submodel = scannerText(input.submodel, "", 8).toUpperCase();
+  const submodelDefinition = SUBMODEL_DEFINITIONS[submodel];
+  if (!submodelDefinition || submodelDefinition.parent !== model) throw new Error("submodel must match its parent model: A1/A2, B1/B2 or C1/C2");
+  const marketRegime = scannerText(input.marketRegime, "", 24).toUpperCase();
+  if (!["TREND", "RANGE", "COMPRESSION", "TRANSITION"].includes(marketRegime)) throw new Error("marketRegime must be TREND, RANGE, COMPRESSION or TRANSITION");
+  const regimePermission = submodelRegimePermission(model, submodel, marketRegime);
+  if (regimePermission === "BLOCKED") throw new Error(`${submodel} is not permitted in ${marketRegime}`);
+  const modelInvalidation = scannerText(input.modelInvalidation, "", 500);
+  if (!modelInvalidation) throw new Error("modelInvalidation is required");
+  const locationInput = input.location && typeof input.location === "object" ? input.location : {};
+  const locationQuality = scannerText(locationInput.quality, "", 20).toUpperCase();
+  if (locationQuality !== "GOOD") throw new Error("location.quality must be GOOD before a plan can be armed");
+  const locationType = scannerText(locationInput.type, "", 80);
+  const locationRationale = scannerText(locationInput.rationale, "", 500);
+  if (!locationType || !locationRationale) throw new Error("location.type and location.rationale are required");
+  const triggerInput = input.trigger && typeof input.trigger === "object" ? input.trigger : {};
+  const triggerType = scannerText(triggerInput.type, "", 40).toUpperCase();
+  if (!["BOS", "CHOCH", "RECLAIM", "ACCEPTANCE", "REJECTION"].includes(triggerType)) throw new Error("trigger.type must be BOS, CHOCH, RECLAIM, ACCEPTANCE or REJECTION");
+  if (triggerInput.meaningful !== true) throw new Error("trigger.meaningful must be true; internal structure cannot arm a plan");
+  const triggerLevel = scannerNumber(triggerInput.level, "trigger.level", { positive: true });
+  const protectiveInput = triggerInput.protectiveStructure && typeof triggerInput.protectiveStructure === "object" ? triggerInput.protectiveStructure : {};
+  const protectiveType = scannerText(protectiveInput.type, "", 16).toUpperCase();
+  if (direction === "LONG" && protectiveType !== "HL") throw new Error("LONG trigger.protectiveStructure.type must be HL");
+  if (direction === "SHORT" && protectiveType !== "LH") throw new Error("SHORT trigger.protectiveStructure.type must be LH");
+  const protectivePrice = scannerNumber(protectiveInput.price, "trigger.protectiveStructure.price", { positive: true });
+  if (scannerText(locationInput.rangePosition, "UNKNOWN", 30).toUpperCase() === "MIDDLE") throw new Error("Range-middle location cannot arm a plan");
   const entryMin = scannerNumber(input.entryZone?.min, "entryZone.min", { positive: true });
   const entryMax = scannerNumber(input.entryZone?.max, "entryZone.max", { positive: true });
   if (entryMin > entryMax) throw new Error("entryZone.min cannot exceed entryZone.max");
@@ -1767,6 +2086,11 @@ function normalizeTradingPlan(input) {
   if (direction === "SHORT" && targets.some((target) => target.price >= entryMin)) throw new Error("SHORT take-profits must be below entry zone");
   const allocationTotal = targets.reduce((sum, target) => sum + target.allocationPct, 0);
   if (allocationTotal > 100.5) throw new Error("take-profit allocation total cannot exceed 100%");
+  const firstRealisticInput = input.firstRealisticTarget && typeof input.firstRealisticTarget === "object" ? input.firstRealisticTarget : {};
+  const firstRealisticPrice = scannerNumber(firstRealisticInput.price, "firstRealisticTarget.price", { positive: true });
+  const firstRealisticBasis = scannerText(firstRealisticInput.basis, "", 500);
+  if (!firstRealisticBasis) throw new Error("firstRealisticTarget.basis is required");
+  if (Math.abs(firstRealisticPrice - targets[0].price) / targets[0].price > 0.000001) throw new Error("firstRealisticTarget.price must equal the first take-profit");
   const expiresAtMs = Date.parse(input.expiresAt || "");
   const expiresAt = Number.isFinite(expiresAtMs)
     ? new Date(expiresAtMs).toISOString()
@@ -1778,6 +2102,22 @@ function normalizeTradingPlan(input) {
   const close15mBelow = finite(confirmation.close15mBelow);
   if (direction === "LONG" && Number.isFinite(close15mBelow)) throw new Error("LONG confirmation should use close15mAbove");
   if (direction === "SHORT" && Number.isFinite(close15mAbove)) throw new Error("SHORT confirmation should use close15mBelow");
+  if (direction === "LONG" && !Number.isFinite(close15mAbove)) throw new Error("LONG requires explicit confirmation.close15mAbove");
+  if (direction === "SHORT" && !Number.isFinite(close15mBelow)) throw new Error("SHORT requires explicit confirmation.close15mBelow");
+  if (direction === "LONG" && protectivePrice >= entryMax) throw new Error("LONG protective HL must be below the entry-zone maximum");
+  if (direction === "SHORT" && protectivePrice <= entryMin) throw new Error("SHORT protective LH must be above the entry-zone minimum");
+  if (model === "B" && !Number.isFinite(finite(triggerInput.acceptanceLevel))) throw new Error("Model B requires trigger.acceptanceLevel");
+  if (model === "C" && !Number.isFinite(finite(triggerInput.reclaimLevel))) throw new Error("Model C requires trigger.reclaimLevel");
+  const hardBlockers = (Array.isArray(input.hardBlockers) ? input.hardBlockers : []).map((item) => scannerText(item, "", 160)).filter(Boolean);
+  if (hardBlockers.length) throw new Error("A plan with hardBlockers cannot be armed");
+  const riskInput = input.risk && typeof input.risk === "object" ? input.risk : null;
+  if (!riskInput) throw new Error("risk context is required");
+  const accountEquityUsdt = scannerNumber(riskInput.accountEquityUsdt, "risk.accountEquityUsdt", { positive: true });
+  const accountRiskPct = scannerNumber(riskInput.accountRiskPct, "risk.accountRiskPct", { positive: true });
+  const leverage = scannerNumber(riskInput.leverage, "risk.leverage", { positive: true });
+  if (accountRiskPct > LEGACY_CONFIG.absolutePlanRiskCapPct) throw new Error("risk.accountRiskPct exceeds configured absolute cap");
+  if (riskInput.dailyRiskLimitReached !== false) throw new Error("risk.dailyRiskLimitReached must be explicitly false");
+  if (riskInput.psychologicalVeto !== false) throw new Error("risk.psychologicalVeto must be explicitly false");
   const planId = scannerText(input.planId, "", 80) || `plan-${new Date(now).toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
   return {
     planId,
@@ -1785,6 +2125,29 @@ function normalizeTradingPlan(input) {
     status: "ARMED",
     symbol,
     direction,
+    model,
+    submodel,
+    submodelName: submodelDefinition.name,
+    marketRegime,
+    regimePermission,
+    modelPriority: { A: 1, B: 2, C: 3 }[model],
+    modelConfluence: (Array.isArray(input.modelConfluence) ? input.modelConfluence : []).map((item) => scannerText(item, "", 40)).filter(Boolean).slice(0, 3),
+    modelInvalidation,
+    location: {
+      quality: locationQuality,
+      type: locationType,
+      rationale: locationRationale,
+      rangePosition: scannerText(locationInput.rangePosition, "UNKNOWN", 30).toUpperCase(),
+    },
+    trigger: {
+      type: triggerType,
+      level: round(triggerLevel, 8),
+      meaningful: true,
+      completedAtSave: triggerInput.completedAtSave === true,
+      reclaimLevel: Number.isFinite(finite(triggerInput.reclaimLevel)) ? round(finite(triggerInput.reclaimLevel), 8) : null,
+      acceptanceLevel: Number.isFinite(finite(triggerInput.acceptanceLevel)) ? round(finite(triggerInput.acceptanceLevel), 8) : null,
+      protectiveStructure: { type: protectiveType, price: round(protectivePrice, 8) },
+    },
     timeframe: scannerText(input.timeframe || "SHORT_TERM", "SHORT_TERM", 40),
     createdAt: new Date(now).toISOString(),
     expiresAt,
@@ -1792,9 +2155,10 @@ function normalizeTradingPlan(input) {
     stopLoss: round(stopLoss, 8),
     invalidationPrice: round(invalidationPrice, 8),
     takeProfits: targets,
+    firstRealisticTarget: { price: round(firstRealisticPrice, 8), basis: firstRealisticBasis },
     maximumExecutionPrice: Number.isFinite(finite(input.maximumExecutionPrice)) ? round(finite(input.maximumExecutionPrice), 8) : null,
     minimumExecutionPrice: Number.isFinite(finite(input.minimumExecutionPrice)) ? round(finite(input.minimumExecutionPrice), 8) : null,
-    minNetRR: round(Math.max(1, finite(input.minNetRR, 1.5)), 3),
+    minNetRR: round(Math.max(1, scannerNumber(input.minNetRR, "minNetRR", { positive: true })), 3),
     estimatedRoundTripCostPct: round(Math.max(0, finite(input.estimatedRoundTripCostPct, 0.15)), 4),
     confirmation: {
       close15mAbove: Number.isFinite(close15mAbove) ? round(close15mAbove, 8) : null,
@@ -1816,12 +2180,18 @@ function normalizeTradingPlan(input) {
     strategySummary: scannerText(input.strategySummary, `${symbol} ${direction} plan`, 500),
     triggerExplanation: scannerText(input.triggerExplanation, "Wait for the registered 15m confirmation inside the entry zone", 500),
     strongestCounterEvidence: scannerText(input.strongestCounterEvidence, "", 500),
+    hardBlockers: [],
+    softWarnings: (Array.isArray(input.softWarnings) ? input.softWarnings : []).map((item) => scannerText(item, "", 160)).filter(Boolean).slice(0, 12),
     sourceAnalysisAt: scannerText(input.sourceAnalysisAt, new Date(now).toISOString(), 60),
     risk: {
-      accountEquityUsdt: Number.isFinite(finite(input.risk?.accountEquityUsdt)) ? round(finite(input.risk.accountEquityUsdt), 2) : null,
-      accountRiskPct: Number.isFinite(finite(input.risk?.accountRiskPct)) ? round(finite(input.risk.accountRiskPct), 3) : null,
-      leverage: Number.isFinite(finite(input.risk?.leverage)) ? round(finite(input.risk.leverage), 2) : null,
-      marginMode: scannerText(input.risk?.marginMode || "ISOLATED", "ISOLATED", 20).toUpperCase(),
+      accountEquityUsdt: round(accountEquityUsdt, 2),
+      accountRiskPct: round(accountRiskPct, 3),
+      leverage: round(leverage, 2),
+      marginMode: scannerText(riskInput.marginMode || "ISOLATED", "ISOLATED", 20).toUpperCase(),
+      configStatus: scannerText(riskInput.configStatus || LEGACY_CONFIG.status, LEGACY_CONFIG.status, 50),
+      dailyRiskLimitReached: false,
+      psychologicalVeto: false,
+      correlatedRiskPct: Number.isFinite(finite(riskInput.correlatedRiskPct)) ? round(finite(riskInput.correlatedRiskPct), 3) : null,
     },
   };
 }
@@ -1892,12 +2262,12 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
   const failures = failureZoneEvidence(plan, failureHistory);
   const blockers = [];
   if (plan.liquidityProtection.blockDangerousStopPool && dangerousStop && !alignedSweep) blockers.push("STOP_INSIDE_OR_JUST_BEYOND_VISIBLE_LIQUIDITY_POOL_WITHOUT_RECLAIM");
-  if (plan.liquidityProtection.blockExtremeCrowding && crowding.hardAdverse) blockers.push("DIRECTION_EXTREMELY_CROWDED");
-  if (plan.liquidityProtection.blockAdverseSweep && adverseSweep) blockers.push("RECENT_ADVERSE_LIQUIDITY_SWEEP_AND_RECLAIM");
-  if (failures.blocked) blockers.push("REPEATED_FAILURE_ZONE_COOLDOWN");
   const warnings = [];
   if (stopNearPool && !dangerousStop) warnings.push("STOP_NEAR_VISIBLE_RANGE_EXTREME");
-  if (crowding.score === 2) warnings.push("DIRECTION_MODERATELY_CROWDED");
+  if (crowding.score >= 3) warnings.push("DIRECTION_EXTREMELY_CROWDED_SOFT_WARNING");
+  else if (crowding.score === 2) warnings.push("DIRECTION_MODERATELY_CROWDED");
+  if (adverseSweep) warnings.push("RECENT_ADVERSE_SWEEP_RECLAIM_REQUIRES_STRUCTURE_REVIEW");
+  if (failures.blocked) warnings.push("REPEATED_FAILURE_ZONE_REQUIRES_REVIEW");
   if (participant.classification === "ADVERSE") warnings.push("LARGE_TAKER_FOOTPRINT_ADVERSE");
   if (!alignedSweep) warnings.push("NO_CONFIRMED_ALIGNED_15M_SWEEP_RECLAIM");
   return {
@@ -1911,7 +2281,7 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
       distance: Number.isFinite(stopDistance) ? round(stopDistance, 8) : null,
       distanceAtr: Number.isFinite(stopDistanceAtr) ? round(stopDistanceAtr, 4) : null,
       dangerous: dangerousStop,
-      rule: "A stop within 0.35 ATR of a repeated/structural extreme is blocked unless a closed 15m sweep-and-reclaim supports the trade",
+      rule: "A stop within 0.35 ATR of a repeated/structural extreme is an execution blocker unless a closed 15m aligned sweep-and-reclaim has already cleared that pool",
     },
     sweep: { ...sweep, alignedWithPlan: alignedSweep, adverseToPlan: adverseSweep },
     crowding,
@@ -1920,6 +2290,7 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
     limitations: [
       "No free public endpoint reveals exact whale liquidation or account-level holdings across exchanges.",
       "Gate positioning, taker flow and large trades are single-exchange proxies and cannot independently create direction.",
+      "Crowding, one adverse sweep and two nearby failures are soft warnings unless price structure or execution evidence independently creates a hard blocker.",
     ],
   };
 }
@@ -2025,7 +2396,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const explicitCandleRule = directionLong ? plan.confirmation.close15mAbove : plan.confirmation.close15mBelow;
   const candlePassed = Number.isFinite(explicitCandleRule)
     ? (directionLong ? candleClose >= explicitCandleRule : candleClose <= explicitCandleRule)
-    : (directionLong ? candleClose > candleOpen : candleClose < candleOpen);
+    : false;
   const btcPricePassed = (!Number.isFinite(plan.confirmation.btcMinimumPrice) || btcPrice >= plan.confirmation.btcMinimumPrice)
     && (!Number.isFinite(plan.confirmation.btcMaximumPrice) || btcPrice <= plan.confirmation.btcMaximumPrice);
   const trendPassed = plan.confirmation.allowCountertrend || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
@@ -2039,9 +2410,66 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   );
   const liquidityRisk = planLiquidityRisk(plan, asset, failureHistory);
   const liquidityRiskPassed = liquidityRisk.passed;
-  const checks = { inZone, nearZone, executionCapPassed, candlePassed, btcPricePassed, trendPassed, rrPassed, flowPassed, orderBookPassed, liquidityRiskPassed };
+  const registeredModel = ["A", "B", "C"].includes(plan.model);
+  const registeredSubmodel = Boolean(SUBMODEL_DEFINITIONS[plan.submodel]?.parent === plan.model);
+  const regimePermission = submodelRegimePermission(plan.model, plan.submodel, plan.marketRegime);
+  const regimeDirectPermission = regimePermission === "DIRECT";
+  const locationPassed = plan.location?.quality === "GOOD" && plan.location?.rangePosition !== "MIDDLE";
+  const meaningfulTriggerPassed = plan.trigger?.meaningful === true && Number.isFinite(finite(plan.trigger?.level));
+  const protectivePrice = finite(plan.trigger?.protectiveStructure?.price);
+  const protectiveStructurePassed = Number.isFinite(protectivePrice)
+    && (directionLong ? price > protectivePrice && candleClose > protectivePrice : price < protectivePrice && candleClose < protectivePrice);
+  const modelAConditionPassed = plan.model !== "A" || trendPassed;
+  const acceptanceLevel = finite(plan.trigger?.acceptanceLevel);
+  const modelBConditionPassed = plan.model !== "B" || (
+    Number.isFinite(acceptanceLevel)
+    && (directionLong ? candleClose >= acceptanceLevel : candleClose <= acceptanceLevel)
+    && protectiveStructurePassed
+  );
+  const reclaimLevel = finite(plan.trigger?.reclaimLevel);
+  const modelCConditionPassed = plan.model !== "C" || (
+    liquidityRisk.sweep?.alignedWithPlan === true
+    && Number.isFinite(reclaimLevel)
+    && (directionLong ? candleClose >= reclaimLevel : candleClose <= reclaimLevel)
+    && meaningfulTriggerPassed
+    && protectiveStructurePassed
+  );
+  const riskContextPassed = plan.risk?.dailyRiskLimitReached !== true && plan.risk?.psychologicalVeto !== true;
+  const explicitHardBlockersPassed = !Array.isArray(plan.hardBlockers) || plan.hardBlockers.length === 0;
+  const checks = {
+    registeredModel,
+    registeredSubmodel,
+    regimeDirectPermission,
+    locationPassed,
+    meaningfulTriggerPassed,
+    protectiveStructurePassed,
+    modelAConditionPassed,
+    modelBConditionPassed,
+    modelCConditionPassed,
+    inZone,
+    nearZone,
+    executionCapPassed,
+    candlePassed,
+    btcPricePassed,
+    trendPassed,
+    rrPassed,
+    flowPassed,
+    orderBookPassed,
+    liquidityRiskPassed,
+    riskContextPassed,
+    explicitHardBlockersPassed,
+  };
   const confirmationPassed = Object.entries(checks).filter(([name]) => name !== "nearZone").every(([, passed]) => passed);
-  const state = confirmationPassed ? "CONFIRMED" : nearZone && !liquidityRiskPassed ? "RISK_BLOCKED" : nearZone ? "WATCHING" : "ARMED";
+  const hardBlockers = [];
+  if (!registeredModel) hardBlockers.push("NO_REGISTERED_MODEL");
+  if (!registeredSubmodel || regimePermission === "BLOCKED") hardBlockers.push("INVALID_SUBMODEL_OR_REGIME_PERMISSION");
+  if (!locationPassed) hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
+  if (!protectiveStructurePassed) hardBlockers.push("NO_VALID_PROTECTIVE_STRUCTURE");
+  if (!rrPassed) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
+  if (!liquidityRiskPassed) hardBlockers.push(...liquidityRisk.blockers);
+  if (!riskContextPassed) hardBlockers.push(plan.risk?.dailyRiskLimitReached ? "DAILY_RISK_LIMIT_REACHED" : "PSYCHOLOGICAL_VETO");
+  if (!explicitHardBlockersPassed) hardBlockers.push(...plan.hardBlockers);
+  const state = confirmationPassed ? "CONFIRMED" : nearZone && hardBlockers.length ? "RISK_BLOCKED" : nearZone ? "WATCHING" : "ARMED";
   const failedChecks = Object.entries(checks).filter(([name, passed]) => name !== "nearZone" && !passed).map(([name]) => name);
   return {
     state,
@@ -2058,8 +2486,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     failedChecks,
     flow,
     liquidityRisk,
+    hardBlockerScan: { passed: hardBlockers.length === 0, blockers: [...new Set(hardBlockers)], cannotBeOverriddenByScore: true },
+    softWarnings: [...new Set([...(plan.softWarnings || []), ...(liquidityRisk.warnings || [])])],
     touch,
-    reason: confirmationPassed ? "All GPT-plan and realtime confirmation checks passed" : state === "RISK_BLOCKED" ? `Liquidity/crowding protection blocked entry: ${liquidityRisk.blockers.join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
+    regimePermission,
+    reason: confirmationPassed ? "All GPT-plan and realtime confirmation checks passed" : state === "RISK_BLOCKED" ? `Hard blocker prevented entry: ${[...new Set(hardBlockers)].join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
     planId: plan.planId,
     checkedAt: new Date(now).toISOString(),
   };
@@ -2069,8 +2500,8 @@ function scannerNotification(plan, evaluation) {
   const direction = plan.direction === "LONG" ? "做多" : "做空";
   const price = Number.isFinite(evaluation.price) ? evaluation.price : "未知";
   if (evaluation.state === "CONFIRMED") return {
-    title: `✅ ${plan.symbol} ${direction}条件已确认`,
-    body: `现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M确认 ${evaluation.confirmed15mClose}\n依据：${plan.strategySummary}\n反向证据：${plan.strongestCounterEvidence || "无新增硬阻断"}`,
+    title: `✅ ${plan.symbol} 模型${plan.model}/${plan.submodel}条件已确认`,
+    body: `${direction}候选｜市场状态 ${plan.marketRegime}｜现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M关键触发复核 ${evaluation.confirmed15mClose}\n依据：${plan.strategySummary}\n仍须调用GPT复核新闻、心理和最新数据；本通知不等于自动开仓。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "ZONE_REACHED") return {
@@ -2084,8 +2515,8 @@ function scannerNotification(plan, evaluation) {
     level: "active",
   };
   if (evaluation.state === "RISK_BLOCKED") return {
-    title: `⛔ ${plan.symbol} 流动性风险否决开仓`,
-    body: `现价 ${price}，虽已到计划区，但禁止开仓。\n硬阻断：${evaluation.liquidityRisk?.blockers?.join("、") || "流动性风险未通过"}\n止损池距离：${evaluation.liquidityRisk?.stopPlacement?.distanceAtr ?? "未知"} ATR｜拥挤分 ${evaluation.liquidityRisk?.crowding?.score ?? "未知"}\n等待扫损并收回、拥挤降温或重新生成方案；不要自行放宽止损。`,
+    title: `⛔ ${plan.symbol} 课程硬阻断禁止开仓`,
+    body: `现价 ${price}，虽已到计划区，但禁止开仓。\n硬阻断：${evaluation.hardBlockerScan?.blockers?.join("、") || "必要闸门未通过"}\n止损池距离：${evaluation.liquidityRisk?.stopPlacement?.distanceAtr ?? "未知"} ATR｜拥挤仅作警告分 ${evaluation.liquidityRisk?.crowding?.score ?? "未知"}\n不得用评分抵消硬阻断；等待原模型重新满足，不得临时另造方向。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "INVALIDATED") return {
@@ -2312,6 +2743,7 @@ function openApi(origin) {
       symbol: { type: "string" },
       instrumentId: { type: "string" },
       ticker: moduleSchema,
+      indexPrice: moduleSchema,
       timeframes: {
         type: "object",
         properties: { "15m": moduleSchema, "1h": moduleSchema, "4h": moduleSchema },
@@ -2323,15 +2755,50 @@ function openApi(origin) {
       capitalFlow: moduleSchema,
       executionLiquidity: moduleSchema,
       liquidityRisk: moduleSchema,
+      effortVsResult: moduleSchema,
+      marketRegimeRouter: moduleSchema,
+      dataGaps: moduleSchema,
     },
   };
   const planSchema = {
     type: "object",
-    required: ["symbol", "direction", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "strategySummary", "triggerExplanation", "expiresAt"],
+    required: ["symbol", "direction", "model", "submodel", "marketRegime", "modelInvalidation", "location", "trigger", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "firstRealisticTarget", "minNetRR", "hardBlockers", "risk", "strategySummary", "triggerExplanation", "expiresAt"],
     properties: {
       planId: { type: "string", description: "Stable identifier for this exact final GPT plan; omit to auto-generate." },
       symbol: { type: "string", enum: ["ETHUSDT", "BTCUSDT"] },
       direction: { type: "string", enum: ["LONG", "SHORT"] },
+      model: { type: "string", enum: ["A", "B", "C"], description: "The only allowed course setup models. No model means no plan." },
+      submodel: { type: "string", enum: ["A1", "A2", "B1", "B2", "C1", "C2"], description: "Required child of A/B/C; it cannot create a fourth parent model." },
+      marketRegime: { type: "string", enum: ["TREND", "RANGE", "COMPRESSION", "TRANSITION"], description: "Technical regime selected before setup evaluation. Event and abnormal-liquidity risk remain independent hard blockers." },
+      modelConfluence: { type: "array", items: { type: "string" }, description: "Optional supporting overlap; priority remains A then B then C." },
+      modelInvalidation: { type: "string", description: "Causal model invalidation, not merely a price number." },
+      location: {
+        type: "object",
+        required: ["quality", "type", "rationale"],
+        properties: {
+          quality: { type: "string", enum: ["GOOD"] },
+          type: { type: "string" },
+          rationale: { type: "string" },
+          rangePosition: { type: "string", enum: ["EDGE", "BREAKOUT_RETEST", "TREND_PULLBACK", "LIQUIDITY_EXTREME", "UNKNOWN"] },
+        },
+      },
+      trigger: {
+        type: "object",
+        required: ["type", "level", "meaningful", "protectiveStructure"],
+        properties: {
+          type: { type: "string", enum: ["BOS", "CHOCH", "RECLAIM", "ACCEPTANCE", "REJECTION"] },
+          level: { type: "number" },
+          meaningful: { type: "boolean", enum: [true], description: "Must be meaningful structure, never a minor internal break." },
+          completedAtSave: { type: "boolean" },
+          reclaimLevel: { type: ["number", "null"], description: "Required for Model C." },
+          acceptanceLevel: { type: ["number", "null"], description: "Required for Model B." },
+          protectiveStructure: {
+            type: "object",
+            required: ["type", "price"],
+            properties: { type: { type: "string", enum: ["HL", "LH"] }, price: { type: "number" } },
+          },
+        },
+      },
       timeframe: { type: "string", description: "Flexible holding horizon selected from current structure; do not mechanically force short-term or swing." },
       expiresAt: { type: "string", format: "date-time", description: "Hard expiry, no more than seven days from now." },
       entryZone: {
@@ -2365,7 +2832,13 @@ function openApi(origin) {
           properties: { price: { type: "number" }, allocationPct: { type: "number" } },
         },
       },
-      minNetRR: { type: "number", description: "Minimum net risk/reward ratio after estimated costs; default 1.5." },
+      firstRealisticTarget: {
+        type: "object",
+        required: ["price", "basis"],
+        properties: { price: { type: "number" }, basis: { type: "string" } },
+        description: "Must equal TP1 and be based on the nearest realistic structural/liquidity obstacle.",
+      },
+      minNetRR: { type: "number", description: "Explicit configurable net RR threshold. Legacy defaults are unvalidated CONFIG, not course truths." },
       estimatedRoundTripCostPct: { type: "number", description: "Round-trip fees, slippage and funding as percent of notional; default 0.15." },
       confirmation: {
         type: "object",
@@ -2382,14 +2855,21 @@ function openApi(origin) {
       strategySummary: { type: "string", description: "The causal thesis from the final answer. It is shown in alerts so context is preserved." },
       triggerExplanation: { type: "string", description: "Exact before/after reasoning for why the setup becomes valid." },
       strongestCounterEvidence: { type: "string", description: "Strongest contrary evidence from the same final answer." },
+      hardBlockers: { type: "array", items: { type: "string" }, description: "Must be empty. A plan with any hard blocker is rejected." },
+      softWarnings: { type: "array", items: { type: "string" } },
       sourceAnalysisAt: { type: "string", format: "date-time" },
       risk: {
         type: "object",
+        required: ["accountEquityUsdt", "accountRiskPct", "leverage", "dailyRiskLimitReached", "psychologicalVeto"],
         properties: {
           accountEquityUsdt: { type: ["number", "null"] },
           accountRiskPct: { type: ["number", "null"] },
           leverage: { type: ["number", "null"] },
           marginMode: { type: "string" },
+          configStatus: { type: "string" },
+          dailyRiskLimitReached: { type: "boolean" },
+          psychologicalVeto: { type: "boolean" },
+          correlatedRiskPct: { type: ["number", "null"] },
         },
       },
     },
@@ -2398,7 +2878,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH perpetual data plus a GPT-plan-linked alert scanner with free liquidity-sweep, visible stop-pool, crowding and repeated-failure protection. After producing a formal trading plan, GPT must save that exact plan with saveTradingPlan before replying.",
+      description: "Realtime BTC/ETH data and plan scanner governed by the 32-lesson A/B/C model hierarchy. Hard blockers veto entry; confirmation data cannot create a setup.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -2407,7 +2887,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns OKX price/OI/funding plus Gate candles, flow, visible liquidity pools, closed-candle sweep/reclaim, crowding and large-taker proxies. Apply the 4H/1H/15M contract; hard liquidityRisk blockers veto entry. Save every formal plan before replying.",
+          description: "Returns source-labelled realtime data, structure candidates, volume-profile estimates, effort/result, flow and data gaps for the 32-lesson decision order.",
           security: [],
           responses: {
             200: {
@@ -2490,7 +2970,7 @@ function openApi(origin) {
         post: {
           operationId: "saveTradingPlan",
           summary: "Save the exact final GPT trading plan for automatic monitoring",
-          description: "MANDATORY after GPT creates or changes a formal plan. Save the final direction, entry, 15m confirmation, stop, targets, expiry, thesis and strongest counter-evidence. This replaces the old plan and links Bark alerts to this answer. Do not call for DATA_BLOCKED or no valid plan.",
+          description: "Save one exact A/B/C plan only after location, invalidation, meaningful trigger, first realistic target, RR and hard-blocker checks are defined.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -2540,7 +3020,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括方向、入场区、止损、止盈、失效价、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥和扫描令牌以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、标记价格、当前未平仓量、5分钟/15分钟/1小时未平仓量变化和资金费率。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、强平及多空比等辅助证据。该资金流仅代表单一交易所，不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底。服务地址：${origin}</p><p>最后更新：2026-08-22</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥和扫描令牌以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、指数价格、标记价格、当前未平仓量、5分钟/15分钟/1小时未平仓量变化和资金费率。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、强平及多空比等辅助证据。该资金流仅代表单一交易所，不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底。服务地址：${origin}</p><p>最后更新：2026-09-05</p></body></html>`;
 }
 
 async function handleSnapshot(request, ctx) {
@@ -2620,6 +3100,49 @@ export class ScannerState {
   }
 }
 
+export function evaluateCourseDecision(input = {}) {
+  const hardBlockers = [];
+  const softWarnings = [...(Array.isArray(input.softWarnings) ? input.softWarnings : [])];
+  const model = ["A", "B", "C"].includes(input.model) ? input.model : null;
+  const submodel = scannerText(input.submodel, "", 8).toUpperCase();
+  const marketRegime = scannerText(input.marketRegime, "", 24).toUpperCase();
+  const regimePermission = submodelRegimePermission(model, submodel, marketRegime);
+  const direction = ["LONG", "SHORT"].includes(input.direction) ? input.direction : null;
+  if (!model) hardBlockers.push("NO_MODEL");
+  if (!SUBMODEL_DEFINITIONS[submodel] || SUBMODEL_DEFINITIONS[submodel].parent !== model) hardBlockers.push("INVALID_SUBMODEL");
+  if (!["TREND", "RANGE", "COMPRESSION", "TRANSITION"].includes(marketRegime) || regimePermission === "BLOCKED") hardBlockers.push("REGIME_SUBMODEL_NOT_PERMITTED");
+  if (!direction) hardBlockers.push("NO_DIRECTION_CANDIDATE");
+  if (input.locationQuality !== "GOOD" || input.rangePosition === "MIDDLE") hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
+  if (input.execution?.clearInvalidation !== true) hardBlockers.push("NO_CLEAR_MODEL_OR_STRUCTURE_INVALIDATION");
+  if (!Number.isFinite(finite(input.execution?.netRR)) || !Number.isFinite(finite(input.execution?.minNetRR)) || finite(input.execution.netRR) < finite(input.execution.minNetRR)) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
+  if (input.environment?.btcSystemicConflict === true) hardBlockers.push("SEVERE_BTC_SYSTEMIC_CONFLICT");
+  if (input.environment?.majorNewsExecutionRisk === true) hardBlockers.push("MAJOR_EVENT_EXECUTION_RISK");
+  if (input.environment?.liquidityAbnormal === true || input.execution?.slippageAbnormal === true) hardBlockers.push("ABNORMAL_LIQUIDITY_OR_EXECUTION");
+  if (input.execution?.dangerousStopZone === true && input.execution?.alignedSweepClearedStopPool !== true) hardBlockers.push("DANGEROUS_STOP_ZONE");
+  if (input.data?.requiredFieldsReady !== true) hardBlockers.push("REQUIRED_DATA_GAP");
+  if (input.risk?.dailyRiskLimitReached === true) hardBlockers.push("DAILY_RISK_LIMIT_REACHED");
+  if (input.risk?.psychologicalVeto === true) hardBlockers.push("PSYCHOLOGICAL_VETO");
+
+  if (input.confirmation?.extremeCrowding === true) softWarnings.push("EXTREME_CROWDING_REVIEW");
+  if (input.confirmation?.adverseSweep === true) softWarnings.push("ADVERSE_SWEEP_REQUIRES_STRUCTURE_REVIEW");
+  if (input.history?.nearbyFailures >= 2) softWarnings.push("REPEATED_FAILURE_ZONE_REQUIRES_REVIEW");
+  if (input.history?.failurePatternRepeated === true) softWarnings.push("HISTORICAL_FAILURE_PATTERN_REPEATED");
+
+  const triggerReady = input.trigger?.complete === true && input.trigger?.meaningful === true && input.trigger?.protectiveStructure === true;
+  let modelReady = false;
+  if (model === "A") modelReady = input.setup?.trendExists === true && input.setup?.pullbackAtMeaningfulLocation === true && input.setup?.counterMoveEfficiencyFaded === true && triggerReady;
+  if (model === "B") modelReady = input.setup?.breakout === true && input.setup?.retest === true && input.setup?.acceptance === true && input.setup?.rejection !== true && triggerReady;
+  if (model === "C") modelReady = input.setup?.sweep === true && input.setup?.reclaim === true && input.setup?.opposingProgressFailed === true && input.setup?.structureShift === true && triggerReady;
+
+  if (hardBlockers.length) {
+    return { finalState: "NO_TRADE", operationalState: input.data?.requiredFieldsReady === true ? "NO_TRADE" : "DATA_BLOCKED", model: model || "NONE", submodel: submodel || "NONE", marketRegime: marketRegime || "UNKNOWN", regimePermission, hardBlockers: [...new Set(hardBlockers)], softWarnings: [...new Set(softWarnings)], openNow: false, scoreIgnoredForPermission: true };
+  }
+  if (!modelReady || regimePermission === "WAIT_ONLY") {
+    return { finalState: "WAIT", operationalState: "ARMED", model, submodel, marketRegime, regimePermission, hardBlockers: [], softWarnings: [...new Set(softWarnings)], openNow: false, scoreIgnoredForPermission: true };
+  }
+  return { finalState: direction, operationalState: "OPEN_NOW", model, submodel, marketRegime, regimePermission, hardBlockers: [], softWarnings: [...new Set(softWarnings)], openNow: true, scoreIgnoredForPermission: true };
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: JSON_HEADERS });
@@ -2629,7 +3152,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution/OI/funding + Gate USDT perpetual primary candles/free auxiliary capital flow + Kraken Spot emergency fallback", normalOkxRequests: 7, gateCapitalFlowRequests: 6, coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution/index/OI/funding + Gate USDT perpetual primary candles/free auxiliary capital flow + Kraken Spot emergency fallback", normalOkxRequests: 8, gateCapitalFlowRequests: 6, coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
