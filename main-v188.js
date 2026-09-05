@@ -1,10 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.1.0-regime-submodel-router";
-const API_VERSION = "4.1.0";
+const BUILD = "crypto-alpha-worker-v19.2.0-free-liquidation-risk-proxy";
+const API_VERSION = "4.2.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
-const CACHE_NAMESPACE = "v19.1.0-regime-submodel-router";
+const COINALYZE_BASE = "https://api.coinalyze.net/v1";
+const CACHE_NAMESPACE = "v19.2.0-free-liquidation-risk-proxy";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -67,6 +68,8 @@ const CACHE_POLICY = {
   krakenSpotCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 1, timeoutMs: 3500 },
   krakenSpotCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 1, timeoutMs: 3500 },
   krakenSpotCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 1, timeoutMs: 3500 },
+  coinalyzeMarkets: { freshSeconds: 6 * 60 * 60, staleSeconds: 24 * 60 * 60, attempts: 2, timeoutMs: 5000 },
+  coinalyzeLiquidations: { freshSeconds: 60, staleSeconds: 10 * 60, attempts: 2, timeoutMs: 5000 },
 };
 
 const memoryCache = new Map();
@@ -212,7 +215,7 @@ async function mapLimit(items, limit, mapper) {
   return results;
 }
 
-async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500) {
+async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500, extraHeaders = {}) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (isOkx) await acquireOkxPermit();
@@ -220,7 +223,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.1.0" },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.2.0", ...extraHeaders },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -246,7 +249,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
   throw lastError || new Error(`${label} request failed`);
 }
 
-async function cachedJson({ key, url, label, policy, isOkx = false, validate, persistentCache = true }) {
+async function cachedJson({ key, url, label, policy, isOkx = false, validate, persistentCache = true, headers = {} }) {
   const cached = await readPersistentCache(key, persistentCache);
   if (cached) {
     const ageSeconds = (Date.now() - cached.storedAt) / 1000;
@@ -256,7 +259,7 @@ async function cachedJson({ key, url, label, policy, isOkx = false, validate, pe
   if (inflight.has(key)) return inflight.get(key);
   const work = (async () => {
     try {
-      const value = await fetchJson(url, label, policy.attempts, isOkx, validate, policy.timeoutMs);
+      const value = await fetchJson(url, label, policy.attempts, isOkx, validate, policy.timeoutMs, headers);
       const stored = await writePersistentCache(key, value, policy.staleSeconds, persistentCache);
       return cacheResult(stored, "live");
     } catch (error) {
@@ -620,6 +623,230 @@ function buildGateCapitalFlow(raw, config) {
   };
 }
 
+function median(values) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function chooseCoinalyzeMarkets(markets, baseAsset) {
+  const preferred = ["OKX", "BINANCE", "BYBIT", "GATE", "BITGET", "KRAKEN"];
+  const candidates = (Array.isArray(markets) ? markets : []).filter((market) =>
+    String(market?.base_asset || "").toUpperCase() === baseAsset
+    && market?.is_perpetual === true
+    && String(market?.margined || "").toUpperCase() === "STABLE"
+    && ["USDT", "USDC", "USD"].includes(String(market?.quote_asset || "").toUpperCase())
+    && typeof market?.symbol === "string"
+    && market.symbol.length <= 80,
+  );
+  candidates.sort((left, right) => {
+    const rank = (market) => {
+      const label = `${market?.exchange || ""} ${market?.symbol_on_exchange || ""}`.toUpperCase();
+      const preferredRank = preferred.findIndex((name) => label.includes(name));
+      const quoteRank = String(market?.quote_asset || "").toUpperCase() === "USDT" ? 0 : 1;
+      return (preferredRank < 0 ? 100 : preferredRank) * 10 + quoteRank;
+    };
+    return rank(left) - rank(right);
+  });
+  const selected = [];
+  const exchanges = new Set();
+  for (const market of candidates) {
+    const exchange = String(market.exchange || market.symbol.split(".").at(-1) || "UNKNOWN");
+    if (exchanges.has(exchange)) continue;
+    exchanges.add(exchange);
+    selected.push({
+      symbol: market.symbol,
+      exchange,
+      symbolOnExchange: market.symbol_on_exchange || null,
+      quoteAsset: market.quote_asset || null,
+    });
+    if (selected.length >= 3) break;
+  }
+  return selected;
+}
+
+function aggregateCoinalyzeHistory(historyResponses, selectedMarkets) {
+  const selectedSymbols = new Set(selectedMarkets.map((market) => market.symbol));
+  const buckets = new Map();
+  for (const response of Array.isArray(historyResponses) ? historyResponses : []) {
+    if (!selectedSymbols.has(response?.symbol) || !Array.isArray(response?.history)) continue;
+    for (const row of response.history) {
+      const timestamp = finite(row?.t);
+      if (!Number.isFinite(timestamp)) continue;
+      const bucket = buckets.get(timestamp) || { timestamp, longLiquidationUsd: 0, shortLiquidationUsd: 0, marketCount: 0 };
+      bucket.longLiquidationUsd += Math.max(0, finite(row?.l, 0));
+      bucket.shortLiquidationUsd += Math.max(0, finite(row?.s, 0));
+      bucket.marketCount += 1;
+      buckets.set(timestamp, bucket);
+    }
+  }
+  return [...buckets.values()].sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function liquidationPeriod(points, bars, label) {
+  const sample = points.slice(-bars);
+  if (!sample.length) return errorModule(`No Coinalyze ${label} liquidation samples`);
+  const longLiquidationUsd = sample.reduce((sum, point) => sum + point.longLiquidationUsd, 0);
+  const shortLiquidationUsd = sample.reduce((sum, point) => sum + point.shortLiquidationUsd, 0);
+  const totalLiquidationUsd = longLiquidationUsd + shortLiquidationUsd;
+  return {
+    status: "ok",
+    interval: label,
+    sampleCount: sample.length,
+    longLiquidationUsd: round(longLiquidationUsd, 2),
+    shortLiquidationUsd: round(shortLiquidationUsd, 2),
+    totalLiquidationUsd: round(totalLiquidationUsd, 2),
+    dominantSide: !totalLiquidationUsd ? "NONE" : longLiquidationUsd >= shortLiquidationUsd * 1.25 ? "LONG_LIQUIDATIONS" : shortLiquidationUsd >= longLiquidationUsd * 1.25 ? "SHORT_LIQUIDATIONS" : "BALANCED",
+    startAt: new Date(sample[0].timestamp * 1000).toISOString(),
+    endAt: new Date(sample.at(-1).timestamp * 1000).toISOString(),
+  };
+}
+
+function buildCoinalyzeAssetModule(historyResponses, selectedMarkets) {
+  const points = aggregateCoinalyzeHistory(historyResponses, selectedMarkets);
+  if (!points.length) return errorModule("Coinalyze returned no usable realized-liquidation history for selected markets");
+  const periods = {
+    "5m": liquidationPeriod(points, 1, "5m"),
+    "15m": liquidationPeriod(points, 3, "15m"),
+    "1h": liquidationPeriod(points, 12, "1h"),
+    "4h": liquidationPeriod(points, 48, "4h"),
+    "24h": liquidationPeriod(points, 288, "24h"),
+  };
+  const baseline = median(points.slice(-288).map((point) => point.longLiquidationUsd + point.shortLiquidationUsd).filter((value) => value > 0));
+  const latest15m = finite(periods["15m"].totalLiquidationUsd);
+  const intensityMultiple = Number.isFinite(baseline) && baseline > 0 && Number.isFinite(latest15m) ? latest15m / (baseline * 3) : null;
+  return {
+    status: "ok",
+    source: "COINALYZE_FREE_API",
+    role: "OPTIONAL_REALIZED_LIQUIDATION_CONFIRMATION_ONLY",
+    scope: "SELECTED_EXCHANGES_REALIZED_LIQUIDATIONS_NOT_FULL_MARKET_FUTURE_MAP",
+    selectedMarkets,
+    periods,
+    intensityMultipleVs24hMedian5m: Number.isFinite(intensityMultiple) ? round(intensityMultiple, 4) : null,
+    intensity: !Number.isFinite(intensityMultiple) ? "UNKNOWN" : intensityMultiple >= 3 ? "EXTREME" : intensityMultiple >= 1.5 ? "ELEVATED" : "NORMAL",
+    latestAt: new Date(points.at(-1).timestamp * 1000).toISOString(),
+    providerFieldSemantics: { l: "LONG_LIQUIDATIONS", s: "SHORT_LIQUIDATIONS" },
+    standaloneSignal: false,
+  };
+}
+
+async function loadCoinalyzeLiquidations(apiKey) {
+  if (!apiKey) return { configured: false, status: "configuration_required", reason: "COINALYZE_API_KEY_NOT_CONFIGURED", assets: {} };
+  const headers = { api_key: String(apiKey) };
+  try {
+    const markets = await cachedJson({
+      key: "coinalyze:future-markets",
+      url: `${COINALYZE_BASE}/future-markets`,
+      label: "Coinalyze future markets",
+      policy: CACHE_POLICY.coinalyzeMarkets,
+      headers,
+      validate: (body) => {
+        if (!Array.isArray(body) || !body.length) throw new Error("Coinalyze future markets are empty");
+        return body;
+      },
+    });
+    const selected = {
+      BTCUSDT: chooseCoinalyzeMarkets(markets, "BTC"),
+      ETHUSDT: chooseCoinalyzeMarkets(markets, "ETH"),
+    };
+    const symbols = [...new Set(Object.values(selected).flat().map((market) => market.symbol))].slice(0, 20);
+    if (!symbols.length) throw new Error("No supported BTC/ETH stable-margined perpetual markets found on Coinalyze");
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - 24 * 60 * 60;
+    const query = new URLSearchParams({ symbols: symbols.join(","), interval: "5min", from: String(from), to: String(now), convert_to_usd: "true" });
+    const history = await cachedJson({
+      key: `coinalyze:liquidations:${symbols.join("|")}`,
+      url: `${COINALYZE_BASE}/liquidation-history?${query.toString()}`,
+      label: "Coinalyze liquidation history",
+      policy: CACHE_POLICY.coinalyzeLiquidations,
+      headers,
+      validate: (body) => {
+        if (!Array.isArray(body)) throw new Error("Coinalyze liquidation history is invalid");
+        return body;
+      },
+    });
+    return {
+      configured: true,
+      status: "ok",
+      requestSymbolCount: symbols.length,
+      rateLimitAccounting: "EACH_SYMBOL_COUNTS_AS_ONE_PROVIDER_API_CALL",
+      assets: Object.fromEntries(Object.entries(selected).map(([symbol, marketsForAsset]) => [symbol, buildCoinalyzeAssetModule(history, marketsForAsset)])),
+    };
+  } catch (error) {
+    return { configured: true, status: "unavailable", reason: error?.message || String(error), assets: {} };
+  }
+}
+
+function gateLiquidationFallback(asset) {
+  const periods = {};
+  for (const label of ["5m", "15m", "1h", "4h"]) {
+    const source = asset?.capitalFlow?.periods?.[label];
+    if (source?.status !== "ok") continue;
+    const longLiquidationUsd = finite(source.longLiquidationUsd, 0);
+    const shortLiquidationUsd = finite(source.shortLiquidationUsd, 0);
+    const totalLiquidationUsd = longLiquidationUsd + shortLiquidationUsd;
+    periods[label] = {
+      status: "ok",
+      interval: label,
+      longLiquidationUsd: round(longLiquidationUsd, 2),
+      shortLiquidationUsd: round(shortLiquidationUsd, 2),
+      totalLiquidationUsd: round(totalLiquidationUsd, 2),
+      dominantSide: !totalLiquidationUsd ? "NONE" : longLiquidationUsd >= shortLiquidationUsd * 1.25 ? "LONG_LIQUIDATIONS" : shortLiquidationUsd >= longLiquidationUsd * 1.25 ? "SHORT_LIQUIDATIONS" : "BALANCED",
+      startAt: source.startAt || null,
+      endAt: source.endAt || null,
+    };
+  }
+  if (!Object.keys(periods).length) return errorModule("No realized-liquidation history source is available");
+  return {
+    status: "fallback",
+    source: "GATE_USDT_PERPETUAL_PUBLIC",
+    role: "SINGLE_EXCHANGE_REALIZED_LIQUIDATION_FALLBACK_ONLY",
+    scope: "SINGLE_EXCHANGE_REALIZED_LIQUIDATIONS_NOT_FULL_MARKET_FUTURE_MAP",
+    periods,
+    intensity: "UNKNOWN",
+    selectedMarkets: [{ exchange: "GATE", symbolOnExchange: asset?.symbol || null }],
+    standaloneSignal: false,
+  };
+}
+
+function buildLiquidationRiskProxy(asset, coinalyzeModule) {
+  const source = coinalyzeModule?.status === "ok" ? coinalyzeModule : gateLiquidationFallback(asset);
+  const period = source?.periods?.["15m"] || {};
+  const confirmed = confirmedRecentCandles(asset?.timeframes?.["15m"], 3);
+  const first = finite(confirmed.at(-2)?.c);
+  const last = finite(confirmed.at(-1)?.c);
+  const priceChange15mPct = Number.isFinite(first) && first > 0 && Number.isFinite(last) ? (last - first) / first * 100 : null;
+  const oiChange15mPct = finite(asset?.derivatives?.openInterest?.change15mPct, finite(asset?.capitalFlow?.periods?.["15m"]?.openInterestChangePct));
+  const dominantSide = period?.dominantSide || "UNKNOWN";
+  const intensity = source?.intensity || "UNKNOWN";
+  const longFlush = dominantSide === "LONG_LIQUIDATIONS";
+  const shortSqueeze = dominantSide === "SHORT_LIQUIDATIONS";
+  const cascadeContinuation = intensity === "EXTREME" && ((longFlush && Number.isFinite(priceChange15mPct) && priceChange15mPct <= -0.2) || (shortSqueeze && Number.isFinite(priceChange15mPct) && priceChange15mPct >= 0.2));
+  const exhaustionCandidate = (longFlush && Number.isFinite(priceChange15mPct) && priceChange15mPct >= -0.05)
+    || (shortSqueeze && Number.isFinite(priceChange15mPct) && priceChange15mPct <= 0.05);
+  return {
+    ...source,
+    riskClassification: cascadeContinuation ? "CASCADE_CONTINUATION_RISK" : exhaustionCandidate ? "LIQUIDATION_EXHAUSTION_OR_ABSORPTION_CANDIDATE" : intensity === "EXTREME" || intensity === "ELEVATED" ? "ELEVATED_REALIZED_LIQUIDATIONS" : "NORMAL_OR_INCONCLUSIVE",
+    evidence: {
+      dominantSide15m: dominantSide,
+      priceChange15mPct: Number.isFinite(priceChange15mPct) ? round(priceChange15mPct, 5) : null,
+      openInterestChange15mPct: Number.isFinite(oiChange15mPct) ? round(oiChange15mPct, 5) : null,
+      cascadeContinuation,
+      exhaustionCandidate,
+    },
+    permissions: {
+      fullMarketFutureLiquidationMap: false,
+      exactWhalePositions: false,
+      standaloneDirection: false,
+      createSetup: false,
+      hardBlockerByItself: false,
+      requirePriceStructureConfirmation: true,
+    },
+    limitation: "This proxy measures already-realized liquidations on selected markets. It does not reveal future liquidation levels, exact whale positions or guaranteed price magnets.",
+  };
+}
+
 function buildExecutionLiquidity(asset) {
   const ticker = asset?.ticker || {};
   const orderBook = asset?.capitalFlow?.orderBook || {};
@@ -795,6 +1022,7 @@ function buildMarketLiquidityContext(asset) {
       long: largeParticipantFootprint("LONG", asset),
       short: largeParticipantFootprint("SHORT", asset),
     },
+    realizedLiquidationRisk: asset?.liquidationRiskProxy || errorModule("Realized-liquidation proxy unavailable"),
     policy: {
       exactWhalePositionsAvailable: false,
       inferredPsychologyOnly: true,
@@ -1605,8 +1833,11 @@ async function buildSnapshot(options = {}) {
       derivatives: { openInterest: errorModule("Not loaded"), funding: errorModule("Not loaded") },
       capitalFlow: errorModule("Not loaded"),
       executionLiquidity: errorModule("Not loaded"),
+      liquidationRiskProxy: errorModule("Not loaded"),
     };
   }
+
+  const coinalyzePromise = loadCoinalyzeLiquidations(options.coinalyzeApiKey);
 
   let krakenTickerPromise;
   async function getKrakenTickers() {
@@ -1805,6 +2036,11 @@ async function buildSnapshot(options = {}) {
     }
   }
 
+  const coinalyze = await coinalyzePromise;
+  if (coinalyze.configured && coinalyze.status !== "ok") {
+    supplementalErrors.push({ source: "COINALYZE_FREE_API", module: "realizedLiquidations", error: coinalyze.reason || "Unavailable" });
+  }
+
   for (const [symbol, asset] of Object.entries(assets)) {
     for (const type of ["openInterest", "funding"]) {
       if (asset.derivatives[type].status !== "ok") {
@@ -1814,13 +2050,15 @@ async function buildSnapshot(options = {}) {
       }
     }
     asset.executionLiquidity = buildExecutionLiquidity(asset);
+    asset.liquidationRiskProxy = buildLiquidationRiskProxy(asset, coinalyze.assets?.[symbol]);
     asset.liquidityRisk = buildMarketLiquidityContext(asset);
     asset.effortVsResult = buildEffortVsResult(asset);
     asset.marketRegimeRouter = buildMarketRegimeRouter(asset);
     asset.dataGaps = {
       spotCvd: { status: "unavailable", reason: "No free stable spot trade feed is connected; Gate taker flow must not be relabeled as spot CVD." },
       perpetualCvd: { status: "unavailable", reason: "Active taker net flow is available, but true cumulative perpetual CVD is not returned." },
-      globalLiquidationMap: { status: "unavailable", reason: "No free stable cross-exchange liquidation-map endpoint is connected; Gate reports only single-exchange realized liquidations." },
+      globalLiquidationMap: { status: "unavailable", reason: "A realized-liquidation risk proxy is available, but it is not a future-price liquidation map and must not be presented as one." },
+      futureLiquidationLevels: { status: "unavailable", reason: "Free public data does not reveal exact future liquidation clusters across the whole market." },
       exactWhalePositions: { status: "unavailable", reason: "Public data cannot identify exact whale account holdings." },
       newsAndMacro: { status: "external_research_required", reason: "GPT must verify current official/news sources separately before a final trade decision." },
     };
@@ -1856,14 +2094,16 @@ async function buildSnapshot(options = {}) {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution/index/mark price, current OI, OI 5m/15m/1h changes and funding; Gate USDT perpetual primary candles and free auxiliary capital flow; Kraken Spot emergency fallback",
+    source: "OKX USDT perpetual execution/index/mark price, current OI, OI 5m/15m/1h changes and funding; Gate USDT perpetual primary candles/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency fallback",
     requestBudget: {
       plannedOkx: 8,
-      plannedUpstreamFetches: 20,
-      plannedCloudflareSubrequestsCold: 36,
+      plannedUpstreamFetches: coinalyze.configured ? 22 : 20,
+      plannedCloudflareSubrequestsCold: coinalyze.configured ? 40 : 36,
       maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 49,
       cloudflareFreeLimit: 50,
-      persistentPerModuleCache: "OKX_ONLY",
+      persistentPerModuleCache: "OKX_GATE_KRAKEN_AND_OPTIONAL_COINALYZE",
+      coinalyzeConfigured: coinalyze.configured,
+      coinalyzeProviderCallUnits: coinalyze.requestSymbolCount || 0,
     },
     reliability: {
       okxConcurrency: MAX_OKX_CONCURRENCY,
@@ -1873,6 +2113,7 @@ async function buildSnapshot(options = {}) {
       candleQualityGate: { maxPriceDeviationPct: 0.75, minimumNonZeroVolumeRatio: 0.8, minimumContinuityRatio: 0.95 },
       capitalFlowPolicy: "Gate single-exchange estimate, confirmation only, never a standalone trigger or DATA_READY blocker",
       liquidityRiskPolicy: "Closed-candle sweep/reclaim, visible stop-pool proximity, quantified crowding and large-taker footprints are veto/context layers; no exact whale identity is claimed",
+      liquidationRiskProxyPolicy: "Optional Coinalyze realized-liquidation history with Gate fallback; never a future liquidation map, direction engine, setup creator or DATA_READY blocker",
     },
     analysisContract: {
       decisionOrder: ["DATA_TRUTH", "STRUCTURE", "MODEL", "LOCATION", "TRIGGER", "CONFIRMATION", "BTC_ENVIRONMENT", "EXECUTION", "HARD_BLOCKER", "RR_RISK", "FINAL_DECISION"],
@@ -1913,8 +2154,8 @@ async function buildSnapshot(options = {}) {
       },
       microstructureContract: {
         executionPrimary: "OKX_BID_ASK_MARK_PRICE",
-        auxiliary: ["GATE_ORDER_BOOK_DEPTH", "GATE_LARGE_TAKER_TRADES", "GATE_ACTIVE_FLOW"],
-        liquidityProtection: ["CLOSED_15M_SWEEP_RECLAIM", "VISIBLE_EQUAL_HIGH_LOW_POOLS", "QUANTIFIED_CROWDING", "REPEATED_FAILURE_ZONE_COOLDOWN"],
+        auxiliary: ["GATE_ORDER_BOOK_DEPTH", "GATE_LARGE_TAKER_TRADES", "GATE_ACTIVE_FLOW", "COINALYZE_REALIZED_LIQUIDATIONS_OPTIONAL"],
+        liquidityProtection: ["CLOSED_15M_SWEEP_RECLAIM", "VISIBLE_EQUAL_HIGH_LOW_POOLS", "REALIZED_LIQUIDATION_RISK_PROXY", "QUANTIFIED_CROWDING", "REPEATED_FAILURE_ZONE_COOLDOWN"],
         exactWhaleAccountPositionsClaimed: false,
         standaloneSignal: false,
         automaticOrderPlacement: false,
@@ -2259,6 +2500,7 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
   const adverseSweep = long ? sweep.bearishSweepReclaim === true : sweep.bullishSweepReclaim === true;
   const crowding = directionalCrowding(plan.direction, asset);
   const participant = largeParticipantFootprint(plan.direction, asset);
+  const liquidationProxy = asset?.liquidationRiskProxy || {};
   const failures = failureZoneEvidence(plan, failureHistory);
   const blockers = [];
   if (plan.liquidityProtection.blockDangerousStopPool && dangerousStop && !alignedSweep) blockers.push("STOP_INSIDE_OR_JUST_BEYOND_VISIBLE_LIQUIDITY_POOL_WITHOUT_RECLAIM");
@@ -2269,6 +2511,11 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
   if (adverseSweep) warnings.push("RECENT_ADVERSE_SWEEP_RECLAIM_REQUIRES_STRUCTURE_REVIEW");
   if (failures.blocked) warnings.push("REPEATED_FAILURE_ZONE_REQUIRES_REVIEW");
   if (participant.classification === "ADVERSE") warnings.push("LARGE_TAKER_FOOTPRINT_ADVERSE");
+  if (liquidationProxy.riskClassification === "CASCADE_CONTINUATION_RISK") {
+    const dominant = liquidationProxy?.evidence?.dominantSide15m;
+    if ((long && dominant === "LONG_LIQUIDATIONS") || (!long && dominant === "SHORT_LIQUIDATIONS")) warnings.push("REALIZED_LIQUIDATION_CASCADE_ADVERSE_TO_PLAN");
+  }
+  if (liquidationProxy.riskClassification === "LIQUIDATION_EXHAUSTION_OR_ABSORPTION_CANDIDATE") warnings.push("LIQUIDATION_EXHAUSTION_REQUIRES_STRUCTURE_CONFIRMATION");
   if (!alignedSweep) warnings.push("NO_CONFIRMED_ALIGNED_15M_SWEEP_RECLAIM");
   return {
     passed: blockers.length === 0,
@@ -2286,9 +2533,10 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
     sweep: { ...sweep, alignedWithPlan: alignedSweep, adverseToPlan: adverseSweep },
     crowding,
     largeParticipantFootprint: participant,
+    realizedLiquidationRisk: liquidationProxy,
     historicalFailureZone: failures,
     limitations: [
-      "No free public endpoint reveals exact whale liquidation or account-level holdings across exchanges.",
+      "The free liquidation proxy measures realized liquidations only; it does not reveal exact future liquidation levels or account-level holdings.",
       "Gate positioning, taker flow and large trades are single-exchange proxies and cannot independently create direction.",
       "Crowding, one adverse sweep and two nearby failures are soft warnings unless price structure or execution evidence independently creates a hard blocker.",
     ],
@@ -2626,7 +2874,7 @@ async function runScanner(env) {
   }
   let snapshot;
   try {
-    snapshot = await buildSnapshot({ scannerMode: true });
+    snapshot = await buildSnapshot({ scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY });
   } catch (error) {
     snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) };
   }
@@ -2754,6 +3002,7 @@ function openApi(origin) {
       },
       capitalFlow: moduleSchema,
       executionLiquidity: moduleSchema,
+      liquidationRiskProxy: moduleSchema,
       liquidityRisk: moduleSchema,
       effortVsResult: moduleSchema,
       marketRegimeRouter: moduleSchema,
@@ -2913,6 +3162,8 @@ function openApi(origin) {
                           maximumCloudflareSubrequestsWithAllFallbacksAndRetries: { type: "integer" },
                           cloudflareFreeLimit: { type: "integer" },
                           persistentPerModuleCache: { type: "string" },
+                          coinalyzeConfigured: { type: "boolean" },
+                          coinalyzeProviderCallUnits: { type: "integer" },
                         },
                       },
                       coverage: {
@@ -3020,17 +3271,17 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥和扫描令牌以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、指数价格、标记价格、当前未平仓量、5分钟/15分钟/1小时未平仓量变化和资金费率。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、强平及多空比等辅助证据。该资金流仅代表单一交易所，不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底。服务地址：${origin}</p><p>最后更新：2026-09-05</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、指数价格、标记价格、当前未平仓量、5分钟/15分钟/1小时未平仓量变化和资金费率。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、已发生强平及多空比等辅助证据。可选 Coinalyze 免费接口仅补充所选市场已经发生的清算历史，不是全市场未来清算地图。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底。服务地址：${origin}</p><p>最后更新：2026-09-05</p></body></html>`;
 }
 
-async function handleSnapshot(request, ctx) {
+async function handleSnapshot(request, env, ctx) {
   const cache = globalThis.caches?.default;
   const cacheKey = new Request(`https://crypto-alpha-cache.invalid/${CACHE_NAMESPACE}/realtime`);
   if (cache) {
     const cached = await cache.match(cacheKey);
     if (cached) return new Response(cached.body, cached);
   }
-  const snapshot = await buildSnapshot();
+  const snapshot = await buildSnapshot({ coinalyzeApiKey: env?.COINALYZE_API_KEY });
   const response = json(snapshot, 200, { "cache-control": `public, max-age=1, s-maxage=${SNAPSHOT_CACHE_SECONDS}` });
   if (cache) {
     const write = cache.put(cacheKey, response.clone()).catch(() => {});
@@ -3150,9 +3401,9 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const origin = url.origin;
 
-    if (request.method === "GET" && path === "/") return handleSnapshot(request, ctx);
+    if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution/index/OI/funding + Gate USDT perpetual primary candles/free auxiliary capital flow + Kraken Spot emergency fallback", normalOkxRequests: 8, gateCapitalFlowRequests: 6, coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution/index/OI/funding + Gate USDT perpetual primary candles/free auxiliary capital flow + optional Coinalyze realized-liquidation history + Kraken Spot emergency fallback", normalOkxRequests: 8, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
