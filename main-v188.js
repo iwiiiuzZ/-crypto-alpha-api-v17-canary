@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.3.2-pressure-zone-integrity";
-const API_VERSION = "4.3.2";
+const BUILD = "crypto-alpha-worker-v19.4.0-validation-reality-governance";
+const API_VERSION = "4.4.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.3.2-pressure-zone-integrity";
+const CACHE_NAMESPACE = "v19.4.0-validation-reality-governance";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -240,7 +240,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.3.0", ...extraHeaders },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.4.0", ...extraHeaders },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -2403,6 +2403,19 @@ async function buildSnapshot(options = {}) {
         standaloneSignal: false,
         automaticOrderPlacement: false,
       },
+      validationGovernance: {
+        requiredAudits: ["LOOKAHEAD_BIAS", "RECURSIVE_INDICATOR_STABILITY", "WALK_FORWARD_OUT_OF_SAMPLE", "FILL_FEE_SLIPPAGE_FUNDING_REALITY", "PARAMETER_STABILITY", "REGIME_AND_SUBMODEL_DRIFT"],
+        promotionPath: ["RESEARCH", "OUT_OF_SAMPLE", "FORWARD_TEST", "SMALL_SIZE_LIVE", "FORMAL_RULE"],
+        policy: "AI or external strategies remain shadow evidence until regime-specific out-of-sample, forward and small-live results improve expectancy or drawdown; they cannot create direction or a fourth model.",
+      },
+      executionRealityContract: {
+        directionAwareRiskReward: true,
+        firstTargetMustRemainAheadOfCurrentPrice: true,
+        stopMustRemainOnInvalidationSide: true,
+        costsIncluded: ["FEES", "SLIPPAGE", "FUNDING"],
+        costStressMultiplier: 1.5,
+        optimisticSameBarFillAllowedInValidation: false,
+      },
       scannerPriceContract: {
         rule: "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE",
         historicalCrossingAllowed: false,
@@ -2759,12 +2772,43 @@ function trendAgainst(direction, timeframe) {
   return timeframe.trend === "STRONG_UP" || (timeframe.trend === "UP" && timeframe.structure === "HH_HL");
 }
 
-function planNetRR(plan, entryPrice) {
-  const cost = entryPrice * (plan.estimatedRoundTripCostPct / 100);
-  const risk = Math.abs(entryPrice - plan.stopLoss) + cost;
-  const target = plan.takeProfits[0]?.price;
-  const reward = Math.abs(target - entryPrice) - cost;
-  return risk > 0 ? round(reward / risk, 3) : null;
+function planNetRR(plan, entryPrice, costMultiplier = 1) {
+  const target = finite(plan.takeProfits[0]?.price);
+  const stop = finite(plan.stopLoss);
+  if (![entryPrice, target, stop].every(Number.isFinite)) return null;
+  const long = plan.direction === "LONG";
+  const rawRisk = long ? entryPrice - stop : stop - entryPrice;
+  const rawReward = long ? target - entryPrice : entryPrice - target;
+  if (!(rawRisk > 0) || !(rawReward > 0)) return null;
+  const cost = entryPrice * (plan.estimatedRoundTripCostPct / 100) * Math.max(1, finite(costMultiplier, 1));
+  const risk = rawRisk + cost;
+  const reward = rawReward - cost;
+  return risk > 0 && reward > 0 ? round(reward / risk, 3) : null;
+}
+
+function planExecutionReality(plan, asset, entryPrice) {
+  const target = finite(plan.takeProfits[0]?.price);
+  const stop = finite(plan.stopLoss);
+  const long = plan.direction === "LONG";
+  const targetAhead = Number.isFinite(target) && Number.isFinite(entryPrice) && (long ? target > entryPrice : target < entryPrice);
+  const stopOnInvalidationSide = Number.isFinite(stop) && Number.isFinite(entryPrice) && (long ? stop < entryPrice : stop > entryPrice);
+  const bid = finite(asset?.ticker?.bid);
+  const ask = finite(asset?.ticker?.ask);
+  const spreadBps = Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 ? ((ask - bid) / bid) * 10_000 : null;
+  const baselineNetRR = planNetRR(plan, entryPrice, 1);
+  const stressedNetRR = planNetRR(plan, entryPrice, 1.5);
+  return {
+    passed: targetAhead && stopOnInvalidationSide && Number.isFinite(baselineNetRR),
+    targetAhead,
+    stopOnInvalidationSide,
+    firstRealisticTarget: Number.isFinite(target) ? target : null,
+    baselineNetRR,
+    stressedNetRR,
+    estimatedRoundTripCostPct: plan.estimatedRoundTripCostPct,
+    stressedRoundTripCostPct: round(plan.estimatedRoundTripCostPct * 1.5, 4),
+    liveSpreadBps: Number.isFinite(spreadBps) ? round(spreadBps, 4) : null,
+    policy: "Direction-aware reward/risk; TP1 must still be ahead of current price and the stop must remain beyond invalidation. Stress RR is advisory until calibrated by model/regime samples.",
+  };
 }
 
 function failureZoneEvidence(plan, failureHistory = []) {
@@ -2953,7 +2997,8 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const btcPricePassed = (!Number.isFinite(plan.confirmation.btcMinimumPrice) || btcPrice >= plan.confirmation.btcMinimumPrice)
     && (!Number.isFinite(plan.confirmation.btcMaximumPrice) || btcPrice <= plan.confirmation.btcMaximumPrice);
   const trendPassed = plan.confirmation.allowCountertrend || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
-  const rr = planNetRR(plan, price);
+  const executionReality = planExecutionReality(plan, asset, price);
+  const rr = executionReality.baselineNetRR;
   const rrPassed = Number.isFinite(rr) && rr >= plan.minNetRR;
   const flow = capitalFlowEvidence(plan.direction, asset, btc);
   const flowPassed = !plan.confirmation.requireFlowSupport || flow.passed;
@@ -3010,6 +3055,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     candlePassed,
     btcPricePassed,
     trendPassed,
+    executionRealityPassed: executionReality.passed,
     rrPassed,
     flowPassed,
     orderBookPassed,
@@ -3025,6 +3071,8 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   if (!perpetualStructureReady) hardBlockers.push("PERPETUAL_STRUCTURE_SOURCE_REQUIRED_FOR_EXECUTION");
   if (!locationPassed) hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
   if (!protectiveStructurePassed) hardBlockers.push("NO_VALID_PROTECTIVE_STRUCTURE");
+  if (!executionReality.targetAhead) hardBlockers.push("FIRST_REALISTIC_TARGET_ALREADY_PASSED_OR_WRONG_SIDE");
+  if (!executionReality.stopOnInvalidationSide) hardBlockers.push("STOP_NO_LONGER_ON_INVALIDATION_SIDE");
   if (!rrPassed) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
   if (!liquidityRiskPassed) hardBlockers.push(...liquidityRisk.blockers);
   if (!riskContextPassed) {
@@ -3046,6 +3094,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     priceExchangeTimestamp,
     entryZone: plan.entryZone,
     netRR: rr,
+    executionReality,
     confirmed15mAt: confirmed15m.ts,
     confirmed15mClose: candleClose,
     checks,
@@ -3053,7 +3102,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     flow,
     liquidityRisk,
     hardBlockerScan: { passed: hardBlockers.length === 0, blockers: [...new Set(hardBlockers)], cannotBeOverriddenByScore: true },
-    softWarnings: [...new Set([...(plan.softWarnings || []), ...(liquidityRisk.warnings || [])])],
+    softWarnings: [...new Set([
+      ...(plan.softWarnings || []),
+      ...(liquidityRisk.warnings || []),
+      ...(Number.isFinite(executionReality.stressedNetRR) && executionReality.stressedNetRR < plan.minNetRR ? ["COST_STRESS_NET_RR_BELOW_THRESHOLD_REQUIRES_REVIEW"] : []),
+    ])],
     touch,
     regimePermission,
     savedMarketRegime: plan.marketRegime,
