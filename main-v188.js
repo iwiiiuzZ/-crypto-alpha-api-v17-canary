@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.3.1-timestamp-provider-integrity";
-const API_VERSION = "4.3.1";
+const BUILD = "crypto-alpha-worker-v19.3.2-pressure-zone-integrity";
+const API_VERSION = "4.3.2";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.3.1-timestamp-provider-integrity";
+const CACHE_NAMESPACE = "v19.3.2-pressure-zone-integrity";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -1090,9 +1090,11 @@ function buildEstimatedLiquidationPressureZones(asset) {
     return { status: "unavailable", reason: "Execution price or 15m ATR unavailable", permissions: { futureLiquidationMap: false, exactLiquidationPrices: false } };
   }
   const clusterLevels = [
-    ...(Array.isArray(pools.equalLowClusters) ? pools.equalLowClusters.map((row) => ({ side: "DOWNSIDE", price: finite(row?.price), evidence: "EQUAL_LOW_CLUSTER" })) : []),
-    ...(Array.isArray(pools.equalHighClusters) ? pools.equalHighClusters.map((row) => ({ side: "UPSIDE", price: finite(row?.price), evidence: "EQUAL_HIGH_CLUSTER" })) : []),
-  ].filter((row) => Number.isFinite(row.price));
+    ...(Array.isArray(pools.equalLowClusters) ? pools.equalLowClusters.map((row) => ({ price: finite(row?.price), evidence: "EQUAL_LOW_CLUSTER" })) : []),
+    ...(Array.isArray(pools.equalHighClusters) ? pools.equalHighClusters.map((row) => ({ price: finite(row?.price), evidence: "EQUAL_HIGH_CLUSTER" })) : []),
+  ]
+    .filter((row) => Number.isFinite(row.price))
+    .map((row) => ({ ...row, side: row.price < price ? "DOWNSIDE" : "UPSIDE" }));
   const volatilityLevels = [0.5, 1, 1.5].flatMap((multiple) => [
     { side: "DOWNSIDE", price: price - atr15 * multiple, evidence: `${multiple}_ATR_FROM_LAST` },
     { side: "UPSIDE", price: price + atr15 * multiple, evidence: `${multiple}_ATR_FROM_LAST` },
