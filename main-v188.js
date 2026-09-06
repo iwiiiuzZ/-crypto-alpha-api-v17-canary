@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.3.0-data-integrity-safety";
-const API_VERSION = "4.3.0";
+const BUILD = "crypto-alpha-worker-v19.3.1-timestamp-provider-integrity";
+const API_VERSION = "4.3.1";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.3.0-data-integrity-safety";
+const CACHE_NAMESPACE = "v19.3.1-timestamp-provider-integrity";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -115,6 +115,15 @@ function finite(value, fallback = null) {
   if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function epochMilliseconds(value) {
+  const number = finite(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  if (number >= 1e15) return Math.floor(number / 1000);
+  if (number >= 1e12) return Math.floor(number);
+  if (number >= 1e9) return Math.floor(number * 1000);
+  return null;
 }
 
 function round(value, digits = 6) {
@@ -516,7 +525,7 @@ function parseGateLargeTrades(rows, multiplier, minimumUsd) {
   const trades = rows.map((row) => {
     const size = finite(row?.size);
     const price = finite(row?.price);
-    const timestampMs = finite(row?.create_time_ms, Number.isFinite(finite(row?.create_time)) ? finite(row?.create_time) * 1000 : null);
+    const timestampMs = epochMilliseconds(row?.create_time_ms) ?? epochMilliseconds(row?.create_time);
     return {
       side: size > 0 ? "buy" : size < 0 ? "sell" : null,
       notionalUsd: Number.isFinite(size) && Number.isFinite(price) ? Math.abs(size) * multiplier * price : null,
@@ -525,6 +534,8 @@ function parseGateLargeTrades(rows, multiplier, minimumUsd) {
   }).filter((trade) => trade.side && Number.isFinite(trade.notionalUsd) && trade.notionalUsd > 0 && Number.isFinite(trade.timestampMs));
   if (trades.length < 20) throw new Error(`Gate trade sample has only ${trades.length} valid trades`);
   trades.sort((a, b) => a.timestampMs - b.timestampMs);
+  const latestAgeSeconds = Math.max(0, (Date.now() - trades.at(-1).timestampMs) / 1000);
+  if (!Number.isFinite(latestAgeSeconds) || latestAgeSeconds > 120) throw new Error(`Gate trade sample is stale by ${round(latestAgeSeconds, 1)} seconds`);
   const buyUsd = trades.filter((trade) => trade.side === "buy").reduce((sum, trade) => sum + trade.notionalUsd, 0);
   const sellUsd = trades.filter((trade) => trade.side === "sell").reduce((sum, trade) => sum + trade.notionalUsd, 0);
   const thresholdUsd = Math.max(minimumUsd, percentile(trades.map((trade) => trade.notionalUsd), 0.9) || 0);
@@ -554,7 +565,7 @@ function parseGateLargeTrades(rows, multiplier, minimumUsd) {
       sellUsdEstimate: round(largeSellUsd, 2),
       netFlowUsdEstimate: round(largeBuyUsd - largeSellUsd, 2),
     },
-    dataFreshness: freshness(rows),
+    dataFreshness: { ...freshness(rows), exchangeAgeSeconds: round(latestAgeSeconds, 3) },
   };
 }
 
@@ -575,6 +586,9 @@ function parseGateOrderBook(body, multiplier) {
   const bestBid = Math.max(...bids.map((level) => level.price));
   const bestAsk = Math.min(...asks.map((level) => level.price));
   const midpoint = (bestBid + bestAsk) / 2;
+  const exchangeTimestampMs = epochMilliseconds(body?.current);
+  const exchangeAgeSeconds = Number.isFinite(exchangeTimestampMs) ? Math.max(0, (Date.now() - exchangeTimestampMs) / 1000) : Infinity;
+  if (!Number.isFinite(exchangeAgeSeconds) || exchangeAgeSeconds > 60) throw new Error(`Gate order book timestamp is missing or stale by ${round(exchangeAgeSeconds, 1)} seconds`);
   return {
     status: "ok",
     depthLevelsPerSide: Math.min(bids.length, asks.length),
@@ -588,8 +602,8 @@ function parseGateOrderBook(body, multiplier) {
     spreadBps: midpoint ? round((bestAsk - bestBid) / midpoint * 10_000, 4) : null,
     largestBidWall: { price: round(bidWall.price, 8), notionalUsdEstimate: round(bidWall.notionalUsd, 2) },
     largestAskWall: { price: round(askWall.price, 8), notionalUsdEstimate: round(askWall.notionalUsd, 2) },
-    exchangeTimestamp: Number.isFinite(finite(body?.current)) ? new Date(finite(body.current)).toISOString() : null,
-    dataFreshness: freshness(body),
+    exchangeTimestamp: new Date(exchangeTimestampMs).toISOString(),
+    dataFreshness: { ...freshness(body), exchangeAgeSeconds: round(exchangeAgeSeconds, 3) },
   };
 }
 
@@ -729,7 +743,11 @@ function buildCoinalyzeAssetModule(historyResponses, selectedMarkets) {
   const latestAgeSeconds = Math.max(0, (Date.now() - latestTimestampMs) / 1000);
   const recentCoverage = points.slice(-3).map((point) => point.marketCount);
   const minimumRecentMarketCount = recentCoverage.length ? Math.min(...recentCoverage) : 0;
-  const qualityPassed = selectedMarkets.length >= 2 && points.length >= 12 && latestAgeSeconds <= 20 * 60 && minimumRecentMarketCount >= Math.min(2, selectedMarkets.length);
+  const selectedSymbols = new Set(selectedMarkets.map((market) => market.symbol));
+  const respondingMarketCount = new Set((Array.isArray(historyResponses) ? historyResponses : [])
+    .filter((response) => selectedSymbols.has(response?.symbol) && Array.isArray(response?.history) && response.history.length)
+    .map((response) => response.symbol)).size;
+  const qualityPassed = selectedMarkets.length >= 2 && respondingMarketCount >= 2 && points.length >= 12 && latestAgeSeconds <= 20 * 60;
   return {
     status: qualityPassed ? "ok" : "partial",
     source: "COINALYZE_FREE_API",
@@ -744,9 +762,10 @@ function buildCoinalyzeAssetModule(historyResponses, selectedMarkets) {
       passed: qualityPassed,
       latestAgeSeconds: round(latestAgeSeconds, 3),
       selectedMarketCount: selectedMarkets.length,
+      respondingMarketCount,
       minimumRecentMarketCount,
       sampleCount5m: points.length,
-      rule: "At least two selected markets, twelve 5m samples, latest sample within twenty minutes and two-market recent coverage",
+      rule: "At least two selected and responding markets, twelve aggregated 5m samples and latest sample within twenty minutes; zero-liquidation gaps are not treated as provider failure",
     },
     providerFieldSemantics: { l: "LONG_LIQUIDATIONS", s: "SHORT_LIQUIDATIONS" },
     standaloneSignal: false,
@@ -833,7 +852,8 @@ function gateLiquidationFallback(asset) {
 }
 
 function buildLiquidationRiskProxy(asset, coinalyzeModule) {
-  const source = coinalyzeModule?.status === "ok" ? coinalyzeModule : gateLiquidationFallback(asset);
+  const usingCoinalyze = coinalyzeModule?.status === "ok";
+  const source = usingCoinalyze ? coinalyzeModule : gateLiquidationFallback(asset);
   const period = source?.periods?.["15m"] || {};
   const confirmed = confirmedRecentCandles(asset?.timeframes?.["15m"], 3);
   const first = finite(confirmed.at(-2)?.c);
@@ -849,6 +869,12 @@ function buildLiquidationRiskProxy(asset, coinalyzeModule) {
     || (shortSqueeze && Number.isFinite(priceChange15mPct) && priceChange15mPct <= 0.05);
   return {
     ...source,
+    upstreamAttempt: usingCoinalyze ? null : {
+      source: coinalyzeModule?.source || "COINALYZE_FREE_API",
+      status: coinalyzeModule?.status || "unavailable",
+      reason: coinalyzeModule?.error || coinalyzeModule?.reason || "Quality gate did not pass",
+      quality: coinalyzeModule?.quality || null,
+    },
     riskClassification: cascadeContinuation ? "CASCADE_CONTINUATION_RISK" : exhaustionCandidate ? "LIQUIDATION_EXHAUSTION_OR_ABSORPTION_CANDIDATE" : intensity === "EXTREME" || intensity === "ELEVATED" ? "ELEVATED_REALIZED_LIQUIDATIONS" : "NORMAL_OR_INCONCLUSIVE",
     evidence: {
       dominantSide15m: dominantSide,
@@ -2284,6 +2310,13 @@ async function buildSnapshot(options = {}) {
   ) && executionPriceReady && semanticQualityReady;
   const capitalFlowReady = Object.fromEntries(Object.entries(assets).map(([symbol, asset]) => [symbol, asset.capitalFlow.status === "ok"]));
   const capitalFlowAvailable = Object.values(assets).filter((asset) => asset.capitalFlow.status !== "unavailable").length;
+  const coinalyzeAssetStatus = Object.fromEntries(Object.keys(ASSETS).map((symbol) => [symbol, {
+    status: coinalyze.assets?.[symbol]?.status || "unavailable",
+    quality: coinalyze.assets?.[symbol]?.quality || null,
+  }]));
+  const coinalyzeEffectiveStatus = !coinalyze.configured ? "not_configured"
+    : Object.values(coinalyzeAssetStatus).every((item) => item.status === "ok") ? "ok"
+      : coinalyze.status === "unavailable" ? "unavailable" : "partial_fallback_active";
 
   return {
     status: criticalReady ? "ok" : "partial",
@@ -2293,6 +2326,15 @@ async function buildSnapshot(options = {}) {
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
     source: "OKX USDT perpetual execution/index/mark price/OI/funding plus OKX spot ticker/order book/recent trades; Gate USDT perpetual primary candles/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency structure fallback",
+    dataProviders: {
+      coinalyze: {
+        configured: coinalyze.configured,
+        status: coinalyzeEffectiveStatus,
+        reason: coinalyze.reason || null,
+        requestSymbolCount: coinalyze.requestSymbolCount || 0,
+        assets: coinalyzeAssetStatus,
+      },
+    },
     requestBudget: {
       plannedOkx: 13,
       plannedUpstreamFetches: coinalyze.configured ? 27 : 25,
@@ -3447,6 +3489,10 @@ function openApi(origin) {
                       apiVersion: { type: "string" },
                       generatedAt: { type: "string", format: "date-time" },
                       source: { type: "string" },
+                      dataProviders: {
+                        type: "object",
+                        properties: { coinalyze: moduleSchema },
+                      },
                       analysisContract: moduleSchema,
                       requestBudget: {
                         type: "object",
