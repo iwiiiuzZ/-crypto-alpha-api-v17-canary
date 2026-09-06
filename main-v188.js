@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.2.0-free-liquidation-risk-proxy";
-const API_VERSION = "4.2.0";
+const BUILD = "crypto-alpha-worker-v19.3.0-data-integrity-safety";
+const API_VERSION = "4.3.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.2.0-free-liquidation-risk-proxy";
+const CACHE_NAMESPACE = "v19.3.0-data-integrity-safety";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -13,10 +13,15 @@ const MAX_OKX_CONCURRENCY = 2;
 const ACTIVE_PLAN_KEY = "scanner:active-plan";
 const SCANNER_RUNTIME_KEY = "scanner:runtime";
 const SCANNER_FAILURE_HISTORY_KEY = "scanner:failure-history";
+const SCANNER_LEASE_KEY = "scanner:lease";
 const CONFIRMATION_COOLDOWN_MS = 14 * 60_000;
 const DEFAULT_PLAN_HOURS = 24;
 const SCANNER_DOUBLE_SAMPLE_DELAY_MS = 400;
 const FAILURE_HISTORY_DAYS = 7;
+const MAX_SOURCE_ANALYSIS_AGE_MS = 15 * 60_000;
+const MAX_SOURCE_ANALYSIS_FUTURE_SKEW_MS = 2 * 60_000;
+const STOP_INVALIDATION_TOLERANCE_PCT = 0.05;
+const MAX_LEVERAGE = 50;
 
 const LEGACY_CONFIG = {
   status: "LEGACY_CONFIG_UNVALIDATED",
@@ -65,11 +70,14 @@ const CACHE_POLICY = {
   gateContractStats: { freshSeconds: 25, staleSeconds: 180, attempts: 1, timeoutMs: 4500 },
   gateTrades: { freshSeconds: 12, staleSeconds: 90, attempts: 1, timeoutMs: 4500 },
   gateOrderBook: { freshSeconds: 8, staleSeconds: 45, attempts: 2, timeoutMs: 4500 },
+  okxSpotTicker: { freshSeconds: 4, staleSeconds: 20, attempts: 1, timeoutMs: 3500 },
+  okxSpotTrades: { freshSeconds: 8, staleSeconds: 45, attempts: 1, timeoutMs: 4000 },
+  okxSpotBook: { freshSeconds: 5, staleSeconds: 30, attempts: 1, timeoutMs: 4000 },
   krakenSpotCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 1, timeoutMs: 3500 },
   krakenSpotCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 1, timeoutMs: 3500 },
   krakenSpotCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 1, timeoutMs: 3500 },
-  coinalyzeMarkets: { freshSeconds: 6 * 60 * 60, staleSeconds: 24 * 60 * 60, attempts: 2, timeoutMs: 5000 },
-  coinalyzeLiquidations: { freshSeconds: 60, staleSeconds: 10 * 60, attempts: 2, timeoutMs: 5000 },
+  coinalyzeMarkets: { freshSeconds: 6 * 60 * 60, staleSeconds: 24 * 60 * 60, attempts: 1, timeoutMs: 5000 },
+  coinalyzeLiquidations: { freshSeconds: 60, staleSeconds: 10 * 60, attempts: 1, timeoutMs: 5000 },
 };
 
 const memoryCache = new Map();
@@ -78,8 +86,8 @@ let okxActive = 0;
 const okxWaiters = [];
 
 const ASSETS = {
-  BTCUSDT: { instrumentId: "BTC-USDT-SWAP", futuresSymbol: "PI_XBTUSD", gateSymbol: "BTC_USDT", gateQuantoMultiplier: 0.0001, largeTradeFloorUsd: 50_000, krakenSpotPair: "XBTUSD" },
-  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", futuresSymbol: "PI_ETHUSD", gateSymbol: "ETH_USDT", gateQuantoMultiplier: 0.01, largeTradeFloorUsd: 25_000, krakenSpotPair: "ETHUSD" },
+  BTCUSDT: { instrumentId: "BTC-USDT-SWAP", spotInstrumentId: "BTC-USDT", futuresSymbol: "PI_XBTUSD", gateSymbol: "BTC_USDT", gateQuantoMultiplier: 0.0001, largeTradeFloorUsd: 50_000, krakenSpotPair: "XBTUSD" },
+  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", spotInstrumentId: "ETH-USDT", futuresSymbol: "PI_ETHUSD", gateSymbol: "ETH_USDT", gateQuantoMultiplier: 0.01, largeTradeFloorUsd: 25_000, krakenSpotPair: "ETHUSD" },
 };
 
 const TIMEFRAMES = {
@@ -223,7 +231,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.2.0", ...extraHeaders },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.3.0", ...extraHeaders },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -318,6 +326,7 @@ async function okx(path, policy) {
     label: "OKX",
     policy,
     isOkx: true,
+    persistentCache: false,
     validate(body) {
       if (body?.code !== "0" || !Array.isArray(body?.data)) {
         const error = new Error(`OKX ${body?.code || "invalid response"}: ${body?.msg || "no data"}`);
@@ -716,8 +725,13 @@ function buildCoinalyzeAssetModule(historyResponses, selectedMarkets) {
   const baseline = median(points.slice(-288).map((point) => point.longLiquidationUsd + point.shortLiquidationUsd).filter((value) => value > 0));
   const latest15m = finite(periods["15m"].totalLiquidationUsd);
   const intensityMultiple = Number.isFinite(baseline) && baseline > 0 && Number.isFinite(latest15m) ? latest15m / (baseline * 3) : null;
+  const latestTimestampMs = points.at(-1).timestamp * 1000;
+  const latestAgeSeconds = Math.max(0, (Date.now() - latestTimestampMs) / 1000);
+  const recentCoverage = points.slice(-3).map((point) => point.marketCount);
+  const minimumRecentMarketCount = recentCoverage.length ? Math.min(...recentCoverage) : 0;
+  const qualityPassed = selectedMarkets.length >= 2 && points.length >= 12 && latestAgeSeconds <= 20 * 60 && minimumRecentMarketCount >= Math.min(2, selectedMarkets.length);
   return {
-    status: "ok",
+    status: qualityPassed ? "ok" : "partial",
     source: "COINALYZE_FREE_API",
     role: "OPTIONAL_REALIZED_LIQUIDATION_CONFIRMATION_ONLY",
     scope: "SELECTED_EXCHANGES_REALIZED_LIQUIDATIONS_NOT_FULL_MARKET_FUTURE_MAP",
@@ -725,7 +739,15 @@ function buildCoinalyzeAssetModule(historyResponses, selectedMarkets) {
     periods,
     intensityMultipleVs24hMedian5m: Number.isFinite(intensityMultiple) ? round(intensityMultiple, 4) : null,
     intensity: !Number.isFinite(intensityMultiple) ? "UNKNOWN" : intensityMultiple >= 3 ? "EXTREME" : intensityMultiple >= 1.5 ? "ELEVATED" : "NORMAL",
-    latestAt: new Date(points.at(-1).timestamp * 1000).toISOString(),
+    latestAt: new Date(latestTimestampMs).toISOString(),
+    quality: {
+      passed: qualityPassed,
+      latestAgeSeconds: round(latestAgeSeconds, 3),
+      selectedMarketCount: selectedMarkets.length,
+      minimumRecentMarketCount,
+      sampleCount5m: points.length,
+      rule: "At least two selected markets, twelve 5m samples, latest sample within twenty minutes and two-market recent coverage",
+    },
     providerFieldSemantics: { l: "LONG_LIQUIDATIONS", s: "SHORT_LIQUIDATIONS" },
     standaloneSignal: false,
   };
@@ -1029,6 +1051,74 @@ function buildMarketLiquidityContext(asset) {
       standaloneDirectionSignal: false,
       noFutureData: true,
     },
+  };
+}
+
+function buildEstimatedLiquidationPressureZones(asset) {
+  const price = finite(asset?.ticker?.last);
+  const atr15 = finite(asset?.timeframes?.["15m"]?.indicators?.atr14);
+  const pools = asset?.liquidityRisk?.visibleLiquidityPools || {};
+  const oi15m = finite(asset?.derivatives?.openInterest?.change15mPct);
+  const realized = asset?.liquidationRiskProxy || {};
+  if (!Number.isFinite(price) || !Number.isFinite(atr15) || atr15 <= 0) {
+    return { status: "unavailable", reason: "Execution price or 15m ATR unavailable", permissions: { futureLiquidationMap: false, exactLiquidationPrices: false } };
+  }
+  const clusterLevels = [
+    ...(Array.isArray(pools.equalLowClusters) ? pools.equalLowClusters.map((row) => ({ side: "DOWNSIDE", price: finite(row?.price), evidence: "EQUAL_LOW_CLUSTER" })) : []),
+    ...(Array.isArray(pools.equalHighClusters) ? pools.equalHighClusters.map((row) => ({ side: "UPSIDE", price: finite(row?.price), evidence: "EQUAL_HIGH_CLUSTER" })) : []),
+  ].filter((row) => Number.isFinite(row.price));
+  const volatilityLevels = [0.5, 1, 1.5].flatMap((multiple) => [
+    { side: "DOWNSIDE", price: price - atr15 * multiple, evidence: `${multiple}_ATR_FROM_LAST` },
+    { side: "UPSIDE", price: price + atr15 * multiple, evidence: `${multiple}_ATR_FROM_LAST` },
+  ]).filter((row) => row.price > 0);
+  const zones = [...clusterLevels, ...volatilityLevels]
+    .map((row) => ({ ...row, price: round(row.price, 8), distancePct: round(Math.abs(row.price - price) / price * 100, 4) }))
+    .sort((a, b) => a.distancePct - b.distancePct)
+    .slice(0, 10);
+  return {
+    status: zones.length ? "ok" : "partial",
+    source: "STRUCTURE_ATR_OI_AND_REALIZED_LIQUIDATION_MODEL",
+    scope: "ESTIMATED_PRESSURE_ZONES_NOT_FUTURE_LIQUIDATION_MAP",
+    zones,
+    context: {
+      openInterestChange15mPct: Number.isFinite(oi15m) ? round(oi15m, 5) : null,
+      realizedLiquidationIntensity: realized.intensity || "UNKNOWN",
+      realizedLiquidationClassification: realized.riskClassification || "UNKNOWN",
+    },
+    permissions: {
+      futureLiquidationMap: false,
+      exactLiquidationPrices: false,
+      exactLeverageDistribution: false,
+      standaloneDirection: false,
+      createSetup: false,
+      hardBlockerByItself: false,
+    },
+    limitation: "These are estimated pressure zones derived from visible structure, ATR, OI and already-realized liquidations. They are not exchange account liquidation prices or a full-market future liquidation heatmap.",
+  };
+}
+
+function buildLargeParticipantProxy(asset) {
+  const derivative = asset?.capitalFlow?.largeTrades || {};
+  const spot = asset?.spotMarket?.recentTakerFlow || {};
+  const orderBook = asset?.capitalFlow?.orderBook || {};
+  const derivativeNet = finite(derivative?.largeTrades?.netFlowUsdEstimate);
+  const spotNet = finite(spot?.takerDeltaUsd);
+  const bookImbalance = finite(orderBook?.imbalancePct);
+  const available = [derivativeNet, spotNet, bookImbalance].filter(Number.isFinite).length;
+  const score = (Number.isFinite(derivativeNet) ? Math.sign(derivativeNet) : 0)
+    + (Number.isFinite(spotNet) ? Math.sign(spotNet) : 0)
+    + (Number.isFinite(bookImbalance) && Math.abs(bookImbalance) >= 8 ? Math.sign(bookImbalance) : 0);
+  return {
+    status: available >= 2 ? "ok" : available ? "partial" : "unavailable",
+    source: "OBSERVED_LARGE_TAKER_TRADES_PLUS_SPOT_FLOW_AND_ORDER_BOOK",
+    classification: score >= 2 ? "BUY_SIDE_FOOTPRINT" : score <= -2 ? "SELL_SIDE_FOOTPRINT" : "MIXED_OR_INCONCLUSIVE",
+    evidence: {
+      derivativeLargeTakerNetUsdEstimate: Number.isFinite(derivativeNet) ? round(derivativeNet, 2) : null,
+      okxSpotRecentTakerDeltaUsd: Number.isFinite(spotNet) ? round(spotNet, 2) : null,
+      derivativeOrderBookImbalancePct: Number.isFinite(bookImbalance) ? round(bookImbalance, 4) : null,
+    },
+    permissions: { exactWhalePositions: false, walletIdentity: false, standaloneDirection: false, createSetup: false },
+    limitation: "Observed market footprint only. Public feeds do not identify exact whale accounts, average entry, leverage or liquidation price.",
   };
 }
 
@@ -1541,6 +1631,89 @@ function parseOkxExecutionPrice(markRows, tickerRows, instrumentId) {
   };
 }
 
+function parseOkxSpotMarket(tickerRows, tradesRows, bookRows, instrumentId) {
+  const ticker = (Array.isArray(tickerRows) ? tickerRows : []).find((row) => row?.instId === instrumentId);
+  const last = finite(ticker?.last);
+  const tickerTs = finite(ticker?.ts);
+  if (!Number.isFinite(last) || last <= 0 || !Number.isFinite(tickerTs)) throw new Error(`OKX spot ticker unavailable for ${instrumentId}`);
+  const tickerAgeSeconds = Math.max(0, (Date.now() - tickerTs) / 1000);
+  if (tickerAgeSeconds > 35) throw new Error(`OKX spot ticker stale for ${instrumentId}`);
+
+  const trades = (Array.isArray(tradesRows) ? tradesRows : []).map((row) => {
+    const price = finite(row?.px);
+    const size = finite(row?.sz);
+    const timestampMs = finite(row?.ts);
+    const side = String(row?.side || "").toLowerCase();
+    return { tradeId: String(row?.tradeId || ""), side, price, size, timestampMs, notionalUsd: Number.isFinite(price) && Number.isFinite(size) ? price * size : null };
+  }).filter((row) => ["buy", "sell"].includes(row.side) && Number.isFinite(row.notionalUsd) && row.notionalUsd > 0 && Number.isFinite(row.timestampMs));
+  const buyUsd = trades.filter((row) => row.side === "buy").reduce((sum, row) => sum + row.notionalUsd, 0);
+  const sellUsd = trades.filter((row) => row.side === "sell").reduce((sum, row) => sum + row.notionalUsd, 0);
+  const tradeTotal = buyUsd + sellUsd;
+  const newestTradeTs = trades.length ? Math.max(...trades.map((row) => row.timestampMs)) : null;
+  const oldestTradeTs = trades.length ? Math.min(...trades.map((row) => row.timestampMs)) : null;
+  const newestTradeAgeSeconds = Number.isFinite(newestTradeTs) ? Math.max(0, (Date.now() - newestTradeTs) / 1000) : Infinity;
+
+  const book = Array.isArray(bookRows) ? bookRows[0] : null;
+  const parseLevels = (levels) => (Array.isArray(levels) ? levels : []).map((row) => {
+    const price = finite(row?.[0]);
+    const size = finite(row?.[1]);
+    return { price, size, notionalUsd: Number.isFinite(price) && Number.isFinite(size) ? price * size : null };
+  }).filter((row) => Number.isFinite(row.notionalUsd) && row.notionalUsd > 0);
+  const bids = parseLevels(book?.bids);
+  const asks = parseLevels(book?.asks);
+  const bidDepth = bids.reduce((sum, row) => sum + row.notionalUsd, 0);
+  const askDepth = asks.reduce((sum, row) => sum + row.notionalUsd, 0);
+  const totalDepth = bidDepth + askDepth;
+  const bestBid = bids[0]?.price;
+  const bestAsk = asks[0]?.price;
+  const midpoint = Number.isFinite(bestBid) && Number.isFinite(bestAsk) ? (bestBid + bestAsk) / 2 : null;
+  const bookTimestamp = finite(book?.ts);
+  const bookAgeSeconds = Number.isFinite(bookTimestamp) ? Math.max(0, (Date.now() - bookTimestamp) / 1000) : Infinity;
+  const sampleFresh = newestTradeAgeSeconds <= 60;
+  const bookFresh = bookAgeSeconds <= 35;
+
+  return {
+    status: trades.length >= 10 && bids.length && asks.length && sampleFresh && bookFresh ? "ok" : "partial",
+    source: "OKX_SPOT_PUBLIC",
+    instrumentId,
+    ticker: {
+      last: round(last, 8),
+      bid: round(finite(ticker?.bidPx), 8),
+      ask: round(finite(ticker?.askPx), 8),
+      volume24hBase: round(finite(ticker?.vol24h), 4),
+      volume24hQuote: round(finite(ticker?.volCcy24h), 2),
+      exchangeTimestamp: new Date(tickerTs).toISOString(),
+      ageSeconds: round(tickerAgeSeconds, 3),
+    },
+    recentTakerFlow: {
+      definition: "ACTUAL_OKX_SPOT_RECENT_TRADES_WINDOW_NOT_PERSISTENT_CVD",
+      sampleTradeCount: trades.length,
+      sampleStartAt: Number.isFinite(oldestTradeTs) ? new Date(oldestTradeTs).toISOString() : null,
+      sampleEndAt: Number.isFinite(newestTradeTs) ? new Date(newestTradeTs).toISOString() : null,
+      newestTradeAgeSeconds: Number.isFinite(newestTradeAgeSeconds) ? round(newestTradeAgeSeconds, 3) : null,
+      coverageSeconds: Number.isFinite(oldestTradeTs) && Number.isFinite(newestTradeTs) ? round((newestTradeTs - oldestTradeTs) / 1000, 3) : null,
+      takerBuyUsd: round(buyUsd, 2),
+      takerSellUsd: round(sellUsd, 2),
+      takerDeltaUsd: round(buyUsd - sellUsd, 2),
+      takerBuySharePct: tradeTotal > 0 ? round(buyUsd / tradeTotal * 100, 4) : null,
+      isTrueCvd: false,
+      limitation: "Real OKX spot trades for the returned sample window. It is not a persistent historical Spot CVD series.",
+    },
+    orderBook: {
+      depthLevelsPerSide: Math.min(bids.length, asks.length),
+      bidDepthUsd: round(bidDepth, 2),
+      askDepthUsd: round(askDepth, 2),
+      imbalancePct: totalDepth > 0 ? round((bidDepth - askDepth) / totalDepth * 100, 4) : null,
+      bestBid: round(bestBid, 8),
+      bestAsk: round(bestAsk, 8),
+      spreadBps: midpoint ? round((bestAsk - bestBid) / midpoint * 10_000, 4) : null,
+      exchangeTimestamp: Number.isFinite(bookTimestamp) ? new Date(bookTimestamp).toISOString() : null,
+      ageSeconds: Number.isFinite(bookAgeSeconds) ? round(bookAgeSeconds, 3) : null,
+    },
+    permissions: { standaloneDirection: false, createSetup: false, exactWhaleIdentity: false },
+  };
+}
+
 function parseOkxIndexPrice(rows, symbol) {
   const instId = symbol === "BTCUSDT" ? "BTC-USDT" : "ETH-USDT";
   const row = (Array.isArray(rows) ? rows : []).find((item) => item?.instId === instId);
@@ -1829,6 +2002,7 @@ async function buildSnapshot(options = {}) {
       futuresSymbol: config.futuresSymbol,
       ticker: errorModule("Not loaded"),
       indexPrice: errorModule("Not loaded"),
+      spotMarket: errorModule("Not loaded"),
       timeframes: Object.fromEntries(Object.keys(TIMEFRAMES).map((tf) => [tf, errorModule("Not loaded")])),
       derivatives: { openInterest: errorModule("Not loaded"), funding: errorModule("Not loaded") },
       capitalFlow: errorModule("Not loaded"),
@@ -1865,13 +2039,16 @@ async function buildSnapshot(options = {}) {
       },
       3500,
     ),
+    okx("/api/v5/market/tickers?instType=SPOT", CACHE_POLICY.okxSpotTicker),
   ]);
   const tickerRows = priceResults[0].status === "fulfilled" ? priceResults[0].value : null;
   const markRows = priceResults[1].status === "fulfilled" ? priceResults[1].value : null;
   const indexRows = priceResults[2].status === "fulfilled" ? priceResults[2].value : null;
+  const spotTickerRows = priceResults[3].status === "fulfilled" ? priceResults[3].value : null;
   if (priceResults[0].status === "rejected") supplementalErrors.push({ source: "OKX", module: "tickerBatch", error: priceResults[0].reason?.message || String(priceResults[0].reason) });
   if (priceResults[1].status === "rejected") supplementalErrors.push({ source: "OKX", module: "markPriceBatch", error: priceResults[1].reason?.message || String(priceResults[1].reason) });
   if (priceResults[2].status === "rejected") supplementalErrors.push({ source: "OKX", module: "indexPriceBatch", error: priceResults[2].reason?.message || String(priceResults[2].reason) });
+  if (priceResults[3].status === "rejected") supplementalErrors.push({ source: "OKX_SPOT", module: "tickerBatch", error: priceResults[3].reason?.message || String(priceResults[3].reason) });
   for (const rows of [tickerRows, markRows]) {
     if (rows?.__refreshError) supplementalErrors.push({ source: "OKX", module: "priceRefresh", servedFromCache: true, error: rows.__refreshError });
   }
@@ -1954,6 +2131,20 @@ async function buildSnapshot(options = {}) {
     }
   });
 
+  const spotWork = mapLimit(Object.entries(ASSETS), 2, async ([symbol, config]) => {
+    try {
+      const [trades, book] = await Promise.all([
+        okx(`/api/v5/market/trades?instId=${encodeURIComponent(config.spotInstrumentId)}&limit=100`, CACHE_POLICY.okxSpotTrades),
+        okx(`/api/v5/market/books?instId=${encodeURIComponent(config.spotInstrumentId)}&sz=20`, CACHE_POLICY.okxSpotBook),
+      ]);
+      assets[symbol].spotMarket = parseOkxSpotMarket(spotTickerRows, trades, book, config.spotInstrumentId);
+    } catch (error) {
+      const message = error?.message || String(error);
+      assets[symbol].spotMarket = errorModule(message);
+      supplementalErrors.push({ source: "OKX_SPOT", symbol, module: "spotMarket", error: message });
+    }
+  });
+
   const derivativeDefinitions = [
     { type: "openInterestBatch", path: "/api/v5/public/open-interest?instType=SWAP", policy: CACHE_POLICY.openInterest },
     ...Object.entries(ASSETS).map(([symbol, config]) => ({ symbol, type: "funding", path: `/api/v5/public/funding-rate?instId=${config.instrumentId}`, policy: CACHE_POLICY.funding })),
@@ -1961,7 +2152,7 @@ async function buildSnapshot(options = {}) {
   ];
   const derivativeWork = Promise.allSettled(derivativeDefinitions.map((item) => okx(item.path, item.policy)));
   const capitalFlowEntries = Object.entries(ASSETS);
-  const [, derivativeResults] = await Promise.all([candleWork, derivativeWork]);
+  const [, derivativeResults] = await Promise.all([Promise.all([candleWork, spotWork]), derivativeWork]);
   const capitalFlowResults = await mapLimit(capitalFlowEntries, 2, ([, config]) => gateCapitalFlowRaw(config.gateSymbol, options));
 
   for (let index = 0; index < capitalFlowEntries.length; index += 1) {
@@ -2052,11 +2243,15 @@ async function buildSnapshot(options = {}) {
     asset.executionLiquidity = buildExecutionLiquidity(asset);
     asset.liquidationRiskProxy = buildLiquidationRiskProxy(asset, coinalyze.assets?.[symbol]);
     asset.liquidityRisk = buildMarketLiquidityContext(asset);
+    asset.estimatedLiquidationPressureZones = buildEstimatedLiquidationPressureZones(asset);
+    asset.largeParticipantProxy = buildLargeParticipantProxy(asset);
     asset.effortVsResult = buildEffortVsResult(asset);
     asset.marketRegimeRouter = buildMarketRegimeRouter(asset);
     asset.dataGaps = {
-      spotCvd: { status: "unavailable", reason: "No free stable spot trade feed is connected; Gate taker flow must not be relabeled as spot CVD." },
-      perpetualCvd: { status: "unavailable", reason: "Active taker net flow is available, but true cumulative perpetual CVD is not returned." },
+      spotCvd: asset.spotMarket?.status === "ok"
+        ? { status: "proxy_available", reason: "Real OKX spot trades and sample-window taker delta are available, but this is not a persistent historical Spot CVD series." }
+        : { status: "unavailable", reason: "OKX spot trades are unavailable; no other flow is relabeled as Spot CVD." },
+      perpetualCvd: { status: "proxy_available", reason: "Real Gate perpetual taker flow is available for its returned window, but it is not relabeled as a persistent multi-exchange Perpetual CVD series." },
       globalLiquidationMap: { status: "unavailable", reason: "A realized-liquidation risk proxy is available, but it is not a future-price liquidation map and must not be presented as one." },
       futureLiquidationLevels: { status: "unavailable", reason: "Free public data does not reveal exact future liquidation clusters across the whole market." },
       exactWhalePositions: { status: "unavailable", reason: "Public data cannot identify exact whale account holdings." },
@@ -2078,6 +2273,9 @@ async function buildSnapshot(options = {}) {
   const semanticQualityReady = Object.values(assets).every((asset) =>
     Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true),
   );
+  const perpetualStructureReady = Object.values(assets).every((asset) =>
+    Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.source === "GATE_USDT_PERPETUAL" && tf.quality?.passed === true),
+  );
   const criticalReady = Object.values(assets).every((asset) =>
     asset.ticker.status === "ok" &&
     Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true) &&
@@ -2094,14 +2292,14 @@ async function buildSnapshot(options = {}) {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution/index/mark price, current OI, OI 5m/15m/1h changes and funding; Gate USDT perpetual primary candles/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency fallback",
+    source: "OKX USDT perpetual execution/index/mark price/OI/funding plus OKX spot ticker/order book/recent trades; Gate USDT perpetual primary candles/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency structure fallback",
     requestBudget: {
-      plannedOkx: 8,
-      plannedUpstreamFetches: coinalyze.configured ? 22 : 20,
-      plannedCloudflareSubrequestsCold: coinalyze.configured ? 40 : 36,
-      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 49,
+      plannedOkx: 13,
+      plannedUpstreamFetches: coinalyze.configured ? 27 : 25,
+      plannedCloudflareSubrequestsCold: coinalyze.configured ? 29 : 27,
+      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 45,
       cloudflareFreeLimit: 50,
-      persistentPerModuleCache: "OKX_GATE_KRAKEN_AND_OPTIONAL_COINALYZE",
+      persistentPerModuleCache: "GATE_KRAKEN_AND_OPTIONAL_COINALYZE; OKX_USES_MEMORY_PLUS_ROUTE_CACHE_TO_PROTECT_FREE_SUBREQUEST_BUDGET",
       coinalyzeConfigured: coinalyze.configured,
       coinalyzeProviderCallUnits: coinalyze.requestSymbolCount || 0,
     },
@@ -2110,6 +2308,7 @@ async function buildSnapshot(options = {}) {
       persistentRouteCache: true,
       staleOnError: true,
       exactExecutionPriceMaxAgeSeconds: 35,
+      openNowRequiresPerpetualStructureSource: true,
       candleQualityGate: { maxPriceDeviationPct: 0.75, minimumNonZeroVolumeRatio: 0.8, minimumContinuityRatio: 0.95 },
       capitalFlowPolicy: "Gate single-exchange estimate, confirmation only, never a standalone trigger or DATA_READY blocker",
       liquidityRiskPolicy: "Closed-candle sweep/reclaim, visible stop-pool proximity, quantified crowding and large-taker footprints are veto/context layers; no exact whale identity is claimed",
@@ -2154,8 +2353,8 @@ async function buildSnapshot(options = {}) {
       },
       microstructureContract: {
         executionPrimary: "OKX_BID_ASK_MARK_PRICE",
-        auxiliary: ["GATE_ORDER_BOOK_DEPTH", "GATE_LARGE_TAKER_TRADES", "GATE_ACTIVE_FLOW", "COINALYZE_REALIZED_LIQUIDATIONS_OPTIONAL"],
-        liquidityProtection: ["CLOSED_15M_SWEEP_RECLAIM", "VISIBLE_EQUAL_HIGH_LOW_POOLS", "REALIZED_LIQUIDATION_RISK_PROXY", "QUANTIFIED_CROWDING", "REPEATED_FAILURE_ZONE_COOLDOWN"],
+        auxiliary: ["OKX_SPOT_RECENT_TRADES_AND_BOOK", "GATE_ORDER_BOOK_DEPTH", "GATE_LARGE_TAKER_TRADES", "GATE_ACTIVE_FLOW", "COINALYZE_REALIZED_LIQUIDATIONS_OPTIONAL"],
+        liquidityProtection: ["CLOSED_15M_SWEEP_RECLAIM", "VISIBLE_EQUAL_HIGH_LOW_POOLS", "ESTIMATED_PRESSURE_ZONES_NOT_FUTURE_MAP", "REALIZED_LIQUIDATION_RISK_PROXY", "QUANTIFIED_CROWDING", "REPEATED_FAILURE_ZONE_COOLDOWN"],
         exactWhaleAccountPositionsClaimed: false,
         standaloneSignal: false,
         automaticOrderPlacement: false,
@@ -2166,7 +2365,7 @@ async function buildSnapshot(options = {}) {
         oneMinuteCandleTouchAllowed: false,
       },
     },
-    coverage: { availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, semanticQualityReady, priceAgeSeconds, criticalReady, capitalFlowReady, capitalFlowAvailable, capitalFlowTotal: Object.keys(assets).length },
+    coverage: { availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, semanticQualityReady, perpetualStructureReady, openNowDataReady: criticalReady && perpetualStructureReady, priceAgeSeconds, criticalReady, capitalFlowReady, capitalFlowAvailable, capitalFlowTotal: Object.keys(assets).length },
     assets,
     fallbacks,
     supplementalErrors,
@@ -2244,6 +2443,32 @@ async function scannerStateBundle(env, keys) {
   return Object.fromEntries(keys.map((key, index) => [key, values[index]]));
 }
 
+async function scannerAcquireLease(env, token, ttlMs = 55_000) {
+  if (scannerStateStub(env)) {
+    const result = await durableStateCall(env, { op: "acquireLease", key: SCANNER_LEASE_KEY, token, ttlMs });
+    return result?.acquired === true;
+  }
+  const current = await scannerStateGet(env, SCANNER_LEASE_KEY);
+  if (current?.expiresAt > Date.now()) return false;
+  await scannerStatePut(env, SCANNER_LEASE_KEY, { token, expiresAt: Date.now() + ttlMs }, Math.ceil(ttlMs / 1000) + 60);
+  const verified = await scannerStateGet(env, SCANNER_LEASE_KEY);
+  return verified?.token === token;
+}
+
+async function scannerReleaseLease(env, token) {
+  if (scannerStateStub(env)) {
+    await durableStateCall(env, { op: "releaseLease", key: SCANNER_LEASE_KEY, token });
+    return;
+  }
+  const current = await scannerStateGet(env, SCANNER_LEASE_KEY);
+  if (current?.token === token) await scannerStatePut(env, SCANNER_LEASE_KEY, { token: null, expiresAt: 0 }, 60);
+}
+
+async function scannerPlanIsCurrent(env, plan) {
+  const current = await scannerStateGet(env, ACTIVE_PLAN_KEY);
+  return current?.status === "ARMED" && current?.planId === plan?.planId && finite(current?.revision, 0) === finite(plan?.revision, 0);
+}
+
 function scannerAuthorized(request, env) {
   const expected = String(env?.SCANNER_TOKEN || "").trim();
   const supplied = String(request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
@@ -2289,6 +2514,8 @@ function normalizeTradingPlan(input) {
   if (!["TREND", "RANGE", "COMPRESSION", "TRANSITION"].includes(marketRegime)) throw new Error("marketRegime must be TREND, RANGE, COMPRESSION or TRANSITION");
   const regimePermission = submodelRegimePermission(model, submodel, marketRegime);
   if (regimePermission === "BLOCKED") throw new Error(`${submodel} is not permitted in ${marketRegime}`);
+  const opportunityGrade = scannerText(input.opportunityGrade, "", 4).toUpperCase();
+  if (!["A+", "A", "B"].includes(opportunityGrade)) throw new Error("opportunityGrade must be A+, A or B; C/D opportunities cannot arm a plan");
   const modelInvalidation = scannerText(input.modelInvalidation, "", 500);
   if (!modelInvalidation) throw new Error("modelInvalidation is required");
   const locationInput = input.location && typeof input.location === "object" ? input.location : {};
@@ -2315,6 +2542,8 @@ function normalizeTradingPlan(input) {
   const invalidationPrice = scannerNumber(input.invalidationPrice ?? stopLoss, "invalidationPrice", { positive: true });
   if (direction === "LONG" && (stopLoss >= entryMin || invalidationPrice >= entryMin)) throw new Error("LONG stop/invalidation must be below entry zone");
   if (direction === "SHORT" && (stopLoss <= entryMax || invalidationPrice <= entryMax)) throw new Error("SHORT stop/invalidation must be above entry zone");
+  const stopInvalidationDifferencePct = Math.abs(stopLoss - invalidationPrice) / invalidationPrice * 100;
+  if (stopInvalidationDifferencePct > STOP_INVALIDATION_TOLERANCE_PCT) throw new Error(`stopLoss must match structural invalidation within ${STOP_INVALIDATION_TOLERANCE_PCT}%`);
   const targets = (Array.isArray(input.takeProfits) ? input.takeProfits : [])
     .slice(0, 5)
     .map((target, index) => ({
@@ -2332,10 +2561,10 @@ function normalizeTradingPlan(input) {
   const firstRealisticBasis = scannerText(firstRealisticInput.basis, "", 500);
   if (!firstRealisticBasis) throw new Error("firstRealisticTarget.basis is required");
   if (Math.abs(firstRealisticPrice - targets[0].price) / targets[0].price > 0.000001) throw new Error("firstRealisticTarget.price must equal the first take-profit");
+  const expiresSupplied = input.expiresAt !== undefined && input.expiresAt !== null && String(input.expiresAt).trim() !== "";
   const expiresAtMs = Date.parse(input.expiresAt || "");
-  const expiresAt = Number.isFinite(expiresAtMs)
-    ? new Date(expiresAtMs).toISOString()
-    : new Date(now + DEFAULT_PLAN_HOURS * 60 * 60_000).toISOString();
+  if (expiresSupplied && !Number.isFinite(expiresAtMs)) throw new Error("expiresAt must be a valid ISO date-time");
+  const expiresAt = Number.isFinite(expiresAtMs) ? new Date(expiresAtMs).toISOString() : new Date(now + DEFAULT_PLAN_HOURS * 60 * 60_000).toISOString();
   if (Date.parse(expiresAt) <= now) throw new Error("expiresAt must be in the future");
   if (Date.parse(expiresAt) > now + 7 * 24 * 60 * 60_000) throw new Error("expiresAt cannot exceed 7 days");
   const confirmation = input.confirmation && typeof input.confirmation === "object" ? input.confirmation : {};
@@ -2347,6 +2576,8 @@ function normalizeTradingPlan(input) {
   if (direction === "SHORT" && !Number.isFinite(close15mBelow)) throw new Error("SHORT requires explicit confirmation.close15mBelow");
   if (direction === "LONG" && protectivePrice >= entryMax) throw new Error("LONG protective HL must be below the entry-zone maximum");
   if (direction === "SHORT" && protectivePrice <= entryMin) throw new Error("SHORT protective LH must be above the entry-zone minimum");
+  if (direction === "LONG" && stopLoss > protectivePrice) throw new Error("LONG stopLoss must be at or below the protective HL");
+  if (direction === "SHORT" && stopLoss < protectivePrice) throw new Error("SHORT stopLoss must be at or above the protective LH");
   if (model === "B" && !Number.isFinite(finite(triggerInput.acceptanceLevel))) throw new Error("Model B requires trigger.acceptanceLevel");
   if (model === "C" && !Number.isFinite(finite(triggerInput.reclaimLevel))) throw new Error("Model C requires trigger.reclaimLevel");
   const hardBlockers = (Array.isArray(input.hardBlockers) ? input.hardBlockers : []).map((item) => scannerText(item, "", 160)).filter(Boolean);
@@ -2356,9 +2587,34 @@ function normalizeTradingPlan(input) {
   const accountEquityUsdt = scannerNumber(riskInput.accountEquityUsdt, "risk.accountEquityUsdt", { positive: true });
   const accountRiskPct = scannerNumber(riskInput.accountRiskPct, "risk.accountRiskPct", { positive: true });
   const leverage = scannerNumber(riskInput.leverage, "risk.leverage", { positive: true });
-  if (accountRiskPct > LEGACY_CONFIG.absolutePlanRiskCapPct) throw new Error("risk.accountRiskPct exceeds configured absolute cap");
+  const gradeRiskRange = LEGACY_CONFIG.riskByGradePct[opportunityGrade];
+  const gradeRiskCapPct = Math.min(LEGACY_CONFIG.absolutePlanRiskCapPct, gradeRiskRange?.[1] ?? 0);
+  if (accountRiskPct > gradeRiskCapPct) throw new Error(`risk.accountRiskPct exceeds ${opportunityGrade} configured cap ${gradeRiskCapPct}%`);
+  if (leverage > MAX_LEVERAGE) throw new Error(`risk.leverage cannot exceed ${MAX_LEVERAGE}x safety ceiling`);
+  const riskAssessmentStatus = scannerText(riskInput.riskAssessmentStatus, "", 32).toUpperCase();
+  if (riskAssessmentStatus !== "VERIFIED_CLEAR") throw new Error("risk.riskAssessmentStatus must be VERIFIED_CLEAR; unknown account or psychology state cannot arm a plan");
   if (riskInput.dailyRiskLimitReached !== false) throw new Error("risk.dailyRiskLimitReached must be explicitly false");
   if (riskInput.psychologicalVeto !== false) throw new Error("risk.psychologicalVeto must be explicitly false");
+  const correlatedRiskPct = finite(riskInput.correlatedRiskPct, 0);
+  if (correlatedRiskPct < 0 || correlatedRiskPct > LEGACY_CONFIG.correlatedRiskCapPct) throw new Error("risk.correlatedRiskPct exceeds configured correlated-risk cap");
+  const timeframeAliases = { SHORT_TERM: "SHORT", SHORT: "SHORT", MEDIUM_SHORT: "MEDIUM_SHORT", SWING: "SWING" };
+  const timeframe = timeframeAliases[scannerText(input.timeframe || "SHORT", "SHORT", 40).toUpperCase()];
+  if (!timeframe) throw new Error("timeframe must be SHORT, MEDIUM_SHORT or SWING");
+  const configuredMinNetRR = LEGACY_CONFIG.minimumNetRR[timeframe]?.[opportunityGrade];
+  const requestedMinNetRR = scannerNumber(input.minNetRR, "minNetRR", { positive: true });
+  if (!Number.isFinite(configuredMinNetRR) || requestedMinNetRR < configuredMinNetRR) throw new Error(`minNetRR must be at least configured ${configuredMinNetRR} for ${timeframe}/${opportunityGrade}`);
+  const sourceAnalysisMs = Date.parse(input.sourceAnalysisAt || "");
+  if (!Number.isFinite(sourceAnalysisMs)) throw new Error("sourceAnalysisAt must be a valid ISO date-time");
+  if (sourceAnalysisMs < now - MAX_SOURCE_ANALYSIS_AGE_MS) throw new Error("sourceAnalysisAt is stale; refresh realtime Action data before arming");
+  if (sourceAnalysisMs > now + MAX_SOURCE_ANALYSIS_FUTURE_SKEW_MS) throw new Error("sourceAnalysisAt is in the future");
+  const entryReference = (entryMin + entryMax) / 2;
+  const stopDistance = Math.abs(entryReference - stopLoss);
+  const stopDistancePct = stopDistance / entryReference * 100;
+  if (!Number.isFinite(stopDistancePct) || stopDistancePct <= 0) throw new Error("Structural stop distance is invalid");
+  const allowedLossUsdt = accountEquityUsdt * accountRiskPct / 100;
+  const quantity = allowedLossUsdt / stopDistance;
+  const notionalUsdt = quantity * entryReference;
+  const requiredMarginUsdt = notionalUsdt / leverage;
   const planId = scannerText(input.planId, "", 80) || `plan-${new Date(now).toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
   return {
     planId,
@@ -2369,6 +2625,7 @@ function normalizeTradingPlan(input) {
     model,
     submodel,
     submodelName: submodelDefinition.name,
+    opportunityGrade,
     marketRegime,
     regimePermission,
     modelPriority: { A: 1, B: 2, C: 3 }[model],
@@ -2389,7 +2646,7 @@ function normalizeTradingPlan(input) {
       acceptanceLevel: Number.isFinite(finite(triggerInput.acceptanceLevel)) ? round(finite(triggerInput.acceptanceLevel), 8) : null,
       protectiveStructure: { type: protectiveType, price: round(protectivePrice, 8) },
     },
-    timeframe: scannerText(input.timeframe || "SHORT_TERM", "SHORT_TERM", 40),
+    timeframe,
     createdAt: new Date(now).toISOString(),
     expiresAt,
     entryZone: { min: round(entryMin, 8), max: round(entryMax, 8) },
@@ -2399,7 +2656,8 @@ function normalizeTradingPlan(input) {
     firstRealisticTarget: { price: round(firstRealisticPrice, 8), basis: firstRealisticBasis },
     maximumExecutionPrice: Number.isFinite(finite(input.maximumExecutionPrice)) ? round(finite(input.maximumExecutionPrice), 8) : null,
     minimumExecutionPrice: Number.isFinite(finite(input.minimumExecutionPrice)) ? round(finite(input.minimumExecutionPrice), 8) : null,
-    minNetRR: round(Math.max(1, scannerNumber(input.minNetRR, "minNetRR", { positive: true })), 3),
+    minNetRR: round(requestedMinNetRR, 3),
+    configuredMinNetRR: round(configuredMinNetRR, 3),
     estimatedRoundTripCostPct: round(Math.max(0, finite(input.estimatedRoundTripCostPct, 0.15)), 4),
     confirmation: {
       close15mAbove: Number.isFinite(close15mAbove) ? round(close15mAbove, 8) : null,
@@ -2412,9 +2670,7 @@ function normalizeTradingPlan(input) {
     },
     liquidityProtection: {
       blockDangerousStopPool: input.liquidityProtection?.blockDangerousStopPool !== false,
-      blockExtremeCrowding: input.liquidityProtection?.blockExtremeCrowding !== false,
-      blockAdverseSweep: input.liquidityProtection?.blockAdverseSweep !== false,
-      blockRepeatedFailureZone: input.liquidityProtection?.blockRepeatedFailureZone !== false,
+      crowdingAdverseSweepAndFailureZonesAreSoftWarnings: true,
       failureCooldownHours: round(Math.min(168, Math.max(12, finite(input.liquidityProtection?.failureCooldownHours, 72))), 2),
       maximumFailuresNearZone: Math.min(5, Math.max(1, Math.floor(finite(input.liquidityProtection?.maximumFailuresNearZone, 2)))),
     },
@@ -2423,16 +2679,27 @@ function normalizeTradingPlan(input) {
     strongestCounterEvidence: scannerText(input.strongestCounterEvidence, "", 500),
     hardBlockers: [],
     softWarnings: (Array.isArray(input.softWarnings) ? input.softWarnings : []).map((item) => scannerText(item, "", 160)).filter(Boolean).slice(0, 12),
-    sourceAnalysisAt: scannerText(input.sourceAnalysisAt, new Date(now).toISOString(), 60),
+    sourceAnalysisAt: new Date(sourceAnalysisMs).toISOString(),
     risk: {
       accountEquityUsdt: round(accountEquityUsdt, 2),
       accountRiskPct: round(accountRiskPct, 3),
       leverage: round(leverage, 2),
       marginMode: scannerText(riskInput.marginMode || "ISOLATED", "ISOLATED", 20).toUpperCase(),
       configStatus: scannerText(riskInput.configStatus || LEGACY_CONFIG.status, LEGACY_CONFIG.status, 50),
+      riskAssessmentStatus,
       dailyRiskLimitReached: false,
       psychologicalVeto: false,
-      correlatedRiskPct: Number.isFinite(finite(riskInput.correlatedRiskPct)) ? round(finite(riskInput.correlatedRiskPct), 3) : null,
+      correlatedRiskPct: round(correlatedRiskPct, 3),
+      derivedSizing: {
+        entryReference: round(entryReference, 8),
+        structuralStopDistance: round(stopDistance, 8),
+        structuralStopDistancePct: round(stopDistancePct, 5),
+        allowedLossUsdt: round(allowedLossUsdt, 2),
+        quantity: round(quantity, 8),
+        notionalUsdt: round(notionalUsdt, 2),
+        requiredMarginUsdt: round(requiredMarginUsdt, 2),
+        formula: "quantity=allowedLoss/structuralStopDistance; leverage changes margin, not risk",
+      },
     },
   };
 }
@@ -2469,7 +2736,7 @@ function failureZoneEvidence(plan, failureHistory = []) {
   });
   return {
     count: matching.length,
-    blocked: plan.liquidityProtection.blockRepeatedFailureZone && matching.length >= plan.liquidityProtection.maximumFailuresNearZone,
+    thresholdReached: matching.length >= plan.liquidityProtection.maximumFailuresNearZone,
     cooldownHours: plan.liquidityProtection.failureCooldownHours,
     maximumFailuresNearZone: plan.liquidityProtection.maximumFailuresNearZone,
     matches: matching.slice(-5),
@@ -2509,7 +2776,7 @@ function planLiquidityRisk(plan, asset, failureHistory = []) {
   if (crowding.score >= 3) warnings.push("DIRECTION_EXTREMELY_CROWDED_SOFT_WARNING");
   else if (crowding.score === 2) warnings.push("DIRECTION_MODERATELY_CROWDED");
   if (adverseSweep) warnings.push("RECENT_ADVERSE_SWEEP_RECLAIM_REQUIRES_STRUCTURE_REVIEW");
-  if (failures.blocked) warnings.push("REPEATED_FAILURE_ZONE_REQUIRES_REVIEW");
+  if (failures.thresholdReached) warnings.push("REPEATED_FAILURE_ZONE_REQUIRES_REVIEW");
   if (participant.classification === "ADVERSE") warnings.push("LARGE_TAKER_FOOTPRINT_ADVERSE");
   if (liquidationProxy.riskClassification === "CASCADE_CONTINUATION_RISK") {
     const dominant = liquidationProxy?.evidence?.dominantSide15m;
@@ -2591,14 +2858,8 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const directionLong = plan.direction === "LONG";
   const expired = now >= Date.parse(plan.expiresAt);
   const invalidated = Number.isFinite(price) && (directionLong ? price <= plan.invalidationPrice : price >= plan.invalidationPrice);
-  const targetIndex = Number.isFinite(price)
-    ? plan.takeProfits.reduce((hit, target, index) => directionLong ? (price >= target.price ? index : hit) : (price <= target.price ? index : hit), -1)
-    : -1;
   if (expired) return { state: "EXPIRED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, reason: "GPT plan expired", planId: plan.planId, checkedAt: new Date(now).toISOString() };
   if (invalidated) return { state: "INVALIDATED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, reason: "Price crossed the GPT plan invalidation level", planId: plan.planId, checkedAt: new Date(now).toISOString() };
-  if (targetIndex >= 0 && (previousRuntime?.state === "CONFIRMED" || previousRuntime?.activatedAt)) {
-    return { state: `TP${targetIndex + 1}_HIT`, valid: true, price, btcPrice, priceSource, priceExchangeTimestamp, reason: `Take-profit ${targetIndex + 1} reached`, targetIndex, planId: plan.planId, checkedAt: new Date(now).toISOString() };
-  }
   const currentInZone = zoneVerification?.confirmed === true
     && zoneVerification?.rule === "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE";
   const zoneTouched = currentInZone;
@@ -2660,8 +2921,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const liquidityRiskPassed = liquidityRisk.passed;
   const registeredModel = ["A", "B", "C"].includes(plan.model);
   const registeredSubmodel = Boolean(SUBMODEL_DEFINITIONS[plan.submodel]?.parent === plan.model);
-  const regimePermission = submodelRegimePermission(plan.model, plan.submodel, plan.marketRegime);
+  const currentRegime = scannerText(asset?.marketRegimeRouter?.regime, "UNKNOWN", 24).toUpperCase();
+  const regimePermission = submodelRegimePermission(plan.model, plan.submodel, currentRegime);
   const regimeDirectPermission = regimePermission === "DIRECT";
+  const regimeChanged = currentRegime !== plan.marketRegime;
+  const perpetualStructureReady = [tf15, tf1h, tf4h].every((tf) => tf?.status === "ok" && tf?.source === "GATE_USDT_PERPETUAL" && tf?.quality?.passed === true);
   const locationPassed = plan.location?.quality === "GOOD" && plan.location?.rangePosition !== "MIDDLE";
   const meaningfulTriggerPassed = plan.trigger?.meaningful === true && Number.isFinite(finite(plan.trigger?.level));
   const protectivePrice = finite(plan.trigger?.protectiveStructure?.price);
@@ -2682,12 +2946,14 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     && meaningfulTriggerPassed
     && protectiveStructurePassed
   );
-  const riskContextPassed = plan.risk?.dailyRiskLimitReached !== true && plan.risk?.psychologicalVeto !== true;
+  const riskContextPassed = plan.risk?.riskAssessmentStatus === "VERIFIED_CLEAR" && plan.risk?.dailyRiskLimitReached !== true && plan.risk?.psychologicalVeto !== true;
   const explicitHardBlockersPassed = !Array.isArray(plan.hardBlockers) || plan.hardBlockers.length === 0;
   const checks = {
     registeredModel,
     registeredSubmodel,
     regimeDirectPermission,
+    currentRegimeMatchesSavedPlan: !regimeChanged,
+    perpetualStructureReady,
     locationPassed,
     meaningfulTriggerPassed,
     protectiveStructurePassed,
@@ -2711,17 +2977,25 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const hardBlockers = [];
   if (!registeredModel) hardBlockers.push("NO_REGISTERED_MODEL");
   if (!registeredSubmodel || regimePermission === "BLOCKED") hardBlockers.push("INVALID_SUBMODEL_OR_REGIME_PERMISSION");
+  if (regimeChanged) hardBlockers.push("MARKET_REGIME_CHANGED_REQUIRES_NEW_GPT_PLAN");
+  if (!perpetualStructureReady) hardBlockers.push("PERPETUAL_STRUCTURE_SOURCE_REQUIRED_FOR_EXECUTION");
   if (!locationPassed) hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
   if (!protectiveStructurePassed) hardBlockers.push("NO_VALID_PROTECTIVE_STRUCTURE");
   if (!rrPassed) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
   if (!liquidityRiskPassed) hardBlockers.push(...liquidityRisk.blockers);
-  if (!riskContextPassed) hardBlockers.push(plan.risk?.dailyRiskLimitReached ? "DAILY_RISK_LIMIT_REACHED" : "PSYCHOLOGICAL_VETO");
+  if (!riskContextPassed) {
+    if (plan.risk?.riskAssessmentStatus !== "VERIFIED_CLEAR") hardBlockers.push("ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED");
+    if (plan.risk?.dailyRiskLimitReached) hardBlockers.push("DAILY_RISK_LIMIT_REACHED");
+    if (plan.risk?.psychologicalVeto) hardBlockers.push("PSYCHOLOGICAL_VETO");
+  }
   if (!explicitHardBlockersPassed) hardBlockers.push(...plan.hardBlockers);
-  const state = confirmationPassed ? "CONFIRMED" : nearZone && hardBlockers.length ? "RISK_BLOCKED" : nearZone ? "WATCHING" : "ARMED";
+  const state = confirmationPassed ? "MARKET_CONFIRMED" : nearZone && hardBlockers.length ? "RISK_BLOCKED" : nearZone ? "WATCHING" : "ARMED";
   const failedChecks = Object.entries(checks).filter(([name, passed]) => name !== "nearZone" && !passed).map(([name]) => name);
   return {
     state,
-    valid: confirmationPassed,
+    valid: false,
+    openNowAllowed: false,
+    finalReviewRequired: ["LATEST_NEWS_AND_MACRO", "ACCOUNT_DAILY_RISK", "PSYCHOLOGICAL_STATE", "FRESH_ACTION_RECHECK"],
     price: round(price, 8),
     btcPrice: round(btcPrice, 8),
     priceSource,
@@ -2738,7 +3012,9 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     softWarnings: [...new Set([...(plan.softWarnings || []), ...(liquidityRisk.warnings || [])])],
     touch,
     regimePermission,
-    reason: confirmationPassed ? "All GPT-plan and realtime confirmation checks passed" : state === "RISK_BLOCKED" ? `Hard blocker prevented entry: ${[...new Set(hardBlockers)].join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
+    savedMarketRegime: plan.marketRegime,
+    currentMarketRegime: currentRegime,
+    reason: confirmationPassed ? "Market checks passed; OPEN_NOW remains false until GPT completes fresh news, account-risk and psychology review" : state === "RISK_BLOCKED" ? `Hard blocker prevented entry: ${[...new Set(hardBlockers)].join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
     planId: plan.planId,
     checkedAt: new Date(now).toISOString(),
   };
@@ -2747,9 +3023,9 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
 function scannerNotification(plan, evaluation) {
   const direction = plan.direction === "LONG" ? "做多" : "做空";
   const price = Number.isFinite(evaluation.price) ? evaluation.price : "未知";
-  if (evaluation.state === "CONFIRMED") return {
-    title: `✅ ${plan.symbol} 模型${plan.model}/${plan.submodel}条件已确认`,
-    body: `${direction}候选｜市场状态 ${plan.marketRegime}｜现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M关键触发复核 ${evaluation.confirmed15mClose}\n依据：${plan.strategySummary}\n仍须调用GPT复核新闻、心理和最新数据；本通知不等于自动开仓。`,
+  if (evaluation.state === "MARKET_CONFIRMED") return {
+    title: `✅ ${plan.symbol} 市场条件通过，等待最终复核`,
+    body: `${direction}候选｜当前市场状态 ${evaluation.currentMarketRegime}｜现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M关键触发 ${evaluation.confirmed15mClose}\nOPEN_NOW仍为false；请调用GPT复核最新新闻、账户日内风险和心理状态。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "ZONE_REACHED") return {
@@ -2776,11 +3052,6 @@ function scannerNotification(plan, evaluation) {
     title: `⌛ ${plan.symbol} GPT方案已过期`,
     body: `方案 ${plan.planId} 已到期，需要重新询问GPT并生成新方案。`,
     level: "active",
-  };
-  if (/^TP\d+_HIT$/.test(evaluation.state)) return {
-    title: `🎯 ${plan.symbol} ${evaluation.state.replace("_HIT", "")} 已到达`,
-    body: `现价 ${price}。按GPT方案执行对应止盈比例，并复核剩余仓位止损。`,
-    level: "timeSensitive",
   };
   return null;
 }
@@ -2847,21 +3118,21 @@ async function saveTradingPlan(env, input) {
 }
 
 function scannerShouldNotify(previous, evaluation) {
-  if (!["ZONE_REACHED", "CONFIRMED", "RISK_BLOCKED", "INVALIDATED", "EXPIRED"].includes(evaluation.state) && !/^TP\d+_HIT$/.test(evaluation.state)) return false;
+  if (!["ZONE_REACHED", "MARKET_CONFIRMED", "RISK_BLOCKED", "INVALIDATED", "EXPIRED"].includes(evaluation.state)) return false;
   if (!previous || previous.planId !== evaluation.planId) return evaluation.state !== "ARMED";
   if (evaluation.state !== previous.state) return true;
   if (previous.notification?.sent === false) {
     const lastAttemptAt = Date.parse(previous.lastAttemptAt || "");
     return !Number.isFinite(lastAttemptAt) || Date.now() - lastAttemptAt >= 2 * 60_000;
   }
-  if (evaluation.state === "CONFIRMED") {
+  if (evaluation.state === "MARKET_CONFIRMED") {
     const lastAt = Date.parse(previous.lastAlertAt || "");
     return evaluation.confirmed15mAt !== previous.lastConfirmedCandleAt && (!Number.isFinite(lastAt) || Date.now() - lastAt >= CONFIRMATION_COOLDOWN_MS);
   }
   return false;
 }
 
-async function runScanner(env) {
+async function runScannerUnlocked(env) {
   if (!scannerStateStub(env) && (!env?.ALERT_STATE?.get || !env?.ALERT_STATE?.put)) {
     return { status: "configuration_required", build: BUILD, reason: "SCANNER_STATE_BINDING_MISSING", configuration: scannerConfiguration(env) };
   }
@@ -2905,6 +3176,9 @@ async function runScanner(env) {
       planId: plan.planId,
       checkedAt: new Date(Date.now()).toISOString(),
     };
+  if (!(await scannerPlanIsCurrent(env, plan))) {
+    return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_DURING_SCAN", notification: { sent: false, reason: "STALE_PLAN" } };
+  }
   if (evaluation.state === "INVALIDATED" && previous?.state !== "INVALIDATED") {
     const cutoff = Date.now() - FAILURE_HISTORY_DAYS * 24 * 60 * 60_000;
     failureHistory = failureHistory
@@ -2921,6 +3195,8 @@ async function runScanner(env) {
         failedAt: new Date(Date.now()).toISOString(),
         failurePrice: evaluation.price,
         reason: evaluation.reason,
+        outcomeType: "SETUP_INVALIDATION_NOT_CONFIRMED_TRADE_LOSS",
+        executionWasAssumed: false,
       })
       .slice(-50);
     await scannerStatePut(env, SCANNER_FAILURE_HISTORY_KEY, failureHistory, FAILURE_HISTORY_DAYS * 24 * 60 * 60);
@@ -2928,6 +3204,7 @@ async function runScanner(env) {
   const shouldNotify = scannerShouldNotify(previous, evaluation);
   let notification = { sent: false, reason: "NO_STATE_TRANSITION" };
   if (shouldNotify) {
+    if (!(await scannerPlanIsCurrent(env, plan))) return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_BEFORE_NOTIFICATION", notification: { sent: false, reason: "STALE_PLAN" } };
     try { notification = await sendBark(env, scannerNotification(plan, evaluation)); }
     catch (error) { notification = { sent: false, reason: error?.message || String(error) }; }
   }
@@ -2944,8 +3221,8 @@ async function runScanner(env) {
     lastPersistedAt: nowIso,
     lastAlertAt: notification.sent ? nowIso : previous?.lastAlertAt || null,
     lastAttemptAt: shouldNotify ? nowIso : previous?.lastAttemptAt || null,
-    lastConfirmedCandleAt: evaluation.state === "CONFIRMED" ? evaluation.confirmed15mAt : previous?.lastConfirmedCandleAt || null,
-    activatedAt: evaluation.state === "CONFIRMED" ? previous?.activatedAt || nowIso : previous?.activatedAt || null,
+    lastConfirmedCandleAt: evaluation.state === "MARKET_CONFIRMED" ? evaluation.confirmed15mAt : previous?.lastConfirmedCandleAt || null,
+    activatedAt: null,
     lastObservedPrice: verifiedObservation ? evaluation.price : previous?.lastObservedPrice || null,
     lastObservedAt: verifiedObservation ? nowIso : previous?.lastObservedAt || null,
     lastObservedPriceVerified: verifiedObservation ? true : previous?.lastObservedPriceVerified === true,
@@ -2957,6 +3234,7 @@ async function runScanner(env) {
     notification,
   };
   const ttlSeconds = Math.max(3600, Math.ceil((Date.parse(plan.expiresAt) - Date.now()) / 1000) + 24 * 60 * 60);
+  if (!(await scannerPlanIsCurrent(env, plan))) return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_BEFORE_RUNTIME_WRITE", notification };
   await scannerStatePut(env, SCANNER_RUNTIME_KEY, nextRuntime, ttlSeconds);
   return {
     status: "ok",
@@ -2966,6 +3244,20 @@ async function runScanner(env) {
     notification,
     configuration: scannerConfiguration(env),
   };
+}
+
+async function runScanner(env) {
+  const configuration = scannerConfiguration(env);
+  if (!configuration.barkConfigured || !configuration.scannerTokenConfigured || !configuration.stateConfigured) {
+    return { status: "configuration_error", build: BUILD, configuration };
+  }
+  const token = crypto.randomUUID();
+  if (!(await scannerAcquireLease(env, token))) return { status: "busy", build: BUILD, reason: "SCANNER_RUN_ALREADY_IN_PROGRESS" };
+  try {
+    return await runScannerUnlocked(env);
+  } finally {
+    await scannerReleaseLease(env, token).catch(() => {});
+  }
 }
 
 async function scannerStatus(env) {
@@ -2992,6 +3284,7 @@ function openApi(origin) {
       instrumentId: { type: "string" },
       ticker: moduleSchema,
       indexPrice: moduleSchema,
+      spotMarket: moduleSchema,
       timeframes: {
         type: "object",
         properties: { "15m": moduleSchema, "1h": moduleSchema, "4h": moduleSchema },
@@ -3003,6 +3296,8 @@ function openApi(origin) {
       capitalFlow: moduleSchema,
       executionLiquidity: moduleSchema,
       liquidationRiskProxy: moduleSchema,
+      estimatedLiquidationPressureZones: moduleSchema,
+      largeParticipantProxy: moduleSchema,
       liquidityRisk: moduleSchema,
       effortVsResult: moduleSchema,
       marketRegimeRouter: moduleSchema,
@@ -3011,7 +3306,7 @@ function openApi(origin) {
   };
   const planSchema = {
     type: "object",
-    required: ["symbol", "direction", "model", "submodel", "marketRegime", "modelInvalidation", "location", "trigger", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "firstRealisticTarget", "minNetRR", "hardBlockers", "risk", "strategySummary", "triggerExplanation", "expiresAt"],
+    required: ["symbol", "direction", "model", "submodel", "marketRegime", "opportunityGrade", "modelInvalidation", "location", "trigger", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "firstRealisticTarget", "minNetRR", "hardBlockers", "risk", "strategySummary", "triggerExplanation", "sourceAnalysisAt", "expiresAt"],
     properties: {
       planId: { type: "string", description: "Stable identifier for this exact final GPT plan; omit to auto-generate." },
       symbol: { type: "string", enum: ["ETHUSDT", "BTCUSDT"] },
@@ -3019,6 +3314,7 @@ function openApi(origin) {
       model: { type: "string", enum: ["A", "B", "C"], description: "The only allowed course setup models. No model means no plan." },
       submodel: { type: "string", enum: ["A1", "A2", "B1", "B2", "C1", "C2"], description: "Required child of A/B/C; it cannot create a fourth parent model." },
       marketRegime: { type: "string", enum: ["TREND", "RANGE", "COMPRESSION", "TRANSITION"], description: "Technical regime selected before setup evaluation. Event and abnormal-liquidity risk remain independent hard blockers." },
+      opportunityGrade: { type: "string", enum: ["A+", "A", "B"], description: "C/D opportunities cannot be armed. Grade selects the configured risk and minimum-net-RR ceiling." },
       modelConfluence: { type: "array", items: { type: "string" }, description: "Optional supporting overlap; priority remains A then B then C." },
       modelInvalidation: { type: "string", description: "Causal model invalidation, not merely a price number." },
       location: {
@@ -3048,7 +3344,7 @@ function openApi(origin) {
           },
         },
       },
-      timeframe: { type: "string", description: "Flexible holding horizon selected from current structure; do not mechanically force short-term or swing." },
+      timeframe: { type: "string", enum: ["SHORT", "MEDIUM_SHORT", "SWING"], description: "Flexible holding horizon selected from current structure; do not mechanically force short-term or swing." },
       expiresAt: { type: "string", format: "date-time", description: "Hard expiry, no more than seven days from now." },
       entryZone: {
         type: "object",
@@ -3059,12 +3355,9 @@ function openApi(origin) {
       invalidationPrice: { type: "number" },
       liquidityProtection: {
         type: "object",
-        description: "Optional overrides for the default free liquidity/crowding veto layer. Defaults are protective and should normally remain enabled.",
+        description: "Optional execution protection. Crowding, an adverse sweep and repeated failure zones remain soft warnings unless independent structure/execution evidence creates a hard blocker.",
         properties: {
           blockDangerousStopPool: { type: "boolean" },
-          blockExtremeCrowding: { type: "boolean" },
-          blockAdverseSweep: { type: "boolean" },
-          blockRepeatedFailureZone: { type: "boolean" },
           failureCooldownHours: { type: "number", minimum: 12, maximum: 168 },
           maximumFailuresNearZone: { type: "integer", minimum: 1, maximum: 5 },
         },
@@ -3109,16 +3402,18 @@ function openApi(origin) {
       sourceAnalysisAt: { type: "string", format: "date-time" },
       risk: {
         type: "object",
-        required: ["accountEquityUsdt", "accountRiskPct", "leverage", "dailyRiskLimitReached", "psychologicalVeto"],
+        required: ["accountEquityUsdt", "accountRiskPct", "leverage", "riskAssessmentStatus", "dailyRiskLimitReached", "psychologicalVeto", "correlatedRiskPct"],
         properties: {
           accountEquityUsdt: { type: ["number", "null"] },
           accountRiskPct: { type: ["number", "null"] },
           leverage: { type: ["number", "null"] },
           marginMode: { type: "string" },
           configStatus: { type: "string" },
+          riskAssessmentStatus: { type: "string", enum: ["VERIFIED_CLEAR"], description: "Only after current account and psychology state are explicitly checked. Unknown cannot arm." },
           dailyRiskLimitReached: { type: "boolean" },
           psychologicalVeto: { type: "boolean" },
           correlatedRiskPct: { type: ["number", "null"] },
+          derivedSizing: moduleSchema,
         },
       },
     },
@@ -3174,6 +3469,8 @@ function openApi(origin) {
                           coveragePct: { type: "number" },
                           executionPriceReady: { type: "boolean" },
                           semanticQualityReady: { type: "boolean" },
+                          perpetualStructureReady: { type: "boolean" },
+                          openNowDataReady: { type: "boolean" },
                           criticalReady: { type: "boolean" },
                           capitalFlowAvailable: { type: "integer" },
                           capitalFlowTotal: { type: "integer" },
@@ -3271,7 +3568,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续的实时价格、指数价格、标记价格、当前未平仓量、5分钟/15分钟/1小时未平仓量变化和资金费率。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、已发生强平及多空比等辅助证据。可选 Coinalyze 免费接口仅补充所选市场已经发生的清算历史，不是全市场未来清算地图。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底。服务地址：${origin}</p><p>最后更新：2026-09-05</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、已发生强平及多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底，且不能放行执行。服务地址：${origin}</p><p>最后更新：2026-09-06</p></body></html>`;
 }
 
 async function handleSnapshot(request, env, ctx) {
@@ -3347,6 +3644,24 @@ export class ScannerState {
       }
       return Response.json({ status: "ok", stored });
     }
+    if (input?.op === "acquireLease") {
+      const key = String(input.key || SCANNER_LEASE_KEY);
+      const now = Date.now();
+      const existing = await this.ctx.storage.get(key);
+      if (existing?.value?.token && Number.isFinite(existing.value.expiresAt) && existing.value.expiresAt > now) {
+        return Response.json({ status: "ok", acquired: false, owner: existing.value.token, expiresAt: existing.value.expiresAt });
+      }
+      const ttlMs = Math.min(60_000, Math.max(5_000, finite(input.ttlMs, 55_000)));
+      const value = { token: String(input.token), expiresAt: now + ttlMs };
+      await this.ctx.storage.put(key, { value, expiresAt: value.expiresAt + 60_000 });
+      return Response.json({ status: "ok", acquired: true, expiresAt: value.expiresAt });
+    }
+    if (input?.op === "releaseLease") {
+      const key = String(input.key || SCANNER_LEASE_KEY);
+      const existing = await this.ctx.storage.get(key);
+      if (existing?.value?.token === String(input.token)) await this.ctx.storage.delete(key);
+      return Response.json({ status: "ok", released: existing?.value?.token === String(input.token) });
+    }
     return Response.json({ error: "INVALID_OPERATION" }, { status: 400 });
   }
 }
@@ -3403,7 +3718,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX execution/index/OI/funding + Gate USDT perpetual primary candles/free auxiliary capital flow + optional Coinalyze realized-liquidation history + Kraken Spot emergency fallback", normalOkxRequests: 8, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + OKX spot ticker/book/recent trades + Gate perpetual candles/free flow + optional Coinalyze realized liquidations + Kraken Spot emergency structure fallback", normalOkxRequests: 13, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
