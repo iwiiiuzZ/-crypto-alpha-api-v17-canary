@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.5.1-persistent-rate-circuit-perpetual-discovery";
-const API_VERSION = "4.5.1";
+const BUILD = "crypto-alpha-worker-v19.5.2-subrequest-safe-rate-circuit";
+const API_VERSION = "4.5.2";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.5.1-persistent-rate-circuit-perpetual-discovery";
+const CACHE_NAMESPACE = "v19.5.2-subrequest-safe-rate-circuit";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -225,7 +225,10 @@ function retryDeadline(headers) {
 }
 
 function usesSharedCooldown(endpoint) {
-  return endpoint.includes("/api/v5/market/candles") || endpoint.includes("/api/v4/futures/usdt/candlesticks");
+  // Persist only the repeatedly rate-limited primary source. Persisting a long
+  // circuit for the fallback itself can unnecessarily disable the only usable
+  // perpetual structure source after a brief Gate throttle.
+  return endpoint.includes("/api/v5/market/candles");
 }
 
 async function sharedCooldown(endpoint) {
@@ -439,7 +442,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
       const queuedUntil = Math.max(upstreamCooldowns.get(endpoint) || 0, await sharedCooldown(endpoint));
       if (queuedUntil > Date.now()) throw cooldownError(queuedUntil);
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.5.1", ...extraHeaders },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.5.2", ...extraHeaders },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -593,7 +596,10 @@ async function okxKlines(instrumentId, timeframe, tfConfig) {
     label: "OKX perpetual candles",
     policy: okxPolicyForTimeframe(timeframe),
     isOkx: true,
-    persistentCache: true,
+    // Per-candle Cache API reads/writes consume Cloudflare subrequests. The
+    // whole-snapshot route cache plus the persistent OKX rate circuit provide
+    // cross-request protection without spending up to 12 extra operations.
+    persistentCache: false,
     validate(body) {
       if (body?.code !== "0" || !Array.isArray(body?.data)) {
         const error = new Error(`OKX candles ${body?.code || "invalid response"}: ${body?.msg || "no data"}`);
@@ -2606,10 +2612,10 @@ async function buildSnapshot(options = {}) {
     requestBudget: {
       plannedOkx: 19,
       plannedUpstreamFetches: coinalyze.configured ? 27 : 25,
-      plannedCloudflareSubrequestsCold: coinalyze.configured ? 29 : 27,
-      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 45,
+      plannedCloudflareSubrequestsCold: coinalyze.configured ? 30 : 28,
+      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 48,
       cloudflareFreeLimit: 50,
-      persistentPerModuleCache: "OKX_CANDLES_GATE_KRAKEN_AND_OPTIONAL_COINALYZE; OTHER_OKX_MODULES_USE_MEMORY_PLUS_ROUTE_CACHE",
+      persistentPerModuleCache: "SNAPSHOT_ROUTE_OPTIONAL_COINALYZE_AND_OKX_RATE_CIRCUIT; CANDLES_USE_MEMORY_TO_PROTECT_SUBREQUEST_BUDGET",
       coinalyzeConfigured: coinalyze.configured,
       coinalyzeProviderCallUnits: coinalyze.requestSymbolCount || 0,
     },
@@ -4120,7 +4126,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding/primary candles + OKX spot ticker/book/recent trades + Gate perpetual candle fallback/free flow + optional Coinalyze realized liquidations + Kraken Spot emergency observation fallback", normalOkxRequests: 19, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "PRIMARY_PERPETUAL_STRUCTURE", gateCandlesRole: "PERPETUAL_FALLBACK", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_AND_GATE_CANDLE_ENDPOINTS" }, autonomousDiscoveryStructureSources: ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding/primary candles + OKX spot ticker/book/recent trades + Gate perpetual candle fallback/free flow + optional Coinalyze realized liquidations + Kraken Spot emergency observation fallback", normalOkxRequests: 19, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "PRIMARY_PERPETUAL_STRUCTURE", gateCandlesRole: "PERPETUAL_FALLBACK", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: false, candleCacheReason: "PROTECT_CLOUDFLARE_SUBREQUEST_BUDGET", autonomousDiscoveryStructureSources: ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
