@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.4.0-validation-reality-governance";
-const API_VERSION = "4.4.0";
+const BUILD = "crypto-alpha-worker-v19.5.0-rate-protected-okx-structure-b1-discovery";
+const API_VERSION = "4.5.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.4.0-validation-reality-governance";
+const CACHE_NAMESPACE = "v19.5.0-rate-protected-okx-structure-b1-discovery";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -22,6 +22,98 @@ const MAX_SOURCE_ANALYSIS_AGE_MS = 15 * 60_000;
 const MAX_SOURCE_ANALYSIS_FUTURE_SKEW_MS = 2 * 60_000;
 const STOP_INVALIDATION_TOLERANCE_PCT = 0.05;
 const MAX_LEVERAGE = 50;
+const DISCOVERY_STATE_KEY = "scanner:discovery";
+const MANUAL_PRIORITY_KEY = "scanner:manual-priority";
+
+// Conservative first autonomous detector: complete B1 chain only.
+// Other submodels continue to be evaluated by GPT, not approximated here.
+function discoverBreakoutRetest(asset, btc) {
+  const tfs = asset?.timeframes;
+  if (!["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].source === "OKX_USDT_PERPETUAL" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error")) return null;
+  if (asset.marketRegimeRouter?.regime !== "TREND") return null;
+  const rows = tfs["15m"].recentCandles.filter(c => c.confirmed === true);
+  if (rows.length < 20) return null;
+  const range = rows.slice(0, -3);
+  const [breakout, retest, continuation] = rows.slice(-3);
+  const closeAge = Date.now() - (Date.parse(continuation.ts) + 15 * 60_000);
+  if (!Number.isFinite(closeAge) || closeAge < 0 || closeAge > 20 * 60_000) return null;
+  const high = Math.max(...range.map(c => c.h));
+  const low = Math.min(...range.map(c => c.l));
+  const atr15 = finite(tfs["15m"].indicators?.atr14);
+  if (!(atr15 > 0)) return null;
+  const long = breakout.c > high + 0.15 * atr15 && breakout.o <= high && retest.l <= high && retest.c > high && continuation.c > breakout.h;
+  const short = breakout.c < low - 0.15 * atr15 && breakout.o >= low && retest.h >= low && retest.c < low && continuation.c < breakout.l;
+  if (long === short) return null;
+  const direction = long ? "LONG" : "SHORT";
+  if (trendAgainst(direction, tfs["4h"]) || trendAgainst(direction, tfs["1h"]) || trendAgainst(direction, btc?.timeframes?.["4h"]) || trendAgainst(direction, btc?.timeframes?.["1h"])) return null;
+  const price = finite(asset.ticker?.last);
+  const boundary = long ? high : low;
+  // No chasing: still within one ATR of the reclaimed boundary.
+  if (!Number.isFinite(price) || Math.abs(price - boundary) > atr15 || (long ? price <= boundary : price >= boundary)) return null;
+  const stopLoss = long ? retest.l : retest.h;
+  const targets = [tfs["1h"].levels, tfs["4h"].levels].flatMap(levels => long ? [levels?.resistance20, levels?.resistance50] : [levels?.support20, levels?.support50]).filter(p => Number.isFinite(p) && (long ? p > price : p < price)).sort((a,b) => long ? a-b : b-a);
+  if (!targets.length) return null;
+  const plan = { direction, stopLoss, takeProfits: [{ price: targets[0] }], estimatedRoundTripCostPct: 0.15 };
+  const netRR = planNetRR(plan, price);
+  if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.A)) return null;
+  return { model: "B", submodel: "B1", direction, boundary, stopLoss, target: targets[0], netRR, candleAt: continuation.ts, entryZone: { min: long ? boundary : boundary - atr15, max: long ? boundary + atr15 : boundary }, openNowAllowed: false };
+}
+
+async function runDiscovery(env) {
+  if (String(env?.DISCOVERY_ENABLED ?? "true") === "false") return { status: "idle", reason: "DISCOVERY_DISABLED" };
+  if (!scannerStateStub(env)) return { status: "idle", reason: "DISCOVERY_REQUIRES_DURABLE_STATE" };
+  const state = await scannerStateBundle(env, [DISCOVERY_STATE_KEY, MANUAL_PRIORITY_KEY]);
+  const old = state[DISCOVERY_STATE_KEY] || {};
+  const now = Date.now();
+  if (state[MANUAL_PRIORITY_KEY]?.until > now || now - finite(old.lastRunAt, 0) < 5 * 60_000) return { status: "idle", reason: "DISCOVERY_DEFERRED" };
+  await scannerStatePut(env, DISCOVERY_STATE_KEY, { ...old, lastRunAt: now }, 86400);
+  try {
+    const assets = {};
+    // Direct execution verification plus exact OKX perpetual candles. A failed
+    // background pass is silent and never falls through to a lower-grade source.
+    for (const [symbol, config] of Object.entries(ASSETS)) {
+      const ticker = await verifyOkxScannerPrice(symbol);
+      const timeframes = {};
+      for (const [tf, tfConfig] of Object.entries(TIMEFRAMES)) {
+        const candles = parseOkxCandles(await okxKlines(config.instrumentId, tf, tfConfig));
+        const quality = candleQuality(candles, ticker.last, tf, tfConfig, "OKX_USDT_PERPETUAL");
+        if (!quality.passed || candles.__cache?.state === "stale-on-error") throw new Error("DISCOVERY_PRIMARY_DATA_UNAVAILABLE");
+        const closed = candles.filter(c => c.confirmed === true);
+        timeframes[tf] = { ...summarizeTimeframe(closed), source: "OKX_USDT_PERPETUAL", quality };
+      }
+      assets[symbol] = { ticker, timeframes };
+      assets[symbol].marketRegimeRouter = buildMarketRegimeRouter(assets[symbol]);
+    }
+    let candidate = discoverBreakoutRetest(assets.ETHUSDT, assets.BTCUSDT);
+    if (!candidate) return { status: "idle", reason: "NO_B1_CANDIDATE" };
+    const signature = `${candidate.direction}:${candidate.boundary.toFixed(1)}`;
+    if (now - finite(old.lastAlertAt, 0) < 30 * 60_000) return { status: "idle", reason: "DISCOVERY_NOTIFICATION_COOLDOWN" };
+    const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY);
+    if (priority?.until > Date.now()) return { status: "idle", reason: "MANUAL_REQUEST_PRIORITY" };
+    // Optional Coinalyze is reserved for manual analysis; background uses Gate proxy.
+    const full = await buildSnapshot({});
+    if (!full.coverage?.openNowDataReady) return { status: "idle", reason: "DISCOVERY_DATA_BLOCKED" };
+    // Use closed-only primary summaries from this discovery pass.
+    full.assets.ETHUSDT.timeframes = assets.ETHUSDT.timeframes;
+    full.assets.BTCUSDT.timeframes = assets.BTCUSDT.timeframes;
+    full.assets.ETHUSDT.marketRegimeRouter = assets.ETHUSDT.marketRegimeRouter;
+    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT);
+    if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
+    const verified = await verifyOkxScannerZone("ETHUSDT", candidate.entryZone);
+    if (!verified.confirmed) return { status: "idle", reason: "PRICE_LEFT_CANDIDATE_ZONE" };
+    full.assets.ETHUSDT.ticker = verified.current;
+    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT);
+    if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
+    const liq = planLiquidityRisk({ ...candidate, symbol: "ETHUSDT", liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, full.assets.ETHUSDT);
+    if (!liq.passed || full.assets.ETHUSDT.capitalFlow?.status !== "ok" || full.assets.ETHUSDT.executionLiquidity?.status !== "ok") return { status: "idle", reason: "DISCOVERY_CONFIRMATION_UNAVAILABLE" };
+    const current = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, MANUAL_PRIORITY_KEY]);
+    if (current[ACTIVE_PLAN_KEY]?.status === "ARMED" || current[MANUAL_PRIORITY_KEY]?.until > Date.now()) return { status: "idle", reason: "USER_PLAN_OR_MANUAL_PRIORITY" };
+    if (Date.now() - now > 45_000) return { status: "idle", reason: "DISCOVERY_RUNTIME_BUDGET_EXCEEDED" };
+    const notification = await sendBark(env, { title: "ETH（以太坊）B1（突破回测）候选", body: `方向候选：${candidate.direction === "LONG" ? "做多" : "做空"}，当前欧易价格 ${verified.current.last}。已检查突破、回测和延续；不是开仓许可。新闻、账户风险和心理状态未核验，请打开GPT最终复核。没有保存或替换交易计划。`, level: "active" });
+    if (notification.sent) await scannerStatePut(env, DISCOVERY_STATE_KEY, { lastRunAt: now, lastAlertAt: Date.now(), signature, candidate }, 86400);
+    return { status: "candidate", notification, candidate, openNowAllowed: false };
+  } catch (error) { return { status: "idle", reason: "DISCOVERY_DATA_UNAVAILABLE", detail: error?.message, notification: { sent: false } }; }
+}
 
 const LEGACY_CONFIG = {
   status: "LEGACY_CONFIG_UNVALIDATED",
@@ -63,11 +155,14 @@ const CACHE_POLICY = {
   openInterestHistory: { freshSeconds: 60, staleSeconds: 600, attempts: 2, timeoutMs: 5000 },
   funding: { freshSeconds: 120, staleSeconds: 900, attempts: 1 },
   krakenTicker: { freshSeconds: 15, staleSeconds: 120, attempts: 1 },
-  gateCandle15m: { freshSeconds: 45, staleSeconds: 180, attempts: 1, timeoutMs: 3500 },
+  okxCandle15m: { freshSeconds: 60, staleSeconds: 300, attempts: 1, timeoutMs: 4000 },
+  okxCandle1h: { freshSeconds: 180, staleSeconds: 900, attempts: 1, timeoutMs: 4000 },
+  okxCandle4h: { freshSeconds: 300, staleSeconds: 1800, attempts: 1, timeoutMs: 4000 },
+  gateCandle15m: { freshSeconds: 60, staleSeconds: 180, attempts: 1, timeoutMs: 3500 },
   gateCandle1m: { freshSeconds: 8, staleSeconds: 75, attempts: 1, timeoutMs: 3000 },
-  gateCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 1, timeoutMs: 3500 },
-  gateCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 1, timeoutMs: 3500 },
-  gateContractStats: { freshSeconds: 25, staleSeconds: 180, attempts: 1, timeoutMs: 4500 },
+  gateCandle1h: { freshSeconds: 180, staleSeconds: 360, attempts: 1, timeoutMs: 3500 },
+  gateCandle4h: { freshSeconds: 300, staleSeconds: 720, attempts: 1, timeoutMs: 3500 },
+  gateContractStats: { freshSeconds: 45, staleSeconds: 180, attempts: 1, timeoutMs: 4500 },
   gateTrades: { freshSeconds: 12, staleSeconds: 90, attempts: 1, timeoutMs: 4500 },
   gateOrderBook: { freshSeconds: 8, staleSeconds: 45, attempts: 2, timeoutMs: 4500 },
   okxSpotTicker: { freshSeconds: 4, staleSeconds: 20, attempts: 1, timeoutMs: 3500 },
@@ -77,11 +172,40 @@ const CACHE_POLICY = {
   krakenSpotCandle1h: { freshSeconds: 90, staleSeconds: 360, attempts: 1, timeoutMs: 3500 },
   krakenSpotCandle4h: { freshSeconds: 120, staleSeconds: 720, attempts: 1, timeoutMs: 3500 },
   coinalyzeMarkets: { freshSeconds: 6 * 60 * 60, staleSeconds: 24 * 60 * 60, attempts: 1, timeoutMs: 5000 },
-  coinalyzeLiquidations: { freshSeconds: 60, staleSeconds: 10 * 60, attempts: 1, timeoutMs: 5000 },
+  coinalyzeLiquidations: { freshSeconds: 300, staleSeconds: 10 * 60, attempts: 1, timeoutMs: 5000 },
 };
 
 const memoryCache = new Map();
 const inflight = new Map();
+const upstreamCooldowns = new Map();
+let manualSnapshotWork = null;
+let lastManualRequestAt = 0;
+
+function cooldownKey(url) {
+  const parsed = new URL(url);
+  // Never persist API keys or other query parameters in diagnostic keys.
+  const instrumentType = parsed.searchParams.get("instType");
+  return `${parsed.origin}${parsed.pathname}${instrumentType ? `:${instrumentType}` : ""}`;
+}
+
+function cooldownError(until) {
+  const error = new Error("UPSTREAM_RATE_LIMIT_COOLDOWN");
+  error.status = 429;
+  error.retryAfterSeconds = Math.max(1, Math.ceil((until - Date.now()) / 1000));
+  return error;
+}
+
+function retryDeadline(headers) {
+  const value = headers?.get("retry-after");
+  const seconds = value === null || value === undefined ? NaN : Number(value);
+  const parsedDate = value ? Date.parse(value) : NaN;
+  const reset = Number(headers?.get("x-gate-ratelimit-reset-timestamp"));
+  const candidates = [Date.now() + 30_000];
+  if (Number.isFinite(seconds) && seconds >= 0) candidates.push(Date.now() + seconds * 1000);
+  else if (Number.isFinite(parsedDate)) candidates.push(parsedDate);
+  if (Number.isFinite(reset) && reset > 0) candidates.push(reset * 1000);
+  return Math.max(...candidates);
+}
 let okxActive = 0;
 const okxWaiters = [];
 
@@ -91,9 +215,9 @@ const ASSETS = {
 };
 
 const TIMEFRAMES = {
-  "15m": { gateInterval: "15m", krakenSpotInterval: "15", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
-  "1h": { gateInterval: "1h", krakenSpotInterval: "60", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
-  "4h": { gateInterval: "4h", krakenSpotInterval: "240", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
+  "15m": { okxBar: "15m", gateInterval: "15m", krakenSpotInterval: "15", intervalMs: 15 * 60_000, maxAgeSeconds: 45 * 60 },
+  "1h": { okxBar: "1H", gateInterval: "1h", krakenSpotInterval: "60", intervalMs: 60 * 60_000, maxAgeSeconds: 3 * 60 * 60 },
+  "4h": { okxBar: "4H", gateInterval: "4h", krakenSpotInterval: "240", intervalMs: 4 * 60 * 60_000, maxAgeSeconds: 12 * 60 * 60 },
 };
 
 const JSON_HEADERS = {
@@ -142,6 +266,10 @@ function delay(ms) {
 
 function gatePolicyForTimeframe(timeframe) {
   return timeframe === "15m" ? CACHE_POLICY.gateCandle15m : timeframe === "1h" ? CACHE_POLICY.gateCandle1h : CACHE_POLICY.gateCandle4h;
+}
+
+function okxPolicyForTimeframe(timeframe) {
+  return timeframe === "15m" ? CACHE_POLICY.okxCandle15m : timeframe === "1h" ? CACHE_POLICY.okxCandle1h : CACHE_POLICY.okxCandle4h;
 }
 
 function krakenSpotPolicyForTimeframe(timeframe) {
@@ -234,24 +362,40 @@ async function mapLimit(items, limit, mapper) {
 
 async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500, extraHeaders = {}) {
   let lastError;
+  const endpoint = cooldownKey(url);
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const cooldownUntil = upstreamCooldowns.get(endpoint) || 0;
+    if (cooldownUntil > Date.now()) throw cooldownError(cooldownUntil);
     if (isOkx) await acquireOkxPermit();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(`${label} timeout`), timeoutMs);
     try {
+      // Another queued request may have observed a 429 while we waited.
+      const queuedUntil = upstreamCooldowns.get(endpoint) || 0;
+      if (queuedUntil > Date.now()) throw cooldownError(queuedUntil);
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.4.0", ...extraHeaders },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.5.0", ...extraHeaders },
         signal: controller.signal,
       });
       if (!response.ok) {
         const error = new Error(`${label} HTTP ${response.status}`);
         error.status = response.status;
+        if (response.status === 429) {
+          const until = retryDeadline(response.headers);
+          upstreamCooldowns.set(endpoint, until);
+          error.retryAfterSeconds = Math.ceil((until - Date.now()) / 1000);
+        }
         throw error;
       }
       const body = await response.json();
       return validate ? validate(body) : body;
     } catch (error) {
       lastError = error;
+      if (error?.status === 429) {
+        // Includes exchange JSON rate-limit errors, e.g. OKX code 50011.
+        if (!(upstreamCooldowns.get(endpoint) > Date.now())) upstreamCooldowns.set(endpoint, Date.now() + 30_000);
+        throw error;
+      }
       const retryable = controller.signal.aborted || error?.status === 429 || (Number(error?.status) >= 500 && Number(error?.status) <= 599);
       if (!retryable || attempt >= attempts) throw error;
       await delay(250 * (2 ** (attempt - 1)) + 100);
@@ -371,6 +515,26 @@ async function gateKlines(symbol, timeframe, tfConfig) {
   );
   if (!Array.isArray(body)) throw new Error("Gate USDT Futures candles are empty");
   return attachCacheMeta(body, body.__cache);
+}
+
+async function okxKlines(instrumentId, timeframe, tfConfig) {
+  const path = `/api/v5/market/candles?instId=${encodeURIComponent(instrumentId)}&bar=${encodeURIComponent(tfConfig.okxBar)}&limit=${CANDLE_LIMIT}`;
+  return cachedJson({
+    key: `okx-candles:${instrumentId}:${timeframe}`,
+    url: `${OKX_BASE}${path}`,
+    label: "OKX perpetual candles",
+    policy: okxPolicyForTimeframe(timeframe),
+    isOkx: true,
+    persistentCache: true,
+    validate(body) {
+      if (body?.code !== "0" || !Array.isArray(body?.data)) {
+        const error = new Error(`OKX candles ${body?.code || "invalid response"}: ${body?.msg || "no data"}`);
+        if (String(body?.code) === "50011") error.status = 429;
+        throw error;
+      }
+      return body.data;
+    },
+  });
 }
 
 async function scannerTouchProbe(plan, snapshot) {
@@ -1269,6 +1433,28 @@ function parseGateCandles(rows) {
   return attachCacheMeta(candles, rows.__cache);
 }
 
+function parseOkxCandles(rows) {
+  if (!Array.isArray(rows)) throw new Error("OKX USDT perpetual candles are empty");
+  const candles = rows
+    .map((row) => {
+      const timestamp = finite(row?.[0]);
+      return {
+        ts: Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null,
+        open: finite(row?.[1]),
+        high: finite(row?.[2]),
+        low: finite(row?.[3]),
+        close: finite(row?.[4]),
+        volumeContracts: finite(row?.[5]),
+        volumeBase: finite(row?.[6]),
+        volumeQuote: finite(row?.[7]),
+        confirmed: String(row?.[8]) === "1",
+      };
+    })
+    .filter((c) => Number.isFinite(Date.parse(c.ts)) && [c.open, c.high, c.low, c.close].every(Number.isFinite))
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  return attachCacheMeta(candles, rows.__cache);
+}
+
 function parseKrakenSpotCandles(rows) {
   if (!Array.isArray(rows)) throw new Error("Kraken Spot candles are empty");
   const candles = rows
@@ -1333,6 +1519,13 @@ function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
         : "USDT_PERPETUAL_CROSS_EXCHANGE",
     reasons,
   };
+}
+
+function isExecutionStructureTimeframe(timeframe) {
+  return timeframe?.status === "ok"
+    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(timeframe?.source)
+    && timeframe?.quality?.passed === true
+    && timeframe?.dataFreshness?.state !== "stale-on-error";
 }
 
 function ema(values, period) {
@@ -2114,6 +2307,10 @@ async function buildSnapshot(options = {}) {
       }
       const attempts = [
         {
+          source: "OKX_USDT_PERPETUAL",
+          load: async () => parseOkxCandles(await okxKlines(config.instrumentId, timeframe, tfConfig)),
+        },
+        {
           source: "GATE_USDT_PERPETUAL",
           load: async () => parseGateCandles(await gateKlines(config.gateSymbol, timeframe, tfConfig)),
         },
@@ -2127,6 +2324,7 @@ async function buildSnapshot(options = {}) {
       for (const candidate of attempts) {
         try {
           const candles = await candidate.load();
+          if (candles.__cache?.state === "stale-on-error") throw new Error("stale-on-error candles cannot authorize execution");
           const quality = candleQuality(candles, executionPrice.last, timeframe, tfConfig, candidate.source);
           if (!quality.passed) throw new Error(`quality rejected: ${quality.reasons.join(",")}`);
           selected = { candles, source: candidate.source, quality };
@@ -2136,12 +2334,12 @@ async function buildSnapshot(options = {}) {
         }
       }
       if (!selected) throw new Error(`No quality-approved candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
-      const fallbackUsed = selected.source !== "GATE_USDT_PERPETUAL";
+      const fallbackUsed = selected.source !== "OKX_USDT_PERPETUAL";
       if (fallbackUsed) {
         fallbacks.push({
           symbol,
           timeframe,
-          primary: "GATE_USDT_PERPETUAL",
+          primary: "OKX_USDT_PERPETUAL",
           fallback: selected.source,
           reason: rejected.map((item) => `${item.source}: ${item.error}`).join("; "),
         });
@@ -2302,7 +2500,7 @@ async function buildSnapshot(options = {}) {
     Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true),
   );
   const perpetualStructureReady = Object.values(assets).every((asset) =>
-    Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.source === "GATE_USDT_PERPETUAL" && tf.quality?.passed === true),
+    Object.values(asset.timeframes).every(isExecutionStructureTimeframe),
   );
   const criticalReady = Object.values(assets).every((asset) =>
     asset.ticker.status === "ok" &&
@@ -2327,7 +2525,7 @@ async function buildSnapshot(options = {}) {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution/index/mark price/OI/funding plus OKX spot ticker/order book/recent trades; Gate USDT perpetual primary candles/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency structure fallback",
+    source: "OKX USDT perpetual execution/index/mark price/OI/funding and primary candles plus OKX spot ticker/order book/recent trades; Gate USDT perpetual candle fallback/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency observation-only structure fallback",
     dataProviders: {
       coinalyze: {
         configured: coinalyze.configured,
@@ -2338,12 +2536,12 @@ async function buildSnapshot(options = {}) {
       },
     },
     requestBudget: {
-      plannedOkx: 13,
+      plannedOkx: 19,
       plannedUpstreamFetches: coinalyze.configured ? 27 : 25,
       plannedCloudflareSubrequestsCold: coinalyze.configured ? 29 : 27,
       maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 45,
       cloudflareFreeLimit: 50,
-      persistentPerModuleCache: "GATE_KRAKEN_AND_OPTIONAL_COINALYZE; OKX_USES_MEMORY_PLUS_ROUTE_CACHE_TO_PROTECT_FREE_SUBREQUEST_BUDGET",
+      persistentPerModuleCache: "OKX_CANDLES_GATE_KRAKEN_AND_OPTIONAL_COINALYZE; OTHER_OKX_MODULES_USE_MEMORY_PLUS_ROUTE_CACHE",
       coinalyzeConfigured: coinalyze.configured,
       coinalyzeProviderCallUnits: coinalyze.requestSymbolCount || 0,
     },
@@ -2540,6 +2738,7 @@ function scannerConfiguration(env) {
     stateBackend: scannerStateStub(env) ? "DURABLE_OBJECT" : env?.ALERT_STATE?.get ? "KV" : "MISSING",
     cron: "* * * * *",
     mode: "GPT_PLAN_LINKED_VALIDATION_ONLY",
+    discovery: { enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false", intervalMinutes: 5, supportedSubmodels: ["B1"], notificationCooldownMinutes: 30, openNowAllowed: false, savesTradingPlan: false, newsAndAccountReview: "MANUAL_REQUIRED" },
   };
 }
 
@@ -2980,6 +3179,14 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     };
   }
   if (snapshot?.decisionState !== "DATA_READY" || !Number.isFinite(price) || !confirmed15m) {
+    if (snapshot?.lightweightPriceOnly === true && Number.isFinite(price) && !currentInZone) {
+      const executionReality = planExecutionReality(plan, asset, price);
+      const blockers = executionReality.targetAhead ? [] : ["FIRST_REALISTIC_TARGET_ALREADY_PASSED_OR_WRONG_SIDE", "NET_RR_BELOW_CONFIGURED_THRESHOLD"];
+      return { state: "ARMED", valid: false, openNowAllowed: false, price, btcPrice, priceSource, priceExchangeTimestamp, touch,
+        executionReality, netRR: executionReality.baselineNetRR,
+        hardBlockerScan: { passed: blockers.length === 0, blockers, cannotBeOverriddenByScore: true },
+        fullAnalysisPerformed: false, reason: "PRICE_OUTSIDE_PLAN_ZONE_FULL_ANALYSIS_DEFERRED", planId: plan.planId, checkedAt: new Date(now).toISOString() };
+    }
     return { state: zoneTouched ? "WATCHING" : "DATA_BLOCKED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, touch, reason: "Realtime core data is not decision-ready", planId: plan.planId, checkedAt: new Date(now).toISOString() };
   }
   const inZone = currentInZone;
@@ -3014,7 +3221,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const regimePermission = submodelRegimePermission(plan.model, plan.submodel, currentRegime);
   const regimeDirectPermission = regimePermission === "DIRECT";
   const regimeChanged = currentRegime !== plan.marketRegime;
-  const perpetualStructureReady = [tf15, tf1h, tf4h].every((tf) => tf?.status === "ok" && tf?.source === "GATE_USDT_PERPETUAL" && tf?.quality?.passed === true);
+  const perpetualStructureReady = [tf15, tf1h, tf4h].every(isExecutionStructureTimeframe);
   const locationPassed = plan.location?.quality === "GOOD" && plan.location?.rangePosition !== "MIDDLE";
   const meaningfulTriggerPassed = plan.trigger?.meaningful === true && Number.isFinite(finite(plan.trigger?.level));
   const protectivePrice = finite(plan.trigger?.protectiveStructure?.price);
@@ -3238,17 +3445,20 @@ async function runScannerUnlocked(env) {
   const previous = state[SCANNER_RUNTIME_KEY];
   let failureHistory = Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [];
   if (!plan || plan.status !== "ARMED") {
-    return { status: "idle", build: BUILD, reason: "NO_ACTIVE_GPT_PLAN", configuration: scannerConfiguration(env) };
+    return { build: BUILD, configuration: scannerConfiguration(env), ...(await runDiscovery(env)) };
   }
-  let snapshot;
-  try {
-    snapshot = await buildSnapshot({ scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY });
-  } catch (error) {
-    snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) };
-  }
+  let snapshot = { decisionState: "DATA_BLOCKED", assets: {}, lightweightPriceOnly: true };
   let zoneVerification;
   try {
     zoneVerification = await verifyOkxScannerZone(plan.symbol, plan.entryZone);
+    const price = zoneVerification.current.last;
+    const terminal = Date.now() >= Date.parse(plan.expiresAt)
+      || (plan.direction === "LONG" ? price <= plan.invalidationPrice : price >= plan.invalidationPrice);
+    // Outside the exact plan zone no complete market snapshot is needed.
+    if (zoneVerification.confirmed && !terminal) {
+      try { snapshot = await buildSnapshot({ scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); }
+      catch (error) { snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) }; }
+    }
     if (!snapshot.assets) snapshot.assets = {};
     if (!snapshot.assets[plan.symbol]) snapshot.assets[plan.symbol] = {};
     snapshot.assets[plan.symbol].ticker = zoneVerification.current;
@@ -3669,10 +3879,22 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。主K线使用 Gate USDT 永续；Gate 公共接口另提供主动买卖估算、大额成交估算、订单簿、已发生强平及多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急保底，且不能放行执行。服务地址：${origin}</p><p>最后更新：2026-09-06</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；系统也可保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI、资金费率及主K线，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。Gate USDT 永续仅作K线备用及主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急观察源，且不能放行执行。服务地址：${origin}</p><p>最后更新：2026-09-07</p></body></html>`;
 }
 
 async function handleSnapshot(request, env, ctx) {
+  lastManualRequestAt = Date.now();
+  if (manualSnapshotWork) return (await manualSnapshotWork).clone();
+  const work = (async () => {
+    if (scannerStateStub(env)) await scannerStatePut(env, MANUAL_PRIORITY_KEY, { until: Date.now() + 60_000 }, 60).catch(() => {});
+    return buildManualResponse(request, env, ctx);
+  })();
+  manualSnapshotWork = work;
+  try { return (await work).clone(); }
+  finally { if (manualSnapshotWork === work) manualSnapshotWork = null; }
+}
+
+async function buildManualResponse(request, env, ctx) {
   const cache = globalThis.caches?.default;
   const cacheKey = new Request(`https://crypto-alpha-cache.invalid/${CACHE_NAMESPACE}/realtime`);
   if (cache) {
@@ -3819,7 +4041,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + OKX spot ticker/book/recent trades + Gate perpetual candles/free flow + optional Coinalyze realized liquidations + Kraken Spot emergency structure fallback", normalOkxRequests: 13, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: false, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding/primary candles + OKX spot ticker/book/recent trades + Gate perpetual candle fallback/free flow + optional Coinalyze realized liquidations + Kraken Spot emergency observation fallback", normalOkxRequests: 19, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "PRIMARY_PERPETUAL_STRUCTURE", gateCandlesRole: "PERPETUAL_FALLBACK", binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
@@ -3850,7 +4072,13 @@ export default {
   },
 
   async scheduled(_controller, env, ctx) {
-    const task = runScanner(env).catch((error) => console.error("scheduled scanner failed", error));
+    // Advisory isolate-local priority; this does not claim a global quota lock.
+    if (manualSnapshotWork || Date.now() - lastManualRequestAt < 10_000) return;
+    const task = (async () => {
+      const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY).catch(() => null);
+      if (priority?.until > Date.now()) return;
+      return runScanner(env);
+    })().catch((error) => console.error("scheduled scanner failed", error));
     if (ctx?.waitUntil) ctx.waitUntil(task);
     else await task;
   },
