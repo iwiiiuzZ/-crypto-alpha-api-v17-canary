@@ -1,11 +1,11 @@
-const BUILD = "crypto-alpha-worker-v19.5.2-subrequest-safe-rate-circuit";
-const API_VERSION = "4.5.2";
+const BUILD = "crypto-alpha-worker-v20.0.0-range-aware-course-router";
+const API_VERSION = "5.0.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v19.5.2-subrequest-safe-rate-circuit";
+const CACHE_NAMESPACE = "v20.0.0-range-aware-course-router";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -25,8 +25,19 @@ const MAX_LEVERAGE = 50;
 const DISCOVERY_STATE_KEY = "scanner:discovery";
 const MANUAL_PRIORITY_KEY = "scanner:manual-priority";
 
-// Conservative first autonomous detector: complete B1 chain only.
-// Other submodels continue to be evaluated by GPT, not approximated here.
+const RANGE_CONFIG = {
+  maximumFourHourAdx: 22,
+  minimumWidthAtr: 1.8,
+  boundaryAcceptanceAtr: 0.12,
+  sweepAtr: 0.05,
+  edgeFraction: 0.25,
+  middleLowFraction: 0.35,
+  middleHighFraction: 0.65,
+  policy: "Configurable conservative defaults pending regime-specific walk-forward validation; they are not course truths.",
+};
+
+// Autonomous discovery never opens or saves a plan. It only surfaces completed
+// price/structure candidates for fresh GPT, news, account and psychology review.
 function discoverBreakoutRetest(asset, btc) {
   const tfs = asset?.timeframes;
   const structureSources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
@@ -60,6 +71,65 @@ function discoverBreakoutRetest(asset, btc) {
   const netRR = planNetRR(plan, price);
   if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.A)) return null;
   return { model: "B", submodel: "B1", direction, boundary, stopLoss, target: targets[0], netRR, candleAt: continuation.ts, entryZone: { min: long ? boundary : boundary - atr15, max: long ? boundary + atr15 : boundary }, openNowAllowed: false };
+}
+
+function discoverRangeReversal(asset, btc) {
+  const tfs = asset?.timeframes;
+  const context = asset?.rangeContext;
+  const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
+  const coherentPerpetualSource = sources.every(source => source === sources[0])
+    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0]);
+  const structureReady = ["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error");
+  if (!coherentPerpetualSource || !structureReady || asset?.marketRegimeRouter?.regime !== "RANGE" || context?.confirmed !== true) return null;
+  if (!["LOWER_EDGE", "UPPER_EDGE"].includes(context.locationZone)) return null;
+  const rows = (tfs?.["15m"]?.recentCandles || []).filter(c => c.confirmed === true);
+  const atr15 = finite(tfs?.["15m"]?.indicators?.atr14);
+  if (rows.length < 16 || !(atr15 > 0)) return null;
+  const lower = finite(context.lowerBoundary);
+  const upper = finite(context.upperBoundary);
+  const midpoint = finite(context.midpoint);
+  const long = context.locationZone === "LOWER_EDGE";
+  const direction = long ? "LONG" : "SHORT";
+  const boundary = long ? lower : upper;
+  if (![lower, upper, midpoint, boundary].every(Number.isFinite)) return null;
+  const recentStart = Math.max(4, rows.length - 8);
+  let sweepIndex = -1;
+  let outsideCloseIndex = -1;
+  for (let i = recentStart; i < rows.length - 1; i += 1) {
+    const candle = rows[i];
+    if (long ? candle.l < lower - RANGE_CONFIG.sweepAtr * atr15 && candle.c > lower : candle.h > upper + RANGE_CONFIG.sweepAtr * atr15 && candle.c < upper) sweepIndex = i;
+    if (long ? candle.c < lower - RANGE_CONFIG.sweepAtr * atr15 : candle.c > upper + RANGE_CONFIG.sweepAtr * atr15) outsideCloseIndex = i;
+  }
+  const latest = rows.at(-1);
+  const closeAge = Date.now() - (Date.parse(latest.ts) + 15 * 60_000);
+  if (!Number.isFinite(closeAge) || closeAge < 0 || closeAge > 20 * 60_000) return null;
+  const reentered = long ? latest.c > lower : latest.c < upper;
+  // A C2 failed breakout starts at the outside close. Its later re-entry candle
+  // can also look like a wick sweep and must not reset the event clock.
+  const eventIndex = outsideCloseIndex >= 0 ? outsideCloseIndex : sweepIndex;
+  if (eventIndex < 0 || !reentered || rows.length - eventIndex < 3) return null;
+  const preEvent = rows.slice(Math.max(0, eventIndex - 4), eventIndex + 1);
+  const postEvent = rows.slice(eventIndex + 1);
+  const control = long ? Math.max(...preEvent.map(c => c.h)) : Math.min(...preEvent.map(c => c.l));
+  const structureShift = long ? latest.c > control + RANGE_CONFIG.sweepAtr * atr15 : latest.c < control - RANGE_CONFIG.sweepAtr * atr15;
+  if (!structureShift) return null;
+  const stopLoss = long
+    ? Math.min(rows[eventIndex].l, ...postEvent.map(c => c.l)) - 0.1 * atr15
+    : Math.max(rows[eventIndex].h, ...postEvent.map(c => c.h)) + 0.1 * atr15;
+  const price = finite(asset?.ticker?.last);
+  if (!Number.isFinite(price) || (long ? price >= midpoint : price <= midpoint)) return null;
+  if (trendAgainst(direction, btc?.timeframes?.["4h"]) && trendAgainst(direction, btc?.timeframes?.["1h"])) return null;
+  const submodel = outsideCloseIndex >= 0 ? "C2" : "C1";
+  const plan = { direction, stopLoss, takeProfits: [{ price: midpoint }], estimatedRoundTripCostPct: 0.15 };
+  const netRR = planNetRR(plan, price);
+  if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.B)) return null;
+  return {
+    model: "C", submodel, direction, boundary, stopLoss, target: midpoint, netRR,
+    candleAt: latest.ts,
+    entryZone: long ? { min: lower, max: Math.min(midpoint, lower + 0.25 * (upper - lower)) } : { min: Math.max(midpoint, upper - 0.25 * (upper - lower)), max: upper },
+    evidence: { reentered, structureShift, event: submodel === "C2" ? "FAILED_BREAKOUT_REENTERED" : "SWEEP_RECLAIMED" },
+    openNowAllowed: false,
+  };
 }
 
 async function runDiscovery(env) {
@@ -97,11 +167,13 @@ async function runDiscovery(env) {
       }
       if (!timeframes) throw new Error("DISCOVERY_PERPETUAL_STRUCTURE_UNAVAILABLE");
       assets[symbol] = { ticker, timeframes };
+      assets[symbol].rangeContext = buildRangeContext(assets[symbol]);
       assets[symbol].marketRegimeRouter = buildMarketRegimeRouter(assets[symbol]);
     }
-    let candidate = discoverBreakoutRetest(assets.ETHUSDT, assets.BTCUSDT);
-    if (!candidate) return { status: "idle", reason: "NO_B1_CANDIDATE" };
-    const signature = `${candidate.direction}:${candidate.boundary.toFixed(1)}`;
+    let candidate = discoverBreakoutRetest(assets.ETHUSDT, assets.BTCUSDT) || discoverRangeReversal(assets.ETHUSDT, assets.BTCUSDT);
+    if (!candidate) return { status: "idle", reason: "NO_B1_C1_C2_CANDIDATE" };
+    const signature = `${candidate.model}:${candidate.submodel}:${candidate.direction}:${candidate.boundary.toFixed(1)}:${candidate.candleAt}`;
+    if (old.signature === signature) return { status: "idle", reason: "DISCOVERY_DUPLICATE_CANDIDATE" };
     if (now - finite(old.lastAlertAt, 0) < 30 * 60_000) return { status: "idle", reason: "DISCOVERY_NOTIFICATION_COOLDOWN" };
     const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY);
     if (priority?.until > Date.now()) return { status: "idle", reason: "MANUAL_REQUEST_PRIORITY" };
@@ -111,20 +183,21 @@ async function runDiscovery(env) {
     // Use closed-only primary summaries from this discovery pass.
     full.assets.ETHUSDT.timeframes = assets.ETHUSDT.timeframes;
     full.assets.BTCUSDT.timeframes = assets.BTCUSDT.timeframes;
+    full.assets.ETHUSDT.rangeContext = assets.ETHUSDT.rangeContext;
     full.assets.ETHUSDT.marketRegimeRouter = assets.ETHUSDT.marketRegimeRouter;
-    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT);
+    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT) || discoverRangeReversal(full.assets.ETHUSDT, full.assets.BTCUSDT);
     if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
     const verified = await verifyOkxScannerZone("ETHUSDT", candidate.entryZone);
     if (!verified.confirmed) return { status: "idle", reason: "PRICE_LEFT_CANDIDATE_ZONE" };
     full.assets.ETHUSDT.ticker = verified.current;
-    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT);
+    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT) || discoverRangeReversal(full.assets.ETHUSDT, full.assets.BTCUSDT);
     if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
     const liq = planLiquidityRisk({ ...candidate, symbol: "ETHUSDT", liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, full.assets.ETHUSDT);
     if (!liq.passed || full.assets.ETHUSDT.capitalFlow?.status !== "ok" || full.assets.ETHUSDT.executionLiquidity?.status !== "ok") return { status: "idle", reason: "DISCOVERY_CONFIRMATION_UNAVAILABLE" };
     const current = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, MANUAL_PRIORITY_KEY]);
     if (current[ACTIVE_PLAN_KEY]?.status === "ARMED" || current[MANUAL_PRIORITY_KEY]?.until > Date.now()) return { status: "idle", reason: "USER_PLAN_OR_MANUAL_PRIORITY" };
     if (Date.now() - now > 45_000) return { status: "idle", reason: "DISCOVERY_RUNTIME_BUDGET_EXCEEDED" };
-    const notification = await sendBark(env, { title: "ETH（以太坊）B1（突破回测）候选", body: `方向候选：${candidate.direction === "LONG" ? "做多" : "做空"}，当前欧易价格 ${verified.current.last}。已检查突破、回测和延续；不是开仓许可。新闻、账户风险和心理状态未核验，请打开GPT最终复核。没有保存或替换交易计划。`, level: "active" });
+    const notification = await sendBark(env, { title: `ETH（以太坊）${candidate.submodel}（${candidate.model === "B" ? "突破回测" : "区间边缘反转"}）候选`, body: `方向候选：${candidate.direction === "LONG" ? "做多" : "做空"}，当前欧易价格 ${verified.current.last}。价格结构链已完成初筛；不是开仓许可。新闻、账户风险和心理状态未核验，请打开GPT最终复核。没有保存或替换交易计划。`, level: "active" });
     if (notification.sent) await scannerStatePut(env, DISCOVERY_STATE_KEY, { lastRunAt: now, lastAlertAt: Date.now(), signature, candidate }, 86400);
     return { status: "candidate", notification, candidate, openNowAllowed: false };
   } catch (error) { return { status: "idle", reason: "DISCOVERY_DATA_UNAVAILABLE", detail: error?.message, notification: { sent: false } }; }
@@ -1428,6 +1501,99 @@ function buildEffortVsResult(asset) {
   };
 }
 
+function buildRangeContext(asset) {
+  const tf4h = asset?.timeframes?.["4h"];
+  const tf1h = asset?.timeframes?.["1h"];
+  const tf15 = asset?.timeframes?.["15m"];
+  const rows = (tf4h?.recentCandles || []).filter(c => c?.confirmed === true);
+  const atr4h = finite(tf4h?.indicators?.atr14);
+  const adx4h = finite(tf4h?.indicators?.adx14);
+  const price = finite(asset?.ticker?.last, tf4h?.lastClose);
+  if (tf4h?.status !== "ok" || tf1h?.status !== "ok" || tf15?.status !== "ok" || rows.length < 16 || !(atr4h > 0) || !Number.isFinite(price)) {
+    return { status: "unavailable", confirmed: false, locationZone: "UNKNOWN", reason: "Confirmed 4H/1H/15M data, price or ATR is unavailable", standaloneSignal: false };
+  }
+  // Exclude the newest two closed candles so a breakout cannot silently move its
+  // own boundary and be mislabeled as an intact range.
+  const boundaryRows = rows.slice(0, -2);
+  const historicalLower = Math.min(...boundaryRows.map(c => c.l));
+  const historicalUpper = Math.max(...boundaryRows.map(c => c.h));
+  const controlLower = finite(tf4h?.structureDetail?.controlLow?.price);
+  const controlUpper = finite(tf4h?.structureDetail?.controlHigh?.price);
+  // Meaningful controlling swings take precedence over an isolated historical
+  // wick; fall back to the prior-window extremes when swing detail is absent.
+  const controlsDefineViableBox = Number.isFinite(controlLower) && Number.isFinite(controlUpper) && controlLower < controlUpper
+    && (controlUpper - controlLower) / atr4h >= RANGE_CONFIG.minimumWidthAtr;
+  const lower = controlsDefineViableBox ? controlLower : historicalLower;
+  const upper = controlsDefineViableBox ? controlUpper : historicalUpper;
+  const width = upper - lower;
+  const widthAtr = width / atr4h;
+  const midpoint = (upper + lower) / 2;
+  const recentCloses = rows.slice(-2).map(c => c.c);
+  const acceptanceBuffer = RANGE_CONFIG.boundaryAcceptanceAtr * atr4h;
+  const acceptedAbove = recentCloses.length === 2 && recentCloses.every(close => close > upper + acceptanceBuffer);
+  const acceptedBelow = recentCloses.length === 2 && recentCloses.every(close => close < lower - acceptanceBuffer);
+  const acceptedOutside = acceptedAbove || acceptedBelow;
+  const change20Pct = Math.abs(finite(tf4h?.change20BarsPct, Infinity));
+  const atrPct = finite(tf4h?.indicators?.atr14Pct);
+  const rotationWithoutDisplacement = Number.isFinite(atrPct) && change20Pct <= atrPct * 2.5;
+  const structuralOverlap = tf4h.structure === "RANGE" || tf4h?.structureDetail?.baseStructure === "RANGE";
+  const lowTrendStrength = Number.isFinite(adx4h) && adx4h <= RANGE_CONFIG.maximumFourHourAdx;
+  const viableWidth = Number.isFinite(widthAtr) && widthAtr >= RANGE_CONFIG.minimumWidthAtr;
+  const priceInsidePriorAuction = price >= lower && price <= upper;
+  // A pair of internal swing labels may temporarily read HH/HL or LH/LL while
+  // price is still rotating inside the same low-ADX 4H auction. Net displacement,
+  // boundary acceptance and trend strength therefore outrank that local label.
+  const confirmed = lowTrendStrength && rotationWithoutDisplacement && viableWidth && priceInsidePriorAuction && !acceptedOutside;
+  const positionFraction = width > 0 ? (price - lower) / width : null;
+  const locationZone = !Number.isFinite(positionFraction)
+    ? "UNKNOWN"
+    : positionFraction < 0 || positionFraction > 1
+      ? "OUTSIDE"
+      : positionFraction <= RANGE_CONFIG.edgeFraction
+        ? "LOWER_EDGE"
+        : positionFraction >= 1 - RANGE_CONFIG.edgeFraction
+          ? "UPPER_EDGE"
+          : positionFraction >= RANGE_CONFIG.middleLowFraction && positionFraction <= RANGE_CONFIG.middleHighFraction
+            ? "MIDDLE"
+            : positionFraction < 0.5 ? "LOWER_INTERIOR" : "UPPER_INTERIOR";
+  const touchTolerance = atr4h * 0.2;
+  const lowerTouches = boundaryRows.filter(c => c.l <= lower + touchTolerance).length;
+  const upperTouches = boundaryRows.filter(c => c.h >= upper - touchTolerance).length;
+  const latestFour = rows.slice(-4);
+  const sweptLowerAndReclaimed = latestFour.some(c => c.l < lower - RANGE_CONFIG.sweepAtr * atr4h && c.c > lower);
+  const sweptUpperAndReclaimed = latestFour.some(c => c.h > upper + RANGE_CONFIG.sweepAtr * atr4h && c.c < upper);
+  const rangeLegDirection = ["DOWN", "STRONG_DOWN"].includes(tf1h.trend) || tf1h.structure === "LH_LL"
+    ? "DOWN_LEG_INSIDE_RANGE"
+    : ["UP", "STRONG_UP"].includes(tf1h.trend) || tf1h.structure === "HH_HL"
+      ? "UP_LEG_INSIDE_RANGE"
+      : "ROTATION_OR_UNCLEAR";
+  return {
+    status: "ok",
+    source: "CONFIRMED_4H_PRIOR_BOUNDARIES_PLUS_4H_ADX_AND_1H_LEG",
+    confirmed,
+    lowerBoundary: round(lower, 8),
+    upperBoundary: round(upper, 8),
+    midpoint: round(midpoint, 8),
+    width: round(width, 8),
+    widthAtr: round(widthAtr, 4),
+    positionPct: Number.isFinite(positionFraction) ? round(positionFraction * 100, 3) : null,
+    locationZone,
+    rangeLegDirection,
+    boundaryTouches: { lower: lowerTouches, upper: upperTouches },
+    boundaryState: acceptedAbove ? "ACCEPTED_ABOVE" : acceptedBelow ? "ACCEPTED_BELOW" : !priceInsidePriorAuction ? "OUTSIDE_UNRESOLVED" : sweptLowerAndReclaimed ? "LOWER_SWEEP_RECLAIM_CANDIDATE" : sweptUpperAndReclaimed ? "UPPER_SWEEP_RECLAIM_CANDIDATE" : "INSIDE_OR_UNRESOLVED",
+    evidence: { structuralOverlap, lowTrendStrength, rotationWithoutDisplacement, viableWidth, priceInsidePriorAuction, adx4h: round(adx4h, 4), acceptedOutside },
+    permissions: {
+      rangeMiddleEntry: false,
+      edgeCanEvaluateC1C2: confirmed && ["LOWER_EDGE", "UPPER_EDGE"].includes(locationZone),
+      breakoutCanEvaluateB1B2OnlyAfterAcceptanceRetest: true,
+      standaloneDirection: false,
+      createSetup: false,
+    },
+    config: RANGE_CONFIG,
+    limitation: "Context and location only. A range edge cannot create an entry without the complete C1/C2 price-structure chain and execution checks.",
+  };
+}
+
 function buildMarketRegimeRouter(asset) {
   const tf4h = asset?.timeframes?.["4h"];
   const tf1h = asset?.timeframes?.["1h"];
@@ -1435,9 +1601,15 @@ function buildMarketRegimeRouter(asset) {
   if (![tf4h, tf1h, tf15].every((timeframe) => timeframe?.status === "ok")) {
     return { status: "unavailable", regime: "UNKNOWN", directSubmodels: [], watchSubmodels: [], reason: "Required 4H/1H/15M structure is unavailable", standaloneSignal: false };
   }
+  const adx4h = finite(tf4h?.indicators?.adx14);
   const adx1h = finite(tf1h?.indicators?.adx14);
   const adx15m = finite(tf15?.indicators?.adx14);
-  const fourHourRange = tf4h.structure === "RANGE";
+  const rangeContext = asset?.rangeContext?.status === "ok" ? asset.rangeContext : buildRangeContext(asset);
+  const fourHourRange = rangeContext.confirmed === true;
+  const unresolvedBoundaryAuction = rangeContext?.boundaryState === "OUTSIDE_UNRESOLVED"
+    && rangeContext?.evidence?.lowTrendStrength === true
+    && rangeContext?.evidence?.rotationWithoutDisplacement === true
+    && rangeContext?.evidence?.viableWidth === true;
   const oneHourRange = tf1h.structure === "RANGE";
   const compressed = fourHourRange && oneHourRange && Number.isFinite(adx1h) && Number.isFinite(adx15m) && adx1h < 20 && adx15m < 18;
   const fourHourUp = ["UP", "STRONG_UP"].includes(tf4h.trend) || tf4h.structure === "HH_HL";
@@ -1449,7 +1621,9 @@ function buildMarketRegimeRouter(asset) {
       : false;
   const regime = compressed
     ? "COMPRESSION"
-    : fourHourRange && oneHourRange
+    : unresolvedBoundaryAuction
+      ? "TRANSITION"
+    : fourHourRange
       ? "RANGE"
       : (fourHourUp || fourHourDown) && !oneHourOpposes
         ? "TREND"
@@ -1459,12 +1633,12 @@ function buildMarketRegimeRouter(asset) {
   const watchSubmodels = entries.filter(([, definition]) => (definition.watchRegimes || []).includes(regime)).map(([key]) => key);
   return {
     status: "ok",
-    source: "CONFIRMED_4H_1H_15M_STRUCTURE_ADX_ROUTER",
+    source: "RANGE_AWARE_CONFIRMED_4H_1H_15M_STRUCTURE_ADX_ROUTER",
     regime,
     directSubmodels,
     watchSubmodels,
     permission: directSubmodels.length ? "EVALUATE_DIRECT_MODELS" : watchSubmodels.length ? "WAIT_FOR_COMPLETION" : "NO_TRADE",
-    evidence: { trend4h: tf4h.trend, structure4h: tf4h.structure, trend1h: tf1h.trend, structure1h: tf1h.structure, adx1h: Number.isFinite(adx1h) ? round(adx1h, 4) : null, adx15m: Number.isFinite(adx15m) ? round(adx15m, 4) : null },
+    evidence: { trend4h: tf4h.trend, structure4h: tf4h.structure, trend1h: tf1h.trend, structure1h: tf1h.structure, adx4h: Number.isFinite(adx4h) ? round(adx4h, 4) : null, adx1h: Number.isFinite(adx1h) ? round(adx1h, 4) : null, adx15m: Number.isFinite(adx15m) ? round(adx15m, 4) : null, rangeConfirmed: rangeContext.confirmed === true, rangeLocation: rangeContext.locationZone, rangeLegDirection: rangeContext.rangeLegDirection, boundaryState: rangeContext.boundaryState },
     eventAndLiquidityOverrideRequired: true,
     standaloneSignal: false,
     limitation: "Technical router only. News, exchange anomalies and execution liquidity can still downgrade or veto every submodel.",
@@ -2546,6 +2720,7 @@ async function buildSnapshot(options = {}) {
     asset.estimatedLiquidationPressureZones = buildEstimatedLiquidationPressureZones(asset);
     asset.largeParticipantProxy = buildLargeParticipantProxy(asset);
     asset.effortVsResult = buildEffortVsResult(asset);
+    asset.rangeContext = buildRangeContext(asset);
     asset.marketRegimeRouter = buildMarketRegimeRouter(asset);
     asset.dataGaps = {
       spotCvd: asset.spotMarket?.status === "ok"
@@ -2815,7 +2990,7 @@ function scannerConfiguration(env) {
     discovery: {
       enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false",
       intervalMinutes: 5,
-      supportedSubmodels: ["B1"],
+      supportedSubmodels: ["B1", "C1", "C2"],
       perpetualStructureSources: ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"],
       coherentSourceRequired: true,
       spotStructureAllowed: false,
@@ -2823,6 +2998,7 @@ function scannerConfiguration(env) {
       openNowAllowed: false,
       savesTradingPlan: false,
       newsAndAccountReview: "MANUAL_REQUIRED",
+      rangePolicy: "C1/C2 discovery requires a confirmed 4H range edge, sweep or failed breakout, re-entry, meaningful 15M structure shift, structural stop and net RR to the midpoint; range-middle alerts are forbidden.",
     },
   };
 }
@@ -3692,6 +3868,7 @@ function openApi(origin) {
       largeParticipantProxy: moduleSchema,
       liquidityRisk: moduleSchema,
       effortVsResult: moduleSchema,
+      rangeContext: moduleSchema,
       marketRegimeRouter: moduleSchema,
       dataGaps: moduleSchema,
     },
@@ -3964,7 +4141,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；系统也可保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI、资金费率及主K线，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。Gate USDT 永续仅作K线备用及主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急观察源，且不能放行执行。服务地址：${origin}</p><p>最后更新：2026-09-07</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；系统也可保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI、资金费率及主K线，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。Gate USDT 永续仅作K线备用及主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急观察源，且不能放行执行。服务地址：${origin}</p><p>最后更新：2026-09-10</p></body></html>`;
 }
 
 async function handleSnapshot(request, env, ctx) {
