@@ -1,11 +1,12 @@
-const BUILD = "crypto-alpha-worker-v20.0.0-range-aware-course-router";
-const API_VERSION = "5.0.0";
+const BUILD = "crypto-alpha-worker-v21.0.0-perpetual-source-reliability";
+const API_VERSION = "6.0.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
+const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v20.0.0-range-aware-course-router";
+const CACHE_NAMESPACE = "v21.0.0-perpetual-source-reliability";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -42,7 +43,7 @@ function discoverBreakoutRetest(asset, btc) {
   const tfs = asset?.timeframes;
   const structureSources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
   const coherentPerpetualSource = structureSources.every(source => source === structureSources[0])
-    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(structureSources[0]);
+    && ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(structureSources[0]);
   if (!coherentPerpetualSource || !["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error")) return null;
   if (asset.marketRegimeRouter?.regime !== "TREND") return null;
   const rows = tfs["15m"].recentCandles.filter(c => c.confirmed === true);
@@ -78,7 +79,7 @@ function discoverRangeReversal(asset, btc) {
   const context = asset?.rangeContext;
   const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
   const coherentPerpetualSource = sources.every(source => source === sources[0])
-    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0]);
+    && ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0]);
   const structureReady = ["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error");
   if (!coherentPerpetualSource || !structureReady || asset?.marketRegimeRouter?.regime !== "RANGE" || context?.confirmed !== true) return null;
   if (!["LOWER_EDGE", "UPPER_EDGE"].includes(context.locationZone)) return null;
@@ -148,6 +149,7 @@ async function runDiscovery(env) {
       const ticker = await verifyOkxScannerPrice(symbol);
       let timeframes = null;
       const structureAttempts = [
+        { source: "BINANCE_USDT_PERPETUAL", load: (tf) => binanceKlines(symbol, tf).then(parseBinanceCandles) },
         { source: "OKX_USDT_PERPETUAL", load: (tf, tfConfig) => okxKlines(config.instrumentId, tf, tfConfig).then(parseOkxCandles) },
         { source: "GATE_USDT_PERPETUAL", load: (tf, tfConfig) => gateKlines(config.gateSymbol, tf, tfConfig).then(parseGateCandles) },
       ];
@@ -478,13 +480,13 @@ async function acquireOkxPermit() {
     return;
   }
   await new Promise((resolve) => okxWaiters.push(resolve));
-  okxActive += 1;
+  // The releaser transfers its occupied slot directly to this waiter.
 }
 
 function releaseOkxPermit() {
-  okxActive = Math.max(0, okxActive - 1);
   const next = okxWaiters.shift();
   if (next) next();
+  else okxActive = Math.max(0, okxActive - 1);
 }
 
 async function mapLimit(items, limit, mapper) {
@@ -515,7 +517,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
       const queuedUntil = Math.max(upstreamCooldowns.get(endpoint) || 0, await sharedCooldown(endpoint));
       if (queuedUntil > Date.now()) throw cooldownError(queuedUntil);
       const response = await fetch(url, {
-        headers: { accept: "application/json", "user-agent": "CryptoAlpha/19.5.2", ...extraHeaders },
+        headers: { accept: "application/json", "user-agent": "CryptoAlpha/21.0", ...extraHeaders },
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -533,7 +535,7 @@ async function fetchJson(url, label, attempts, isOkx, validate, timeoutMs = 4500
       return validate ? validate(body) : body;
     } catch (error) {
       lastError = error;
-      if (error?.status === 429) {
+      if (error?.status === 429 && error?.message !== "UPSTREAM_RATE_LIMIT_COOLDOWN") {
         // Includes exchange JSON rate-limit errors, e.g. OKX code 50011.
         const minimumUntil = Date.now() + (usesSharedCooldown(endpoint) ? 5 * 60_000 : 30_000);
         if (!(upstreamCooldowns.get(endpoint) >= minimumUntil)) upstreamCooldowns.set(endpoint, minimumUntil);
@@ -648,6 +650,50 @@ async function upstream(base, path, label, policy) {
 
 function krakenFutures(path, policy = CACHE_POLICY.krakenTicker) {
   return upstream(KRAKEN_FUTURES_BASE, path, "Kraken Futures", policy);
+}
+
+
+// One persistent bundle for all six Binance series: two Cache API operations,
+// not twelve. Cache API is regional; this does not claim a global distributed lock.
+// No expired data can authorize execution, including during upstream outages.
+async function binanceKlines(symbol, timeframe) {
+  const bundle = await cachedComputed({
+    key: "binance-perpetual-six-series",
+    policy: { freshSeconds: 15, staleSeconds: 15 },
+    loader: async () => {
+      const entries = Object.keys(ASSETS).flatMap(s => Object.keys(TIMEFRAMES).map(tf => ({ s, tf })));
+      const values = await mapLimit(entries, 2, async ({ s, tf }) => {
+        try {
+          const rows = await fetchJson(
+            `${BINANCE_FUTURES_BASE}/fapi/v1/klines?symbol=${s}&interval=${tf}&limit=${CANDLE_LIMIT}`,
+            "Binance USDT perpetual candles", 1, false,
+            body => {
+              if (!Array.isArray(body) || body.length < 200) throw new Error(`Binance candles invalid: ${body?.code ?? "insufficient rows"}`);
+              return body;
+            }, 4500);
+          return [`${s}:${tf}`, { rows, fetchedAt: Date.now() }];
+        } catch (error) { return [`${s}:${tf}`, { error: error?.message || String(error) }]; }
+      });
+      return Object.fromEntries(values);
+    },
+  });
+  const item = bundle[`${symbol}:${timeframe}`];
+  if (!item?.rows) throw new Error(item?.error || "Binance candle series missing");
+  if (bundle.__cache?.state === "stale-on-error" || Date.now() - item.fetchedAt > 30_000) throw new Error("Binance candle bundle expired");
+  return attachCacheMeta(item.rows, { ...bundle.__cache, storedAt: new Date(item.fetchedAt).toISOString(), ageSeconds: (Date.now() - item.fetchedAt) / 1000 });
+}
+
+function parseBinanceCandles(rows) {
+  if (!Array.isArray(rows)) throw new Error("Binance candles invalid");
+  const fetchedAt = Date.parse(rows.__cache?.storedAt || "") || Date.now();
+  const candles = rows.map(r => ({
+    ts: Number.isFinite(Number(r[0])) ? new Date(Number(r[0])).toISOString() : null,
+    open: finite(r[1]), high: finite(r[2]), low: finite(r[3]), close: finite(r[4]),
+    volumeBase: finite(r[5]), volumeQuote: finite(r[7]), volumeContracts: null,
+    // A cached, then-open candle never becomes confirmed merely because time passes.
+    confirmed: Number.isFinite(Number(r[6])) && Number(r[6]) < fetchedAt,
+  })).sort((a,b) => Date.parse(a.ts)-Date.parse(b.ts));
+  return attachCacheMeta(candles, rows.__cache);
 }
 
 async function gateKlines(symbol, timeframe, tfConfig) {
@@ -1745,6 +1791,11 @@ function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
     [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.high >= Math.max(c.open, c.close) && c.low <= Math.min(c.open, c.close) && c.low > 0,
   );
 
+  const expectedLastClosedStart = Math.floor(Date.now() / tfConfig.intervalMs) * tfConfig.intervalMs - tfConfig.intervalMs;
+  const newestClosed = candles.filter(c => c.confirmed === true).at(-1);
+  if (!newestClosed || Date.parse(newestClosed.ts) < expectedLastClosedStart) reasons.push("latest_closed_candle_missing");
+  if (candles.some(c => !Number.isFinite(Date.parse(c.ts)) || Date.parse(c.ts) > Date.now())) reasons.push("invalid_or_future_timestamp");
+  if (new Set(candles.map(c => c.ts)).size !== candles.length) reasons.push("duplicate_candle_timestamp");
   if (candles.length < 200) reasons.push(`candle_count_${candles.length}_below_200`);
   if (!Number.isFinite(latestCandleAgeSeconds) || latestCandleAgeSeconds > tfConfig.maxAgeSeconds) reasons.push("latest_candle_stale");
   if (!Number.isFinite(priceDeviationPct) || priceDeviationPct > 0.75) reasons.push("price_deviation_above_0.75pct");
@@ -1765,13 +1816,15 @@ function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
       : source === "KRAKEN_SPOT_EMERGENCY"
         ? "SPOT_EMERGENCY_CROSS_MARKET"
         : "USDT_PERPETUAL_CROSS_EXCHANGE",
+    newestClosedCandleAt: newestClosed?.ts || null,
+    expectedLastClosedStart: new Date(expectedLastClosedStart).toISOString(),
     reasons,
   };
 }
 
 function isExecutionStructureTimeframe(timeframe) {
   return timeframe?.status === "ok"
-    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(timeframe?.source)
+    && ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(timeframe?.source)
     && timeframe?.quality?.passed === true
     && timeframe?.dataFreshness?.state !== "stale-on-error";
 }
@@ -2554,6 +2607,7 @@ async function buildSnapshot(options = {}) {
         throw new Error("Exact OKX USDT perpetual reference price unavailable for candle validation");
       }
       const attempts = [
+        { source: "BINANCE_USDT_PERPETUAL", load: async () => parseBinanceCandles(await binanceKlines(symbol, timeframe)) },
         {
           source: "OKX_USDT_PERPETUAL",
           load: async () => parseOkxCandles(await okxKlines(config.instrumentId, timeframe, tfConfig)),
@@ -2561,10 +2615,6 @@ async function buildSnapshot(options = {}) {
         {
           source: "GATE_USDT_PERPETUAL",
           load: async () => parseGateCandles(await gateKlines(config.gateSymbol, timeframe, tfConfig)),
-        },
-        {
-          source: "KRAKEN_SPOT_EMERGENCY",
-          load: async () => parseKrakenSpotCandles(await krakenSpotKlines(config.krakenSpotPair, timeframe, tfConfig)),
         },
       ];
       const rejected = [];
@@ -2582,12 +2632,12 @@ async function buildSnapshot(options = {}) {
         }
       }
       if (!selected) throw new Error(`No quality-approved candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
-      const fallbackUsed = selected.source !== "OKX_USDT_PERPETUAL";
+      const fallbackUsed = selected.source !== "BINANCE_USDT_PERPETUAL";
       if (fallbackUsed) {
         fallbacks.push({
           symbol,
           timeframe,
-          primary: "OKX_USDT_PERPETUAL",
+          primary: "BINANCE_USDT_PERPETUAL",
           fallback: selected.source,
           reason: rejected.map((item) => `${item.source}: ${item.error}`).join("; "),
         });
@@ -2774,7 +2824,7 @@ async function buildSnapshot(options = {}) {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution/index/mark price/OI/funding and primary candles plus OKX spot ticker/order book/recent trades; Gate USDT perpetual candle fallback/free auxiliary capital flow; optional Coinalyze free realized-liquidation history; Kraken Spot emergency observation-only structure fallback",
+    source: "OKX USDT perpetual execution/index/mark price/OI/funding plus Binance primary perpetual candles, OKX/Gate perpetual fallback, OKX spot recent trades, Gate flow and optional Coinalyze realized liquidations; no spot structure fallback",
     dataProviders: {
       coinalyze: {
         configured: coinalyze.configured,
@@ -2785,12 +2835,14 @@ async function buildSnapshot(options = {}) {
       },
     },
     requestBudget: {
-      plannedOkx: 19,
+      plannedOkx: 13,
+      plannedBinanceCandles: 6,
       plannedUpstreamFetches: coinalyze.configured ? 27 : 25,
-      plannedCloudflareSubrequestsCold: coinalyze.configured ? 30 : 28,
-      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: 48,
+      plannedCloudflareSubrequestsCold: coinalyze.configured ? 37 : 31,
+      maximumCloudflareSubrequestsWithAllFallbacksAndRetries: null,
+      budgetValidation: "REQUIRES_DEPLOYMENT_ENVIRONMENT_MEASUREMENT",
       cloudflareFreeLimit: 50,
-      persistentPerModuleCache: "SNAPSHOT_ROUTE_OPTIONAL_COINALYZE_AND_OKX_RATE_CIRCUIT; CANDLES_USE_MEMORY_TO_PROTECT_SUBREQUEST_BUDGET",
+      persistentPerModuleCache: "BINANCE_SIX_SERIES_BUNDLE_15_SECONDS_PLUS_ROUTE_CACHE_AND_RATE_CIRCUIT",
       coinalyzeConfigured: coinalyze.configured,
       coinalyzeProviderCallUnits: coinalyze.requestSymbolCount || 0,
     },
@@ -2991,7 +3043,7 @@ function scannerConfiguration(env) {
       enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false",
       intervalMinutes: 5,
       supportedSubmodels: ["B1", "C1", "C2"],
-      perpetualStructureSources: ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"],
+      perpetualStructureSources: ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"],
       coherentSourceRequired: true,
       spotStructureAllowed: false,
       notificationCooldownMinutes: 30,
@@ -4141,7 +4193,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；系统也可保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI、资金费率及主K线，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。Gate USDT 永续仅作K线备用及主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。Kraken 现货仅作严格质量校验后的紧急观察源，且不能放行执行。服务地址：${origin}</p><p>最后更新：2026-09-10</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；系统也可保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：币安USDT永续主K线；OKX USDT 永续实时价格、指数、标记价、OI、资金费率及备用K线，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。Gate USDT 永续仅作K线备用及主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用时返回数据阻断，不再用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-09-10</p></body></html>`;
 }
 
 async function handleSnapshot(request, env, ctx) {
@@ -4303,7 +4355,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding/primary candles + OKX spot ticker/book/recent trades + Gate perpetual candle fallback/free flow + optional Coinalyze realized liquidations + Kraken Spot emergency observation fallback", normalOkxRequests: 19, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "PRIMARY_PERPETUAL_STRUCTURE", gateCandlesRole: "PERPETUAL_FALLBACK", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: false, candleCacheReason: "PROTECT_CLOUDFLARE_SUBREQUEST_BUDGET", autonomousDiscoveryStructureSources: ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Binance primary perpetual candles + OKX/Gate perpetual candle fallbacks + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, binanceCandleRequests: 6, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "PERPETUAL_FALLBACK", binanceCandlesRole: "PRIMARY_PERPETUAL_STRUCTURE", gateCandlesRole: "PERPETUAL_FALLBACK", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "BINANCE_SIX_SERIES_BUNDLE_REGIONAL_CACHE_15_SECONDS", autonomousDiscoveryStructureSources: ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: true, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
