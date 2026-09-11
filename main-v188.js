@@ -1,12 +1,12 @@
-const BUILD = "crypto-alpha-worker-v21.0.0-perpetual-source-reliability";
-const API_VERSION = "6.0.0";
+const BUILD = "crypto-alpha-worker-v22.0.0-durable-incremental-market-data";
+const API_VERSION = "7.0.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v21.0.0-perpetual-source-reliability";
+const CACHE_NAMESPACE = "v22.0.0-durable-incremental-market-data";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -25,6 +25,12 @@ const STOP_INVALIDATION_TOLERANCE_PCT = 0.05;
 const MAX_LEVERAGE = 50;
 const DISCOVERY_STATE_KEY = "scanner:discovery";
 const MANUAL_PRIORITY_KEY = "scanner:manual-priority";
+const STRUCTURE_LEASE_KEY = "market:structure-refresh-lease";
+const STRUCTURE_RECORD_PREFIX = "market:structure";
+const STRUCTURE_RECORD_TTL_SECONDS = 45 * 24 * 60 * 60;
+const STRUCTURE_INCREMENTAL_LIMIT = 8;
+const STRUCTURE_REFRESH_SECONDS = { "15m": 75, "1h": 210, "4h": 330 };
+const STRUCTURE_MAX_COLLECTION_AGE_SECONDS = { "15m": 180, "1h": 420, "4h": 660 };
 
 const RANGE_CONFIG = {
   maximumFourHourAdx: 22,
@@ -43,7 +49,7 @@ function discoverBreakoutRetest(asset, btc) {
   const tfs = asset?.timeframes;
   const structureSources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
   const coherentPerpetualSource = structureSources.every(source => source === structureSources[0])
-    && ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(structureSources[0]);
+    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(structureSources[0]);
   if (!coherentPerpetualSource || !["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error")) return null;
   if (asset.marketRegimeRouter?.regime !== "TREND") return null;
   const rows = tfs["15m"].recentCandles.filter(c => c.confirmed === true);
@@ -79,7 +85,7 @@ function discoverRangeReversal(asset, btc) {
   const context = asset?.rangeContext;
   const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
   const coherentPerpetualSource = sources.every(source => source === sources[0])
-    && ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0]);
+    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0]);
   const structureReady = ["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error");
   if (!coherentPerpetualSource || !structureReady || asset?.marketRegimeRouter?.regime !== "RANGE" || context?.confirmed !== true) return null;
   if (!["LOWER_EDGE", "UPPER_EDGE"].includes(context.locationZone)) return null;
@@ -142,36 +148,11 @@ async function runDiscovery(env) {
   if (state[MANUAL_PRIORITY_KEY]?.until > now || now - finite(old.lastRunAt, 0) < 5 * 60_000) return { status: "idle", reason: "DISCOVERY_DEFERRED" };
   await scannerStatePut(env, DISCOVERY_STATE_KEY, { ...old, lastRunAt: now }, 86400);
   try {
-    const assets = {};
-    // Direct execution verification plus exact OKX perpetual candles. A failed
-    // background pass is silent and never falls through to a lower-grade source.
-    for (const [symbol, config] of Object.entries(ASSETS)) {
-      const ticker = await verifyOkxScannerPrice(symbol);
-      let timeframes = null;
-      const structureAttempts = [
-        { source: "BINANCE_USDT_PERPETUAL", load: (tf) => binanceKlines(symbol, tf).then(parseBinanceCandles) },
-        { source: "OKX_USDT_PERPETUAL", load: (tf, tfConfig) => okxKlines(config.instrumentId, tf, tfConfig).then(parseOkxCandles) },
-        { source: "GATE_USDT_PERPETUAL", load: (tf, tfConfig) => gateKlines(config.gateSymbol, tf, tfConfig).then(parseGateCandles) },
-      ];
-      for (const attempt of structureAttempts) {
-        try {
-          const candidateTimeframes = {};
-          for (const [tf, tfConfig] of Object.entries(TIMEFRAMES)) {
-            const candles = await attempt.load(tf, tfConfig);
-            const quality = candleQuality(candles, ticker.last, tf, tfConfig, attempt.source);
-            if (!quality.passed || candles.__cache?.state === "stale-on-error") throw new Error("DISCOVERY_STRUCTURE_DATA_UNAVAILABLE");
-            const closed = attachCacheMeta(candles.filter(c => c.confirmed === true), candles.__cache);
-            candidateTimeframes[tf] = { ...summarizeTimeframe(closed), source: attempt.source, quality };
-          }
-          timeframes = candidateTimeframes;
-          break;
-        } catch {}
-      }
-      if (!timeframes) throw new Error("DISCOVERY_PERPETUAL_STRUCTURE_UNAVAILABLE");
-      assets[symbol] = { ticker, timeframes };
-      assets[symbol].rangeContext = buildRangeContext(assets[symbol]);
-      assets[symbol].marketRegimeRouter = buildMarketRegimeRouter(assets[symbol]);
-    }
+    // Discovery and manual analysis consume the exact same persistent market
+    // state. It no longer downloads a second independent six-series bundle.
+    const full = await buildSnapshot({ env, scannerMode: true });
+    if (!full.coverage?.openNowDataReady) return { status: "idle", reason: "DISCOVERY_DATA_BLOCKED" };
+    const assets = full.assets;
     let candidate = discoverBreakoutRetest(assets.ETHUSDT, assets.BTCUSDT) || discoverRangeReversal(assets.ETHUSDT, assets.BTCUSDT);
     if (!candidate) return { status: "idle", reason: "NO_B1_C1_C2_CANDIDATE" };
     const signature = `${candidate.model}:${candidate.submodel}:${candidate.direction}:${candidate.boundary.toFixed(1)}:${candidate.candleAt}`;
@@ -179,14 +160,6 @@ async function runDiscovery(env) {
     if (now - finite(old.lastAlertAt, 0) < 30 * 60_000) return { status: "idle", reason: "DISCOVERY_NOTIFICATION_COOLDOWN" };
     const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY);
     if (priority?.until > Date.now()) return { status: "idle", reason: "MANUAL_REQUEST_PRIORITY" };
-    // Optional Coinalyze is reserved for manual analysis; background uses Gate proxy.
-    const full = await buildSnapshot({});
-    if (!full.coverage?.openNowDataReady) return { status: "idle", reason: "DISCOVERY_DATA_BLOCKED" };
-    // Use closed-only primary summaries from this discovery pass.
-    full.assets.ETHUSDT.timeframes = assets.ETHUSDT.timeframes;
-    full.assets.BTCUSDT.timeframes = assets.BTCUSDT.timeframes;
-    full.assets.ETHUSDT.rangeContext = assets.ETHUSDT.rangeContext;
-    full.assets.ETHUSDT.marketRegimeRouter = assets.ETHUSDT.marketRegimeRouter;
     candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT) || discoverRangeReversal(full.assets.ETHUSDT, full.assets.BTCUSDT);
     if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
     const verified = await verifyOkxScannerZone("ETHUSDT", candidate.entryZone);
@@ -272,6 +245,7 @@ const sharedCooldownChecks = new Map();
 const sharedCooldownInflight = new Map();
 let manualSnapshotWork = null;
 let lastManualRequestAt = 0;
+let structureRefreshWork = null;
 
 function cooldownKey(url) {
   const parsed = new URL(url);
@@ -1749,6 +1723,153 @@ function parseOkxCandles(rows) {
   return attachCacheMeta(candles, rows.__cache);
 }
 
+function structureRecordKey(symbol, timeframe) {
+  return `${STRUCTURE_RECORD_PREFIX}:${symbol}:${timeframe}`;
+}
+
+function expectedLastClosedStart(timeframe, now = Date.now()) {
+  const intervalMs = TIMEFRAMES[timeframe].intervalMs;
+  // Give exchanges 30 seconds to finalize a newly closed bar. Before that
+  // grace expires, the preceding confirmed bar remains the expected bar.
+  return Math.floor((now - 30_000) / intervalMs) * intervalMs - intervalMs;
+}
+
+function plainCandles(candles) {
+  return (Array.isArray(candles) ? candles : []).map((candle) => ({
+    ts: candle.ts,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volumeBase: candle.volumeBase,
+    volumeQuote: candle.volumeQuote,
+    volumeContracts: candle.volumeContracts,
+    confirmed: candle.confirmed === true,
+  })).filter((candle) => Number.isFinite(Date.parse(candle.ts)) && [candle.open, candle.high, candle.low, candle.close].every(Number.isFinite));
+}
+
+function mergeStructureCandles(previous, incoming) {
+  const rows = new Map();
+  for (const candle of [...plainCandles(previous), ...plainCandles(incoming)]) rows.set(candle.ts, candle);
+  return [...rows.values()].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts)).slice(-CANDLE_LIMIT);
+}
+
+async function fetchGateStructureCandles(config, timeframe, limit) {
+  const tfConfig = TIMEFRAMES[timeframe];
+  const rows = await fetchJson(
+    `${GATE_BASE}/api/v4/futures/usdt/candlesticks?contract=${config.gateSymbol}&interval=${tfConfig.gateInterval}&limit=${limit}`,
+    "Gate durable structure candles", 1, false,
+    (body) => {
+      if (!Array.isArray(body) || body.length < Math.min(limit, 3)) throw new Error("Gate structure candles insufficient");
+      return body;
+    }, 4500,
+  );
+  return parseGateCandles(rows);
+}
+
+async function fetchOkxStructureCandles(config, timeframe, limit) {
+  const tfConfig = TIMEFRAMES[timeframe];
+  const rows = await fetchJson(
+    `${OKX_BASE}/api/v5/market/candles?instId=${encodeURIComponent(config.instrumentId)}&bar=${encodeURIComponent(tfConfig.okxBar)}&limit=${limit}`,
+    "OKX durable structure candles", 1, true,
+    (body) => {
+      if (body?.code !== "0" || !Array.isArray(body?.data) || body.data.length < Math.min(limit, 3)) {
+        const error = new Error(`OKX structure candles ${body?.code || "invalid response"}: ${body?.msg || "insufficient rows"}`);
+        if (String(body?.code) === "50011") error.status = 429;
+        throw error;
+      }
+      return body.data;
+    }, 4500,
+  );
+  return parseOkxCandles(rows);
+}
+
+function structureRecordUsable(record, timeframe, now = Date.now()) {
+  if (!record || !Array.isArray(record.candles) || record.candles.length < 200) return false;
+  const ageSeconds = (now - finite(record.updatedAt, 0)) / 1000;
+  if (!Number.isFinite(ageSeconds) || ageSeconds > STRUCTURE_MAX_COLLECTION_AGE_SECONDS[timeframe]) return false;
+  const newestClosed = record.candles.filter((candle) => candle.confirmed === true).at(-1);
+  return Number.isFinite(Date.parse(newestClosed?.ts || ""))
+    && Date.parse(newestClosed.ts) >= expectedLastClosedStart(timeframe, now);
+}
+
+async function refreshOneStructureRecord(symbol, timeframe, record) {
+  const config = ASSETS[symbol];
+  const now = Date.now();
+  const bootstrap = !record || !Array.isArray(record.candles) || record.candles.length < 200 || record.source !== "GATE_USDT_PERPETUAL";
+  const gateLimit = bootstrap ? CANDLE_LIMIT : STRUCTURE_INCREMENTAL_LIMIT;
+  try {
+    const incoming = await fetchGateStructureCandles(config, timeframe, gateLimit);
+    const candles = bootstrap ? plainCandles(incoming) : mergeStructureCandles(record.candles, incoming);
+    if (candles.length < 200) throw new Error(`Gate merged candle count ${candles.length} below 200`);
+    return { symbol, timeframe, source: "GATE_USDT_PERPETUAL", candles, updatedAt: now, lastRefreshAttemptAt: now, refreshError: null, mode: bootstrap ? "FULL_BOOTSTRAP" : "INCREMENTAL_8" };
+  } catch (gateError) {
+    // A transient refresh failure must not erase a still-current validated
+    // baseline. It remains usable only inside the strict collection-age gate.
+    if (structureRecordUsable(record, timeframe, now)) {
+      return { ...record, lastRefreshAttemptAt: now, refreshError: `GATE_USDT_PERPETUAL: ${gateError?.message || String(gateError)}`, mode: "PERSISTED_BASELINE_AFTER_REFRESH_ERROR" };
+    }
+    try {
+      const incoming = await fetchOkxStructureCandles(config, timeframe, CANDLE_LIMIT);
+      const candles = plainCandles(incoming);
+      if (candles.length < 200) throw new Error(`OKX candle count ${candles.length} below 200`);
+      return { symbol, timeframe, source: "OKX_USDT_PERPETUAL", candles, updatedAt: now, lastRefreshAttemptAt: now, refreshError: `Gate failed; OKX full recovery used: ${gateError?.message || String(gateError)}`, mode: "FULL_RECOVERY" };
+    } catch (okxError) {
+      return { ...(record || { symbol, timeframe, source: null, candles: [] }), lastRefreshAttemptAt: now, refreshError: `Gate=${gateError?.message || String(gateError)}; OKX=${okxError?.message || String(okxError)}`, mode: "REFRESH_FAILED" };
+    }
+  }
+}
+
+async function readStructureRecords(env) {
+  const definitions = Object.keys(ASSETS).flatMap((symbol) => Object.keys(TIMEFRAMES).map((timeframe) => ({ symbol, timeframe, key: structureRecordKey(symbol, timeframe) })));
+  const values = await scannerStateBundle(env, definitions.map((item) => item.key));
+  return { definitions, records: Object.fromEntries(definitions.map((item) => [item.key, values[item.key] || null])) };
+}
+
+async function loadDurableStructureRecordsUnlocked(env, options = {}) {
+  if (!scannerStateStub(env)) throw new Error("SCANNER_STATE durable binding is required for stable structure data");
+  let state = await readStructureRecords(env);
+  const now = Date.now();
+  const due = state.definitions.filter(({ key, timeframe }) => {
+    const record = state.records[key];
+    const ageSeconds = (now - finite(record?.updatedAt, 0)) / 1000;
+    return options.force === true || !structureRecordUsable(record, timeframe, now) || ageSeconds > STRUCTURE_REFRESH_SECONDS[timeframe];
+  });
+  let refreshed = false;
+  let leaseWaited = false;
+  if (due.length) {
+    const token = crypto.randomUUID();
+    const acquired = await scannerAcquireNamedLease(env, STRUCTURE_LEASE_KEY, token, 45_000);
+    if (acquired) {
+      try {
+        const updates = await mapLimit(due, 2, ({ symbol, timeframe, key }) => refreshOneStructureRecord(symbol, timeframe, state.records[key]));
+        const values = Object.fromEntries(due.map((item, index) => [item.key, { value: updates[index], ttlSeconds: STRUCTURE_RECORD_TTL_SECONDS }]));
+        await durableStateCall(env, { op: "put", values });
+        refreshed = true;
+      } finally {
+        await scannerReleaseNamedLease(env, STRUCTURE_LEASE_KEY, token).catch(() => {});
+      }
+      state = await readStructureRecords(env);
+    } else {
+      leaseWaited = true;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await delay(250);
+        state = await readStructureRecords(env);
+        if (state.definitions.every(({ key, timeframe }) => structureRecordUsable(state.records[key], timeframe))) break;
+      }
+    }
+  }
+  return { ...state, refreshed, leaseWaited, readAt: Date.now() };
+}
+
+async function loadDurableStructureRecords(env, options = {}) {
+  if (structureRefreshWork) return structureRefreshWork;
+  const work = loadDurableStructureRecordsUnlocked(env, options);
+  structureRefreshWork = work;
+  try { return await work; }
+  finally { if (structureRefreshWork === work) structureRefreshWork = null; }
+}
+
 function parseKrakenSpotCandles(rows) {
   if (!Array.isArray(rows)) throw new Error("Kraken Spot candles are empty");
   const candles = rows
@@ -1824,7 +1945,7 @@ function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
 
 function isExecutionStructureTimeframe(timeframe) {
   return timeframe?.status === "ok"
-    && ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(timeframe?.source)
+    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(timeframe?.source)
     && timeframe?.quality?.passed === true
     && timeframe?.dataFreshness?.state !== "stale-on-error";
 }
@@ -2597,63 +2718,66 @@ async function buildSnapshot(options = {}) {
     }
   }
 
-  const candleDefinitions = Object.entries(ASSETS).flatMap(([symbol, config]) =>
-    Object.entries(TIMEFRAMES).map(([timeframe, tfConfig]) => ({ symbol, config, timeframe, tfConfig })),
-  );
-  const candleWork = mapLimit(candleDefinitions, 3, async ({ symbol, config, timeframe, tfConfig }) => {
+  let structureCoordinator = { status: "unavailable", error: "Not loaded" };
+  const candleWork = (async () => {
     try {
-      const executionPrice = assets[symbol].ticker;
-      if (executionPrice.status !== "ok" || executionPrice.source !== "OKX_USDT_PERPETUAL" || !Number.isFinite(executionPrice.last)) {
-        throw new Error("Exact OKX USDT perpetual reference price unavailable for candle validation");
-      }
-      const attempts = [
-        { source: "BINANCE_USDT_PERPETUAL", load: async () => parseBinanceCandles(await binanceKlines(symbol, timeframe)) },
-        {
-          source: "OKX_USDT_PERPETUAL",
-          load: async () => parseOkxCandles(await okxKlines(config.instrumentId, timeframe, tfConfig)),
-        },
-        {
-          source: "GATE_USDT_PERPETUAL",
-          load: async () => parseGateCandles(await gateKlines(config.gateSymbol, timeframe, tfConfig)),
-        },
-      ];
-      const rejected = [];
-      let selected = null;
-      for (const candidate of attempts) {
+      const state = await loadDurableStructureRecords(options.env, { force: options.forceStructureRefresh === true });
+      structureCoordinator = {
+        status: "ok",
+        backend: "DURABLE_OBJECT",
+        strategy: "FULL_BASELINE_THEN_INCREMENTAL_8_SHARED_BY_MANUAL_AND_SCANNER",
+        primary: "GATE_USDT_PERPETUAL",
+        recovery: "OKX_USDT_PERPETUAL_FULL_RELOAD_ONLY_WHEN_PERSISTED_GATE_BASELINE_IS_UNUSABLE",
+        refreshed: state.refreshed,
+        leaseWaited: state.leaseWaited,
+        readAt: new Date(state.readAt).toISOString(),
+      };
+      for (const { symbol, timeframe, key } of state.definitions) {
         try {
-          const candles = await candidate.load();
-          if (candles.__cache?.state === "stale-on-error") throw new Error("stale-on-error candles cannot authorize execution");
-          const quality = candleQuality(candles, executionPrice.last, timeframe, tfConfig, candidate.source);
+          const executionPrice = assets[symbol].ticker;
+          if (executionPrice.status !== "ok" || executionPrice.source !== "OKX_USDT_PERPETUAL" || !Number.isFinite(executionPrice.last)) {
+            throw new Error("Exact OKX USDT perpetual reference price unavailable for candle validation");
+          }
+          const record = state.records[key];
+          if (!structureRecordUsable(record, timeframe)) throw new Error(record?.refreshError || "Persistent structure series is missing or expired");
+          const collectionAgeSeconds = Math.max(0, (Date.now() - record.updatedAt) / 1000);
+          const candles = attachCacheMeta(plainCandles(record.candles), {
+            state: record.refreshError ? "persisted-fresh-after-refresh-error" : "durable-incremental",
+            ageSeconds: round(collectionAgeSeconds, 3),
+            storedAt: new Date(record.updatedAt).toISOString(),
+          });
+          const quality = candleQuality(candles, executionPrice.last, timeframe, TIMEFRAMES[timeframe], record.source);
           if (!quality.passed) throw new Error(`quality rejected: ${quality.reasons.join(",")}`);
-          selected = { candles, source: candidate.source, quality };
-          break;
+          const fallbackUsed = record.source !== "GATE_USDT_PERPETUAL";
+          if (fallbackUsed) fallbacks.push({ symbol, timeframe, primary: "GATE_USDT_PERPETUAL", fallback: record.source, reason: record.refreshError || "Gate baseline unavailable" });
+          assets[symbol].timeframes[timeframe] = {
+            ...summarizeTimeframe(candles),
+            source: record.source,
+            fallbackUsed,
+            quality,
+            coordinator: {
+              mode: record.mode,
+              collectionAgeSeconds: round(collectionAgeSeconds, 3),
+              lastRefreshAt: new Date(record.updatedAt).toISOString(),
+              lastRefreshAttemptAt: Number.isFinite(record.lastRefreshAttemptAt) ? new Date(record.lastRefreshAttemptAt).toISOString() : null,
+              refreshWarning: record.refreshError || null,
+            },
+          };
         } catch (error) {
-          rejected.push({ source: candidate.source, error: error?.message || String(error) });
+          const message = error?.message || String(error);
+          assets[symbol].timeframes[timeframe] = errorModule(message);
+          errors.push({ symbol, module: "candles", timeframe, error: message });
         }
       }
-      if (!selected) throw new Error(`No quality-approved candle source: ${rejected.map((item) => `${item.source}=${item.error}`).join("; ")}`);
-      const fallbackUsed = selected.source !== "BINANCE_USDT_PERPETUAL";
-      if (fallbackUsed) {
-        fallbacks.push({
-          symbol,
-          timeframe,
-          primary: "BINANCE_USDT_PERPETUAL",
-          fallback: selected.source,
-          reason: rejected.map((item) => `${item.source}: ${item.error}`).join("; "),
-        });
-      }
-      assets[symbol].timeframes[timeframe] = {
-        ...summarizeTimeframe(selected.candles),
-        source: selected.source,
-        fallbackUsed,
-        quality: selected.quality,
-      };
     } catch (error) {
       const message = error?.message || String(error);
-      assets[symbol].timeframes[timeframe] = errorModule(message);
-      errors.push({ symbol, module: "candles", timeframe, error: message });
+      structureCoordinator = { status: "unavailable", error: message };
+      for (const symbol of Object.keys(ASSETS)) for (const timeframe of Object.keys(TIMEFRAMES)) {
+        assets[symbol].timeframes[timeframe] = errorModule(message);
+        errors.push({ symbol, module: "candles", timeframe, error: message });
+      }
     }
-  });
+  })();
 
   const spotWork = mapLimit(Object.entries(ASSETS), 2, async ([symbol, config]) => {
     try {
@@ -2824,8 +2948,9 @@ async function buildSnapshot(options = {}) {
     apiVersion: API_VERSION,
     generatedAt: new Date().toISOString(),
     timezone: "UTC",
-    source: "OKX USDT perpetual execution/index/mark price/OI/funding plus Binance primary perpetual candles, OKX/Gate perpetual fallback, OKX spot recent trades, Gate flow and optional Coinalyze realized liquidations; no spot structure fallback",
+    source: "OKX USDT perpetual execution/index/mark price/OI/funding plus Durable Object coordinated Gate primary and OKX recovery perpetual candles, OKX spot recent trades, Gate flow and optional Coinalyze realized liquidations; no spot structure fallback",
     dataProviders: {
+      structureCoordinator,
       coinalyze: {
         configured: coinalyze.configured,
         status: coinalyzeEffectiveStatus,
@@ -2836,13 +2961,15 @@ async function buildSnapshot(options = {}) {
     },
     requestBudget: {
       plannedOkx: 13,
-      plannedBinanceCandles: 6,
-      plannedUpstreamFetches: coinalyze.configured ? 27 : 25,
-      plannedCloudflareSubrequestsCold: coinalyze.configured ? 37 : 31,
+      plannedBinanceCandles: 0,
+      plannedGateStructureCandlesWarm: "0_TO_6_DUE_SERIES; normally 2x15M, with 1H/4H only at configured refresh age",
+      plannedGateStructureCandlesCold: 6,
+      plannedUpstreamFetches: "DYNAMIC_INCREMENTAL_NOT_FULL_SNAPSHOT_REDOWNLOAD",
+      plannedCloudflareSubrequestsCold: "BELOW_50_WITH_SIX_SERIES_BOOTSTRAP",
       maximumCloudflareSubrequestsWithAllFallbacksAndRetries: null,
       budgetValidation: "REQUIRES_DEPLOYMENT_ENVIRONMENT_MEASUREMENT",
       cloudflareFreeLimit: 50,
-      persistentPerModuleCache: "BINANCE_SIX_SERIES_BUNDLE_15_SECONDS_PLUS_ROUTE_CACHE_AND_RATE_CIRCUIT",
+      persistentPerModuleCache: "DURABLE_OBJECT_SIX_SERIES_BASELINE_PLUS_INCREMENTAL_8_MERGE",
       coinalyzeConfigured: coinalyze.configured,
       coinalyzeProviderCallUnits: coinalyze.requestSymbolCount || 0,
     },
@@ -2852,6 +2979,11 @@ async function buildSnapshot(options = {}) {
       staleOnError: true,
       exactExecutionPriceMaxAgeSeconds: 35,
       openNowRequiresPerpetualStructureSource: true,
+      structurePrimary: "GATE_USDT_PERPETUAL",
+      structureRecovery: "OKX_USDT_PERPETUAL_ONLY_AFTER_GATE_BASELINE_EXPIRES_OR_IS_MISSING",
+      structurePersistence: "DURABLE_OBJECT_SHARED_BY_MANUAL_SCANNER_AND_DISCOVERY",
+      structureRefreshSeconds: STRUCTURE_REFRESH_SECONDS,
+      structureMaximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS,
       candleQualityGate: { maxPriceDeviationPct: 0.75, minimumNonZeroVolumeRatio: 0.8, minimumContinuityRatio: 0.95 },
       capitalFlowPolicy: "Gate single-exchange estimate, confirmation only, never a standalone trigger or DATA_READY blocker",
       liquidityRiskPolicy: "Closed-candle sweep/reclaim, visible stop-pool proximity, quantified crowding and large-taker footprints are veto/context layers; no exact whale identity is claimed",
@@ -3000,24 +3132,32 @@ async function scannerStateBundle(env, keys) {
 }
 
 async function scannerAcquireLease(env, token, ttlMs = 55_000) {
+  return scannerAcquireNamedLease(env, SCANNER_LEASE_KEY, token, ttlMs);
+}
+
+async function scannerAcquireNamedLease(env, key, token, ttlMs = 55_000) {
   if (scannerStateStub(env)) {
-    const result = await durableStateCall(env, { op: "acquireLease", key: SCANNER_LEASE_KEY, token, ttlMs });
+    const result = await durableStateCall(env, { op: "acquireLease", key, token, ttlMs });
     return result?.acquired === true;
   }
-  const current = await scannerStateGet(env, SCANNER_LEASE_KEY);
+  const current = await scannerStateGet(env, key);
   if (current?.expiresAt > Date.now()) return false;
-  await scannerStatePut(env, SCANNER_LEASE_KEY, { token, expiresAt: Date.now() + ttlMs }, Math.ceil(ttlMs / 1000) + 60);
-  const verified = await scannerStateGet(env, SCANNER_LEASE_KEY);
+  await scannerStatePut(env, key, { token, expiresAt: Date.now() + ttlMs }, Math.ceil(ttlMs / 1000) + 60);
+  const verified = await scannerStateGet(env, key);
   return verified?.token === token;
 }
 
 async function scannerReleaseLease(env, token) {
+  return scannerReleaseNamedLease(env, SCANNER_LEASE_KEY, token);
+}
+
+async function scannerReleaseNamedLease(env, key, token) {
   if (scannerStateStub(env)) {
-    await durableStateCall(env, { op: "releaseLease", key: SCANNER_LEASE_KEY, token });
+    await durableStateCall(env, { op: "releaseLease", key, token });
     return;
   }
-  const current = await scannerStateGet(env, SCANNER_LEASE_KEY);
-  if (current?.token === token) await scannerStatePut(env, SCANNER_LEASE_KEY, { token: null, expiresAt: 0 }, 60);
+  const current = await scannerStateGet(env, key);
+  if (current?.token === token) await scannerStatePut(env, key, { token: null, expiresAt: 0 }, 60);
 }
 
 async function scannerPlanIsCurrent(env, plan) {
@@ -3043,7 +3183,7 @@ function scannerConfiguration(env) {
       enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false",
       intervalMinutes: 5,
       supportedSubmodels: ["B1", "C1", "C2"],
-      perpetualStructureSources: ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"],
+      perpetualStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"],
       coherentSourceRequired: true,
       spotStructureAllowed: false,
       notificationCooldownMinutes: 30,
@@ -3769,7 +3909,7 @@ async function runScannerUnlocked(env) {
       || (plan.direction === "LONG" ? price <= plan.invalidationPrice : price >= plan.invalidationPrice);
     // Outside the exact plan zone no complete market snapshot is needed.
     if (zoneVerification.confirmed && !terminal) {
-      try { snapshot = await buildSnapshot({ scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); }
+      try { snapshot = await buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); }
       catch (error) { snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) }; }
     }
     if (!snapshot.assets) snapshot.assets = {};
@@ -4193,7 +4333,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数包括课程模型、方向、位置、触发、入场区、止损、止盈、失效条件、风险配置、有效期和方案摘要，保存在 Cloudflare Durable Object 中；系统也可保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：币安USDT永续主K线；OKX USDT 永续实时价格、指数、标记价、OI、资金费率及备用K线，以及OKX现货最新成交、订单簿和真实逐笔成交样本；现货样本主动买卖差不冒充跨时间持久CVD。Gate USDT 永续仅作K线备用及主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用时返回数据阻断，不再用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-09-10</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数与六组永续结构K线基线保存在 Cloudflare Durable Object 中；系统仅增量更新到期K线，并保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率；Gate USDT 永续作为持久结构K线主源，OKX永续仅在Gate持久基线不可用时完整恢复；OKX现货提供最新成交、订单簿和真实逐笔成交样本。现货样本不冒充持久CVD。Gate还提供主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用或持久数据过期时返回数据阻断，不使用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-09-11</p></body></html>`;
 }
 
 async function handleSnapshot(request, env, ctx) {
@@ -4215,7 +4355,7 @@ async function buildManualResponse(request, env, ctx) {
     const cached = await cache.match(cacheKey);
     if (cached) return new Response(cached.body, cached);
   }
-  const snapshot = await buildSnapshot({ coinalyzeApiKey: env?.COINALYZE_API_KEY });
+  const snapshot = await buildSnapshot({ env, coinalyzeApiKey: env?.COINALYZE_API_KEY });
   const response = json(snapshot, 200, { "cache-control": `public, max-age=1, s-maxage=${SNAPSHOT_CACHE_SECONDS}` });
   if (cache) {
     const write = cache.put(cacheKey, response.clone()).catch(() => {});
@@ -4355,7 +4495,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Binance primary perpetual candles + OKX/Gate perpetual candle fallbacks + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, binanceCandleRequests: 6, gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "PERPETUAL_FALLBACK", binanceCandlesRole: "PRIMARY_PERPETUAL_STRUCTURE", gateCandlesRole: "PERPETUAL_FALLBACK", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "BINANCE_SIX_SERIES_BUNDLE_REGIONAL_CACHE_15_SECONDS", autonomousDiscoveryStructureSources: ["BINANCE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: true, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Durable Object coordinated Gate primary/OKX recovery perpetual structure + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, binanceCandleRequests: 0, gateStructureCandleRequests: "DYNAMIC_DUE_SERIES_ONLY", gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "FULL_RECOVERY_ONLY", binanceCandlesRole: "DISABLED_PRODUCTION_HTTP_403", gateCandlesRole: "PRIMARY_DURABLE_INCREMENTAL_STRUCTURE", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "DURABLE_OBJECT_FULL_BASELINE_THEN_INCREMENTAL_8", structureCoordinator: { backend: "DURABLE_OBJECT", sharedConsumers: ["MANUAL_ACTION", "PLAN_SCANNER", "DISCOVERY"], refreshSeconds: STRUCTURE_REFRESH_SECONDS, maximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS, concurrentRefreshDeduplicated: true }, autonomousDiscoveryStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
@@ -4391,6 +4531,10 @@ export default {
     const task = (async () => {
       const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY).catch(() => null);
       if (priority?.until > Date.now()) return;
+      // Keep the shared structure baseline warm independently of whether a
+      // user plan is armed. Due series alone are refreshed; most cron ticks
+      // perform zero candle downloads for 1H/4H.
+      await loadDurableStructureRecords(env).catch((error) => console.error("structure prewarm failed", error));
       return runScanner(env);
     })().catch((error) => console.error("scheduled scanner failed", error));
     if (ctx?.waitUntil) ctx.waitUntil(task);
