@@ -1,4 +1,85 @@
-const BUILD = "crypto-alpha-worker-v22.0.0-durable-incremental-market-data";
+
+const OBSERVATION_KEY = "scanner:observation";
+const OBSERVATION_LEASE_KEY = "scanner:observation-lease";
+async function observationLocked(env, work) {
+  if (!scannerStateStub(env)) throw new Error("Observation alerts require existing SCANNER_STATE durable binding");
+  const token = crypto.randomUUID();
+  if (!await scannerAcquireNamedLease(env, OBSERVATION_LEASE_KEY, token, 60000)) throw new Error("Observation busy; retry and check status");
+  try { return await work(); } finally { await scannerReleaseNamedLease(env, OBSERVATION_LEASE_KEY, token); }
+}
+function normalizeObservation(input) {
+  if (!input || !ASSETS[input.symbol]) throw new Error("Unsupported symbol");
+  const min = input.zone?.min, max = input.zone?.max;
+  if (typeof min !== "number" || typeof max !== "number" || !Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min) throw new Error("Invalid observation zone");
+  const expires = Date.parse(input.expiresAt);
+  if (!Number.isFinite(expires) || expires <= Date.now() || expires > Date.now() + 7*86400000) throw new Error("Expiry must be within seven days");
+  const rationale = scannerText(input.rationale), nextReview = scannerText(input.nextReview);
+  if (!rationale || !nextReview) throw new Error("Observation rationale and next review conditions required");
+  return { observationId: crypto.randomUUID(), symbol: input.symbol, zone: {min,max}, rationale, nextReview,
+    expiresAt: new Date(expires).toISOString(), createdAt: new Date().toISOString(), status: "ARMED", permission: "OBSERVATION_ONLY_NO_TRADE_PERMISSION" };
+}
+async function saveObservationAlert(env, input) {
+  const alert = normalizeObservation(input);
+  if (!scannerConfiguration(env).barkConfigured) throw new Error("Bark is not configured");
+  return observationLocked(env, async () => {
+    const previous = await scannerStateGet(env, OBSERVATION_KEY);
+    if (previous?.status === "ARMED" && previous.symbol === alert.symbol && JSON.stringify(previous.zone) === JSON.stringify(alert.zone) && previous.expiresAt === alert.expiresAt && previous.rationale === alert.rationale && previous.nextReview === alert.nextReview)
+      return {status:"ok", observation:previous, reused:true};
+    await scannerStatePut(env, OBSERVATION_KEY, alert);
+    return {status:"ok", observation:alert, tradingPlanChanged:false};
+  });
+}
+async function cancelObservationAlert(env, input) {
+  return observationLocked(env, async () => {
+    const alert = await scannerStateGet(env, OBSERVATION_KEY);
+    if (!alert) return {status:"idle"};
+    if (input?.observationId !== alert.observationId) throw new Error("Observation ID changed; read status first");
+    const cancelled = {...alert,status:"CANCELLED",cancelledAt:new Date().toISOString()};
+    await scannerStatePut(env, OBSERVATION_KEY, cancelled);
+    return {status:"ok",observation:cancelled,tradingPlanChanged:false};
+  });
+}
+async function runObservationScanner(env) {
+  const pending = await scannerStateGet(env, OBSERVATION_KEY);
+  if (pending?.status !== "ARMED") return {status:"idle"};
+  return observationLocked(env, async () => {
+    let alert = await scannerStateGet(env, OBSERVATION_KEY);
+    if (alert?.status !== "ARMED") return {status:"idle"};
+    if (Date.parse(alert.expiresAt) <= Date.now()) {
+      await scannerStatePut(env,OBSERVATION_KEY,{...alert,status:"EXPIRED"}); return {status:"expired"};
+    }
+    let verified;
+    try { verified = await verifyOkxScannerZone(alert.symbol,alert.zone); }
+    catch(error) {
+      await scannerStatePut(env,OBSERVATION_KEY,{...alert,lastCheckedAt:new Date().toISOString(),lastError:String(error.message||error)});
+      return {status:"data_blocked"};
+    }
+    alert = {...alert,lastCheckedAt:new Date().toISOString(),lastError:null,lastPrice:verified.current.last};
+    if (Date.parse(alert.expiresAt) <= Date.now()) { await scannerStatePut(env,OBSERVATION_KEY,{...alert,status:"EXPIRED"});return {status:"expired"}; }
+    if (!verified.confirmed) { await scannerStatePut(env,OBSERVATION_KEY,alert);return {status:"waiting"}; }
+    // Persist before external delivery: uncertain delivery must not auto-repeat.
+    await scannerStatePut(env,OBSERVATION_KEY,{...alert,status:"DELIVERY_PENDING"});
+    let notification;
+    try {
+      notification = await sendBark(env,{title:`${alert.symbol === "ETHUSDT" ? "以太坊" : "比特币"}已到观察区`,
+        body:`观察区 ${alert.zone.min}—${alert.zone.max}，欧易永续现价 ${verified.current.last}。仅观察提醒，不是开仓许可。观察依据：${alert.rationale}。请回来复核：${alert.nextReview}。止损、止盈及仓位须另行核验。`,level:"active"});
+    } catch(error) { notification = {sent:false,error:String(error.message||error),deliveryUncertain:true}; }
+    const result = {...alert,status:notification.sent ? "NOTIFIED" : "DELIVERY_FAILED",notification,notifiedAt:notification.sent ? new Date().toISOString():null};
+    await scannerStatePut(env,OBSERVATION_KEY,result);
+    return {status:result.status,observation:result};
+  });
+}
+function openApiWithObservations(origin) {
+  const schema = openApi(origin);
+  const response = {description:"Observation alert result; never trading permission",content:{"application/json":{schema:{type:"object",additionalProperties:true}}}};
+  const operation = (id,description,body) => ({post:{operationId:id,description,security:[{bearerAuth:[]}],requestBody:{required:true,content:{"application/json":{schema:body}}},responses:{"200":response,"400":{description:"Invalid request or busy"},"401":{description:"Unauthorized"}}}});
+  schema.paths["/scanner/observation"] = operation("saveObservationAlert","Save one independent price-zone observation alert. No stop, target, model or account-risk approval required. Never authorizes entry. Replaces only the previous observation; keeps trading plan.",{type:"object",required:["symbol","zone","expiresAt","rationale","nextReview"],properties:{symbol:{type:"string",enum:["ETHUSDT","BTCUSDT"]},zone:{type:"object",required:["min","max"],properties:{min:{type:"number",exclusiveMinimum:0},max:{type:"number",exclusiveMinimum:0}}},expiresAt:{type:"string",format:"date-time"},rationale:{type:"string"},nextReview:{type:"string"}}});
+  schema.paths["/scanner/observation/cancel"] = operation("cancelObservationAlert","Cancel only the observation with the exact ID read from scanner status.",{type:"object",required:["observationId"],properties:{observationId:{type:"string"}}});
+  schema.paths["/scanner/status"].get.responses["200"].content["application/json"].schema.properties.observation = {type:["object","null"],additionalProperties:true};
+  return schema;
+}
+
+const BUILD = "crypto-alpha-worker-v22.0.1-observation-alerts";
 const API_VERSION = "7.0.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -4024,7 +4105,7 @@ async function scannerStatus(env) {
   const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY, SCANNER_FAILURE_HISTORY_KEY]);
   const plan = state[ACTIVE_PLAN_KEY];
   const runtime = state[SCANNER_RUNTIME_KEY];
-  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), activePlan: plan || null, runtime: runtime || null, failureHistory: Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [] };
+  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), observation: await scannerStateGet(env, OBSERVATION_KEY), activePlan: plan || null, runtime: runtime || null, failureHistory: Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [] };
 }
 
 function openApi(origin) {
@@ -4495,14 +4576,18 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Durable Object coordinated Gate primary/OKX recovery perpetual structure + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, binanceCandleRequests: 0, gateStructureCandleRequests: "DYNAMIC_DUE_SERIES_ONLY", gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "FULL_RECOVERY_ONLY", binanceCandlesRole: "DISABLED_PRODUCTION_HTTP_403", gateCandlesRole: "PRIMARY_DURABLE_INCREMENTAL_STRUCTURE", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "DURABLE_OBJECT_FULL_BASELINE_THEN_INCREMENTAL_8", structureCoordinator: { backend: "DURABLE_OBJECT", sharedConsumers: ["MANUAL_ACTION", "PLAN_SCANNER", "DISCOVERY"], refreshSeconds: STRUCTURE_REFRESH_SECONDS, maximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS, concurrentRefreshDeduplicated: true }, autonomousDiscoveryStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Durable Object coordinated Gate primary/OKX recovery perpetual structure + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, binanceCandleRequests: 0, gateStructureCandleRequests: "DYNAMIC_DUE_SERIES_ONLY", gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "FULL_RECOVERY_ONLY", binanceCandlesRole: "DISABLED_PRODUCTION_HTTP_403", gateCandlesRole: "PRIMARY_DURABLE_INCREMENTAL_STRUCTURE", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "DURABLE_OBJECT_FULL_BASELINE_THEN_INCREMENTAL_8", structureCoordinator: { backend: "DURABLE_OBJECT", sharedConsumers: ["MANUAL_ACTION", "PLAN_SCANNER", "DISCOVERY"], refreshSeconds: STRUCTURE_REFRESH_SECONDS, maximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS, concurrentRefreshDeduplicated: true }, autonomousDiscoveryStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 6, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
-    if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
+    if (path === "/openapi.json") return json(openApiWithObservations(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
       return new Response(privacy(origin), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
     if (path.startsWith("/scanner/")) {
       if (!scannerAuthorized(request, env)) return json({ error: "UNAUTHORIZED", message: "Configure SCANNER_TOKEN and send it as a Bearer token" }, 401);
+      if (request.method === "POST" && ["/scanner/observation", "/scanner/observation/cancel"].includes(path)) {
+        try { const input = await readJsonRequest(request); return json(await (path.endsWith("/cancel") ? cancelObservationAlert(env,input) : saveObservationAlert(env,input))); }
+        catch(error) { return json({error:"OBSERVATION_FAILED",message:String(error.message||error)},400); }
+      }
       if (request.method === "GET" && path === "/scanner/status") return json(await scannerStatus(env));
       if (request.method === "POST" && path === "/scanner/plan") {
         try { return json(await saveTradingPlan(env, await readJsonRequest(request))); }
@@ -4526,6 +4611,7 @@ export default {
   },
 
   async scheduled(_controller, env, ctx) {
+    await runObservationScanner(env).catch(error => console.error("observation scan failed",error));
     // Advisory isolate-local priority; this does not claim a global quota lock.
     if (manualSnapshotWork || Date.now() - lastManualRequestAt < 10_000) return;
     const task = (async () => {
