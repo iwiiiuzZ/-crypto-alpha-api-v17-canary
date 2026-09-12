@@ -1,12 +1,12 @@
-const BUILD = "crypto-alpha-worker-v22.0.0-durable-incremental-market-data";
-const API_VERSION = "7.0.0";
+const BUILD = "crypto-alpha-worker-v22.1.0-decision-scanner-consistency";
+const API_VERSION = "7.1.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v22.0.0-durable-incremental-market-data";
+const CACHE_NAMESPACE = "v22.1.0-decision-scanner-consistency";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -168,11 +168,12 @@ async function runDiscovery(env) {
     candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT) || discoverRangeReversal(full.assets.ETHUSDT, full.assets.BTCUSDT);
     if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
     const liq = planLiquidityRisk({ ...candidate, symbol: "ETHUSDT", liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, full.assets.ETHUSDT);
-    if (!liq.passed || full.assets.ETHUSDT.capitalFlow?.status !== "ok" || full.assets.ETHUSDT.executionLiquidity?.status !== "ok") return { status: "idle", reason: "DISCOVERY_CONFIRMATION_UNAVAILABLE" };
+    if (!liq.passed || full.assets.ETHUSDT.executionLiquidity?.status !== "ok") return { status: "idle", reason: "DISCOVERY_EXECUTION_OR_LIQUIDITY_BLOCKED" };
+    candidate.softWarnings = full.assets.ETHUSDT.capitalFlow?.status === "ok" ? [] : ["AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED"];
     const current = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, MANUAL_PRIORITY_KEY]);
     if (current[ACTIVE_PLAN_KEY]?.status === "ARMED" || current[MANUAL_PRIORITY_KEY]?.until > Date.now()) return { status: "idle", reason: "USER_PLAN_OR_MANUAL_PRIORITY" };
     if (Date.now() - now > 45_000) return { status: "idle", reason: "DISCOVERY_RUNTIME_BUDGET_EXCEEDED" };
-    const notification = await sendBark(env, { title: `ETH（以太坊）${candidate.submodel}（${candidate.model === "B" ? "突破回测" : "区间边缘反转"}）候选`, body: `方向候选：${candidate.direction === "LONG" ? "做多" : "做空"}，当前欧易价格 ${verified.current.last}。价格结构链已完成初筛；不是开仓许可。新闻、账户风险和心理状态未核验，请打开GPT最终复核。没有保存或替换交易计划。`, level: "active" });
+    const notification = await sendBark(env, { title: `ETH（以太坊）${candidate.submodel}（${candidate.model === "B" ? "突破回测" : "区间边缘反转"}）候选`, body: `方向候选：${candidate.direction === "LONG" ? "做多" : "做空"}，当前欧易价格 ${verified.current.last}。价格结构链已完成初筛；不是开仓许可。新闻、账户风险和心理状态未核验，请打开GPT最终复核。${candidate.softWarnings.length ? "辅助资金流未获取，须核对其是否为本模型必要证据。" : ""}没有保存或替换交易计划。`, level: "active" });
     if (notification.sent) await scannerStatePut(env, DISCOVERY_STATE_KEY, { lastRunAt: now, lastAlertAt: Date.now(), signature, candidate }, 86400);
     return { status: "candidate", notification, candidate, openNowAllowed: false };
   } catch (error) { return { status: "idle", reason: "DISCOVERY_DATA_UNAVAILABLE", detail: error?.message, notification: { sent: false } }; }
@@ -3007,6 +3008,16 @@ async function buildSnapshot(options = {}) {
         operational: { OPEN_NOW: "LONG_OR_SHORT", ARMED: "WAIT", NO_TRADE: "NO_TRADE", DATA_BLOCKED: "NO_TRADE_WITH_DATA_GAP" },
       },
       legacyConfig: LEGACY_CONFIG,
+      decisionAuditContract: {
+        marketAssessmentSeparateFromAccountPermission: true,
+        requiredRejectionEvidence: ["MODEL_SUBMODEL", "FAILED_GATE", "OBSERVED_VALUE", "REQUIRED_VALUE", "FIRST_TARGET_NET_RR_INPUTS", "NEXT_REASSESSMENT_CONDITION"],
+        formalWaitRequiresSpecificPendingTrigger: true,
+        optionalConfirmationCannotVetoByDefault: true,
+        pureEvaluatorRole: "REFERENCE_VALIDATOR_NOT_AUTONOMOUS_CHAT_VERDICT",
+        manualReviewSubmodels: ["A1", "A2", "B1", "B2", "C1", "C2"],
+        automaticDiscoverySubmodels: ["B1", "C1", "C2"],
+        noDiscoveryAlertDoesNotMeanNoManualSetup: true,
+      },
       timeframeFramework: {
         defaultHorizon: "FLEXIBLE_NOT_MECHANICALLY_SHORT_TERM",
         marketTrendAndEnvironment: "4H",
@@ -3183,6 +3194,9 @@ function scannerConfiguration(env) {
       enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false",
       intervalMinutes: 5,
       supportedSubmodels: ["B1", "C1", "C2"],
+      manualReviewOnlySubmodels: ["A1", "A2", "B2"],
+      coverageIsPartial: true,
+      noAlertMeansNoTrade: false,
       perpetualStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"],
       coherentSourceRequired: true,
       spotStructureAllowed: false,
@@ -3304,8 +3318,9 @@ function normalizeTradingPlan(input) {
   if (riskAssessmentStatus !== "VERIFIED_CLEAR") throw new Error("risk.riskAssessmentStatus must be VERIFIED_CLEAR; unknown account or psychology state cannot arm a plan");
   if (riskInput.dailyRiskLimitReached !== false) throw new Error("risk.dailyRiskLimitReached must be explicitly false");
   if (riskInput.psychologicalVeto !== false) throw new Error("risk.psychologicalVeto must be explicitly false");
-  const correlatedRiskPct = finite(riskInput.correlatedRiskPct, 0);
+  const correlatedRiskPct = scannerNumber(riskInput.correlatedRiskPct, "risk.correlatedRiskPct");
   if (correlatedRiskPct < 0 || correlatedRiskPct > LEGACY_CONFIG.correlatedRiskCapPct) throw new Error("risk.correlatedRiskPct exceeds configured correlated-risk cap");
+  if (correlatedRiskPct + accountRiskPct > LEGACY_CONFIG.correlatedRiskCapPct) throw new Error("Combined existing correlated risk plus this plan exceeds configured cap");
   const timeframeAliases = { SHORT_TERM: "SHORT", SHORT: "SHORT", MEDIUM_SHORT: "MEDIUM_SHORT", SWING: "SWING" };
   const timeframe = timeframeAliases[scannerText(input.timeframe || "SHORT", "SHORT", 40).toUpperCase()];
   if (!timeframe) throw new Error("timeframe must be SHORT, MEDIUM_SHORT or SWING");
@@ -3321,9 +3336,16 @@ function normalizeTradingPlan(input) {
   const stopDistancePct = stopDistance / entryReference * 100;
   if (!Number.isFinite(stopDistancePct) || stopDistancePct <= 0) throw new Error("Structural stop distance is invalid");
   const allowedLossUsdt = accountEquityUsdt * accountRiskPct / 100;
-  const quantity = allowedLossUsdt / stopDistance;
-  const notionalUsdt = quantity * entryReference;
+  const estimatedRoundTripCostPct = scannerNumber(input.estimatedRoundTripCostPct ?? 0.15, "estimatedRoundTripCostPct");
+  if (estimatedRoundTripCostPct < 0) throw new Error("estimatedRoundTripCostPct cannot be negative");
+  const worstEntry = direction === "LONG" ? entryMax : entryMin;
+  const worstRiskPerUnit = Math.abs(worstEntry - stopLoss) + worstEntry * estimatedRoundTripCostPct / 100;
+  // Round quantity down, and size for any authorized entry in the entire zone.
+  const quantity = Math.floor(allowedLossUsdt / worstRiskPerUnit * 1e8) / 1e8;
+  if (!(quantity > 0)) throw new Error("Risk budget is too small for a positive quantity");
+  const notionalUsdt = quantity * entryMax;
   const requiredMarginUsdt = notionalUsdt / leverage;
+  if (requiredMarginUsdt + quantity * entryMax * estimatedRoundTripCostPct / 100 > accountEquityUsdt) throw new Error("Required margin plus estimated costs exceeds account equity; reduce size");
   const planId = scannerText(input.planId, "", 80) || `plan-${new Date(now).toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
   return {
     planId,
@@ -3365,13 +3387,13 @@ function normalizeTradingPlan(input) {
     firstRealisticTarget: { price: round(firstRealisticPrice, 8), basis: firstRealisticBasis },
     maximumExecutionPrice: Number.isFinite(finite(input.maximumExecutionPrice)) ? round(finite(input.maximumExecutionPrice), 8) : null,
     minimumExecutionPrice: Number.isFinite(finite(input.minimumExecutionPrice)) ? round(finite(input.minimumExecutionPrice), 8) : null,
-    minNetRR: round(requestedMinNetRR, 3),
-    configuredMinNetRR: round(configuredMinNetRR, 3),
-    estimatedRoundTripCostPct: round(Math.max(0, finite(input.estimatedRoundTripCostPct, 0.15)), 4),
+    minNetRR: requestedMinNetRR,
+    configuredMinNetRR,
+    estimatedRoundTripCostPct,
     confirmation: {
       close15mAbove: Number.isFinite(close15mAbove) ? round(close15mAbove, 8) : null,
       close15mBelow: Number.isFinite(close15mBelow) ? round(close15mBelow, 8) : null,
-      requireFlowSupport: confirmation.requireFlowSupport !== false,
+      requireFlowSupport: confirmation.requireFlowSupport === true,
       requireOrderBookSupport: confirmation.requireOrderBookSupport === true,
       allowCountertrend: confirmation.allowCountertrend === true,
       btcMinimumPrice: Number.isFinite(finite(confirmation.btcMinimumPrice)) ? round(finite(confirmation.btcMinimumPrice), 8) : null,
@@ -3404,10 +3426,14 @@ function normalizeTradingPlan(input) {
         structuralStopDistance: round(stopDistance, 8),
         structuralStopDistancePct: round(stopDistancePct, 5),
         allowedLossUsdt: round(allowedLossUsdt, 2),
+        worstEntry,
+        estimatedCostPerUnit: worstEntry * estimatedRoundTripCostPct / 100,
+        riskPerUnitIncludingCosts: worstRiskPerUnit,
+        estimatedMaximumLossUsdt: quantity * worstRiskPerUnit,
         quantity: round(quantity, 8),
         notionalUsdt: round(notionalUsdt, 2),
         requiredMarginUsdt: round(requiredMarginUsdt, 2),
-        formula: "quantity=allowedLoss/structuralStopDistance; leverage changes margin, not risk",
+        formula: "quantity=floor8(allowedLoss/(worstEntryStopDistance+estimatedRoundTripCosts)); margin uses entry-zone maximum; actual slippage/gaps may exceed estimates",
       },
     },
   };
@@ -3435,7 +3461,7 @@ function planNetRR(plan, entryPrice, costMultiplier = 1) {
   const cost = entryPrice * (plan.estimatedRoundTripCostPct / 100) * Math.max(1, finite(costMultiplier, 1));
   const risk = rawRisk + cost;
   const reward = rawReward - cost;
-  return risk > 0 && reward > 0 ? round(reward / risk, 3) : null;
+  return risk > 0 && reward > 0 ? reward / risk : null;
 }
 
 function planExecutionReality(plan, asset, entryPrice) {
@@ -3565,14 +3591,14 @@ function capitalFlowEvidence(direction, asset, btcAsset) {
   if (available < 3) return { passed: false, hardAdverse: false, score: 0, available, ratios, reason: "Capital-flow evidence incomplete" };
   const long = direction === "LONG";
   const score = [
-    long ? ratios.asset15m >= 0.95 : ratios.asset15m <= 1.053,
-    long ? ratios.asset1h >= 0.95 : ratios.asset1h <= 1.053,
-    long ? ratios.btc15m >= 0.9 : ratios.btc15m <= 1.111,
-    long ? ratios.orderBookImbalancePct >= -15 : ratios.orderBookImbalancePct <= 15,
+    Number.isFinite(ratios.asset15m) && (long ? ratios.asset15m >= 0.95 : ratios.asset15m <= 1.053),
+    Number.isFinite(ratios.asset1h) && (long ? ratios.asset1h >= 0.95 : ratios.asset1h <= 1.053),
+    Number.isFinite(ratios.btc15m) && (long ? ratios.btc15m >= 0.9 : ratios.btc15m <= 1.111),
+    Number.isFinite(ratios.orderBookImbalancePct) && (long ? ratios.orderBookImbalancePct >= -15 : ratios.orderBookImbalancePct <= 15),
   ].filter(Boolean).length;
   const hardAdverse = long
-    ? ratios.asset15m < 0.78 || ratios.orderBookImbalancePct < -35
-    : ratios.asset15m > 1.282 || ratios.orderBookImbalancePct > 35;
+    ? (Number.isFinite(ratios.asset15m) && ratios.asset15m < 0.78) || (Number.isFinite(ratios.orderBookImbalancePct) && ratios.orderBookImbalancePct < -35)
+    : (Number.isFinite(ratios.asset15m) && ratios.asset15m > 1.282) || (Number.isFinite(ratios.orderBookImbalancePct) && ratios.orderBookImbalancePct > 35);
   return {
     passed: !hardAdverse && score >= 2,
     hardAdverse,
@@ -3656,7 +3682,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     : false;
   const btcPricePassed = (!Number.isFinite(plan.confirmation.btcMinimumPrice) || btcPrice >= plan.confirmation.btcMinimumPrice)
     && (!Number.isFinite(plan.confirmation.btcMaximumPrice) || btcPrice <= plan.confirmation.btcMaximumPrice);
-  const trendPassed = plan.confirmation.allowCountertrend || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
+  const currentRange = asset?.rangeContext;
+  const rangeReversalAtLiveEdge = plan.model === "C" && asset?.marketRegimeRouter?.regime === "RANGE"
+    && currentRange?.confirmed === true
+    && currentRange.locationZone === (directionLong ? "LOWER_EDGE" : "UPPER_EDGE");
+  const trendPassed = rangeReversalAtLiveEdge || plan.confirmation.allowCountertrend || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
   const executionReality = planExecutionReality(plan, asset, price);
   const rr = executionReality.baselineNetRR;
   const rrPassed = Number.isFinite(rr) && rr >= plan.minNetRR;
@@ -3674,9 +3704,18 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const regimePermission = submodelRegimePermission(plan.model, plan.submodel, currentRegime);
   const regimeDirectPermission = regimePermission === "DIRECT";
   const regimeChanged = currentRegime !== plan.marketRegime;
+  // B plans are allowed to be armed before regime acceptance. A legitimate
+  // watch -> trend transition must not permanently block the original plan.
+  const expectedBreakoutPromotion = plan.model === "B"
+    && submodelRegimePermission(plan.model, plan.submodel, plan.marketRegime) === "WAIT_ONLY"
+    && currentRegime === "TREND" && regimeDirectPermission;
+  const regimeCompatible = !regimeChanged || expectedBreakoutPromotion;
   const perpetualStructureReady = [tf15, tf1h, tf4h].every(isExecutionStructureTimeframe);
-  const locationPassed = plan.location?.quality === "GOOD" && plan.location?.rangePosition !== "MIDDLE";
-  const meaningfulTriggerPassed = plan.trigger?.meaningful === true && Number.isFinite(finite(plan.trigger?.level));
+  const locationPassed = plan.location?.quality === "GOOD" && plan.location?.rangePosition !== "MIDDLE"
+    && !(currentRange?.confirmed === true && currentRange.locationZone === "MIDDLE")
+    && (plan.model !== "C" || rangeReversalAtLiveEdge);
+  const meaningfulTriggerPassed = plan.trigger?.meaningful === true && Number.isFinite(finite(plan.trigger?.level))
+    && (directionLong ? candleClose >= plan.trigger.level : candleClose <= plan.trigger.level);
   const protectivePrice = finite(plan.trigger?.protectiveStructure?.price);
   const protectiveStructurePassed = Number.isFinite(protectivePrice)
     && (directionLong ? price > protectivePrice && candleClose > protectivePrice : price < protectivePrice && candleClose < protectivePrice);
@@ -3695,13 +3734,13 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     && meaningfulTriggerPassed
     && protectiveStructurePassed
   );
-  const riskContextPassed = plan.risk?.riskAssessmentStatus === "VERIFIED_CLEAR" && plan.risk?.dailyRiskLimitReached !== true && plan.risk?.psychologicalVeto !== true;
+  const riskContextPassed = plan.risk?.riskAssessmentStatus === "VERIFIED_CLEAR" && plan.risk?.dailyRiskLimitReached === false && plan.risk?.psychologicalVeto === false;
   const explicitHardBlockersPassed = !Array.isArray(plan.hardBlockers) || plan.hardBlockers.length === 0;
   const checks = {
     registeredModel,
     registeredSubmodel,
     regimeDirectPermission,
-    currentRegimeMatchesSavedPlan: !regimeChanged,
+    currentRegimeMatchesSavedPlan: regimeCompatible,
     perpetualStructureReady,
     locationPassed,
     meaningfulTriggerPassed,
@@ -3727,7 +3766,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const hardBlockers = [];
   if (!registeredModel) hardBlockers.push("NO_REGISTERED_MODEL");
   if (!registeredSubmodel || regimePermission === "BLOCKED") hardBlockers.push("INVALID_SUBMODEL_OR_REGIME_PERMISSION");
-  if (regimeChanged) hardBlockers.push("MARKET_REGIME_CHANGED_REQUIRES_NEW_GPT_PLAN");
+  if (!regimeCompatible) hardBlockers.push("MARKET_REGIME_CHANGED_REQUIRES_NEW_GPT_PLAN");
   if (!perpetualStructureReady) hardBlockers.push("PERPETUAL_STRUCTURE_SOURCE_REQUIRED_FOR_EXECUTION");
   if (!locationPassed) hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
   if (!protectiveStructurePassed) hardBlockers.push("NO_VALID_PROTECTIVE_STRUCTURE");
@@ -3759,12 +3798,14 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     confirmed15mClose: candleClose,
     checks,
     failedChecks,
+    expectedBreakoutPromotion,
     flow,
     liquidityRisk,
     hardBlockerScan: { passed: hardBlockers.length === 0, blockers: [...new Set(hardBlockers)], cannotBeOverriddenByScore: true },
     softWarnings: [...new Set([
       ...(plan.softWarnings || []),
       ...(liquidityRisk.warnings || []),
+      ...(!flow.passed && !plan.confirmation.requireFlowSupport ? ["AUXILIARY_FLOW_NOT_SUPPORTIVE_REVIEW_REQUIRED"] : []),
       ...(Number.isFinite(executionReality.stressedNetRR) && executionReality.stressedNetRR < plan.minNetRR ? ["COST_STRESS_NET_RR_BELOW_THRESHOLD_REQUIRES_REVIEW"] : []),
     ])],
     touch,
@@ -3840,6 +3881,15 @@ async function saveTradingPlan(env, input) {
   if (!scannerStateStub(env) && (!env?.ALERT_STATE?.get || !env?.ALERT_STATE?.put)) throw new Error("SCANNER_STATE durable binding is required before a plan can be armed");
   const plan = normalizeTradingPlan(input);
   const previousPlan = await scannerStateGet(env, ACTIVE_PLAN_KEY);
+  if (previousPlan?.status === "ARMED" && Date.parse(previousPlan.expiresAt) > Date.now()) {
+    const signature = value => {
+      const { planId, revision, createdAt, expiresAt, ...rest } = value;
+      return JSON.stringify({ ...rest, ...(input.expiresAt ? { expiresAt } : {}) });
+    };
+    if ((!input.planId || input.planId === previousPlan.planId) && signature(previousPlan) === signature(plan)) {
+      return { status: "unchanged", build: BUILD, plan: previousPlan, notification: { sent: false, reason: "IDENTICAL_PLAN_RETAINED" }, next: "Existing runtime, confirmation progress and expiry retained; no re-arm" };
+    }
+  }
   if (previousPlan?.planId === plan.planId) plan.revision = finite(previousPlan.revision, 0) + 1;
   const ttlSeconds = Math.max(3600, Math.ceil((Date.parse(plan.expiresAt) - Date.now()) / 1000) + 24 * 60 * 60);
   const storage = await scannerStatePut(env, ACTIVE_PLAN_KEY, plan, ttlSeconds);
@@ -4148,7 +4198,7 @@ function openApi(origin) {
         properties: {
           close15mAbove: { type: ["number", "null"], description: "LONG confirmation: latest completed 15m candle must close at or above this value." },
           close15mBelow: { type: ["number", "null"], description: "SHORT confirmation: latest completed 15m candle must close at or below this value." },
-          requireFlowSupport: { type: "boolean", default: true },
+          requireFlowSupport: { type: "boolean", default: false, description: "Opt-in only when the current model explicitly requires this auxiliary evidence; not a default all-indicators-agree gate." },
           requireOrderBookSupport: { type: "boolean", default: false },
           allowCountertrend: { type: "boolean", default: false },
           btcMinimumPrice: { type: ["number", "null"] },
@@ -4457,7 +4507,7 @@ export function evaluateCourseDecision(input = {}) {
   if (!direction) hardBlockers.push("NO_DIRECTION_CANDIDATE");
   if (input.locationQuality !== "GOOD" || input.rangePosition === "MIDDLE") hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
   if (input.execution?.clearInvalidation !== true) hardBlockers.push("NO_CLEAR_MODEL_OR_STRUCTURE_INVALIDATION");
-  if (!Number.isFinite(finite(input.execution?.netRR)) || !Number.isFinite(finite(input.execution?.minNetRR)) || finite(input.execution.netRR) < finite(input.execution.minNetRR)) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
+  if (!(finite(input.execution?.netRR) > 0) || !(finite(input.execution?.minNetRR) > 0) || finite(input.execution.netRR) < finite(input.execution.minNetRR)) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
   if (input.environment?.btcSystemicConflict === true) hardBlockers.push("SEVERE_BTC_SYSTEMIC_CONFLICT");
   if (input.environment?.majorNewsExecutionRisk === true) hardBlockers.push("MAJOR_EVENT_EXECUTION_RISK");
   if (input.environment?.liquidityAbnormal === true || input.execution?.slippageAbnormal === true) hardBlockers.push("ABNORMAL_LIQUIDITY_OR_EXECUTION");
@@ -4465,6 +4515,12 @@ export function evaluateCourseDecision(input = {}) {
   if (input.data?.requiredFieldsReady !== true) hardBlockers.push("REQUIRED_DATA_GAP");
   if (input.risk?.dailyRiskLimitReached === true) hardBlockers.push("DAILY_RISK_LIMIT_REACHED");
   if (input.risk?.psychologicalVeto === true) hardBlockers.push("PSYCHOLOGICAL_VETO");
+  const setup = input.setup || {};
+  const candidateExists = model === "A" ? setup.trendExists === true && setup.pullbackAtMeaningfulLocation === true
+    : model === "B" ? setup.breakout === true && setup.rejection !== true
+    : model === "C" ? setup.sweep === true && setup.reclaim === true : false;
+  if (!candidateExists) hardBlockers.push("NO_VALID_MODEL_CANDIDATE");
+  if (model === "B" && setup.rejection === true) hardBlockers.push("BREAKOUT_REJECTED_MODEL_CANCELLED");
 
   if (input.confirmation?.extremeCrowding === true) softWarnings.push("EXTREME_CROWDING_REVIEW");
   if (input.confirmation?.adverseSweep === true) softWarnings.push("ADVERSE_SWEEP_REQUIRES_STRUCTURE_REVIEW");
@@ -4480,10 +4536,26 @@ export function evaluateCourseDecision(input = {}) {
   if (hardBlockers.length) {
     return { finalState: "NO_TRADE", operationalState: input.data?.requiredFieldsReady === true ? "NO_TRADE" : "DATA_BLOCKED", model: model || "NONE", submodel: submodel || "NONE", marketRegime: marketRegime || "UNKNOWN", regimePermission, hardBlockers: [...new Set(hardBlockers)], softWarnings: [...new Set(softWarnings)], openNow: false, scoreIgnoredForPermission: true };
   }
-  if (!modelReady || regimePermission === "WAIT_ONLY") {
-    return { finalState: "WAIT", operationalState: "ARMED", model, submodel, marketRegime, regimePermission, hardBlockers: [], softWarnings: [...new Set(softWarnings)], openNow: false, scoreIgnoredForPermission: true };
+  const riskVerified = input.risk?.riskAssessmentStatus === "VERIFIED_CLEAR"
+    && input.risk?.dailyRiskLimitReached === false && input.risk?.psychologicalVeto === false
+    && Number.isFinite(finite(input.risk?.correlatedRiskPct)) && finite(input.risk.correlatedRiskPct) >= 0
+    && finite(input.risk.correlatedRiskPct) <= LEGACY_CONFIG.correlatedRiskCapPct;
+  const pendingTrigger = scannerText(input.pendingTrigger, "", 500);
+  const marketState = modelReady && regimePermission === "DIRECT" ? direction : pendingTrigger ? "WAIT" : "NO_TRADE";
+  const reviewBlockers = [];
+  if (!riskVerified) reviewBlockers.push("ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED");
+  if (!["btcSystemicConflict", "majorNewsExecutionRisk", "liquidityAbnormal"].every(key => input.environment?.[key] === false)) reviewBlockers.push("ENVIRONMENT_REVIEW_INCOMPLETE");
+  if (input.confirmation?.minimumSufficientEvidence !== true) reviewBlockers.push("MINIMUM_SUFFICIENT_EVIDENCE_NOT_VERIFIED");
+  if (reviewBlockers.length || marketState === "NO_TRADE") {
+    return { finalState: "NO_TRADE", marketState, operationalState: "NO_TRADE", model, submodel, marketRegime, regimePermission,
+      hardBlockers: marketState === "NO_TRADE" ? ["NO_SPECIFIC_FINITE_PENDING_TRIGGER"] : [], reviewBlockers, softWarnings,
+      nextAction: reviewBlockers.length ? "VERIFY_MISSING_CONTEXT_WITHOUT_ERASING_MARKET_CANDIDATE" : "DEFINE_VALID_CANDIDATE_AND_PRECISE_TRIGGER",
+      openNow: false, canSavePlan: false, scoreIgnoredForPermission: true };
   }
-  return { finalState: direction, operationalState: "OPEN_NOW", model, submodel, marketRegime, regimePermission, hardBlockers: [], softWarnings: [...new Set(softWarnings)], openNow: true, scoreIgnoredForPermission: true };
+  if (!modelReady || regimePermission === "WAIT_ONLY") {
+    return { finalState: "WAIT", marketState: "WAIT", operationalState: "ARMED", model, submodel, marketRegime, regimePermission, hardBlockers: [], softWarnings: [...new Set(softWarnings)], pendingTrigger, openNow: false, scoreIgnoredForPermission: true };
+  }
+  return { finalState: direction, marketState: direction, operationalState: "OPEN_NOW", model, submodel, marketRegime, regimePermission, hardBlockers: [], softWarnings: [...new Set(softWarnings)], openNow: true, scoreIgnoredForPermission: true };
 }
 
 export default {
