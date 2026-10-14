@@ -5042,7 +5042,7 @@ function openApi(origin) {
         post: {
           operationId: "cancelTradingPlanMonitoring",
           summary: "Cancel an invalid plan or a specific observation",
-          description: "Cancel on structural/model invalidation, expiry, explicit replacement or user cancellation. Account review pending, price outside entry, a temporary data gap or a No Trade answer alone must not cancel a still-valid observation. Default scope PLAN preserves independent observations; ALL cancels existing records but does not disable future autonomous discovery.",
+          description: "Cancel for invalidation, expiry, explicit replacement or user request. Pending account review, price outside entry, data gaps or No Trade alone must not cancel valid observations. Default PLAN preserves observations; ALL cancels existing records, not future discovery.",
           requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: {
             scope: { type: "string", enum: ["PLAN", "OBSERVATION", "ALL"], default: "PLAN" },
             observationId: { type: "string", description: "Required when scope is OBSERVATION" },
