@@ -1,12 +1,12 @@
-const BUILD = "crypto-alpha-worker-v22.1.0-decision-scanner-consistency";
-const API_VERSION = "7.1.0";
+const BUILD = "crypto-alpha-worker-v24.0.0-six-model-dynamic";
+const API_VERSION = "7.3.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v22.1.0-decision-scanner-consistency";
+const CACHE_NAMESPACE = "v24.0.0-six-model-dynamic";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -24,6 +24,12 @@ const MAX_SOURCE_ANALYSIS_FUTURE_SKEW_MS = 2 * 60_000;
 const STOP_INVALIDATION_TOLERANCE_PCT = 0.05;
 const MAX_LEVERAGE = 50;
 const DISCOVERY_STATE_KEY = "scanner:discovery";
+const OBSERVATIONS_KEY = "scanner:observations:v23";
+const SCANNER_HEARTBEAT_KEY = "scanner:heartbeat:v23";
+const OBSERVATION_LIMIT = 12;
+const OBSERVATION_HISTORY_LIMIT = 48;
+const BREAKOUT_WINDOW_BARS = 8;
+const OBSERVATION_TERMINAL = ["EXPIRED", "INVALIDATED", "CANCELLED"];
 const MANUAL_PRIORITY_KEY = "scanner:manual-priority";
 const STRUCTURE_LEASE_KEY = "market:structure-refresh-lease";
 const STRUCTURE_RECORD_PREFIX = "market:structure";
@@ -31,6 +37,253 @@ const STRUCTURE_RECORD_TTL_SECONDS = 45 * 24 * 60 * 60;
 const STRUCTURE_INCREMENTAL_LIMIT = 8;
 const STRUCTURE_REFRESH_SECONDS = { "15m": 75, "1h": 210, "4h": 330 };
 const STRUCTURE_MAX_COLLECTION_AGE_SECONDS = { "15m": 180, "1h": 420, "4h": 660 };
+
+const MIN_NET_RR = 2;
+const RR_POLICY_VERSION = "V24_NET_2";
+const DISCOVERY_INTERVAL_MS = 60_000;
+const DYNAMIC_MODEL_CONFIG = Object.freeze({
+  status: "UNVALIDATED_DETECTORS_FOR_REVIEW", minimumNetRR: MIN_NET_RR,
+  shallowDeepSplit: 0.45, maximumRetracement: 0.8, minimumImpulseAtr: 2,
+  compressionRangeRatio: 0.65, compressionWidthRatio: 0.65,
+  breakoutBufferAtr: 0.15, retestToleranceAtr: 0.2, stopBufferAtr: 0.1,
+  observationBars: 8, shockRangeAtr: 2.5, shockVolumeRatio: 2,
+  largeTradeDirectionalShare: 0.7, minimumLargeTradeCount: 3,
+});
+
+function fourHourTrendDirection(asset) {
+  const t = asset?.timeframes?.["4h"];
+  if (t?.status !== "ok") return null;
+  const up = ["UP", "STRONG_UP"].includes(t.trend) && t.structure !== "LH_LL";
+  const down = ["DOWN", "STRONG_DOWN"].includes(t.trend) && t.structure !== "HH_HL";
+  if (up === down) return null;
+  const price = finite(asset?.ticker?.last, t.lastClose);
+  const protection = finite(up ? t.structureDetail?.protectiveLowCandidate?.price : t.structureDetail?.protectiveHighCandidate?.price,
+    finite(up ? t.structureDetail?.controlLow?.price : t.structureDetail?.controlHigh?.price,
+      finite(up ? t.levels?.support20 : t.levels?.resistance20)));
+  if (!Number.isFinite(price) || !Number.isFinite(protection) || (up ? price <= protection : price >= protection)) return null;
+  return up ? "LONG" : "SHORT";
+}
+
+function trendPullbackSeeds(asset) {
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)) return [];
+  const direction = fourHourTrendDirection(asset);
+  if (!direction || asset.rangeContext?.confirmed || !["TREND", "TRANSITION"].includes(asset.marketRegimeRouter?.regime)) return [];
+  const long = direction === "LONG", rows = observationCandles(asset);
+  const atr = finite(asset.timeframes["15m"].indicators?.atr14);
+  if (!(atr > 0) || rows.length < 14) return [];
+  const t1 = asset.timeframes["1h"], detail = t1.structureDetail || {};
+  const levels = [
+    ["1H_CONTROL", long ? detail.controlHigh?.price : detail.controlLow?.price],
+    ["1H_PROTECTION", long ? detail.protectiveLowCandidate?.price : detail.protectiveHighCandidate?.price],
+    ["1H_EMA20", t1.indicators?.ema20], ["1H_EMA50", t1.indicators?.ema50],
+    ["1H_VWAP20", t1.indicators?.vwap20],
+  ].filter(([, value]) => Number.isFinite(value) && value > 0);
+  // A peak must have two subsequently closed bars before it can anchor a pullback.
+  for (let i = rows.length - 3; i >= Math.max(5, rows.length - 8); i--) {
+    const peak = rows[i], neighbours = [rows[i-2], rows[i-1], rows[i+1], rows[i+2]];
+    if (!neighbours.every(c => long ? peak.h > c.h : peak.l < c.l)) continue;
+    const prior = rows.slice(Math.max(0, i-8), i), after = rows.slice(i+1);
+    const origin = long ? Math.min(...prior.map(c => c.l)) : Math.max(...prior.map(c => c.h));
+    const extreme = long ? peak.h : peak.l, impulse = Math.abs(extreme-origin);
+    const pull = after.reduce((a,c) => (long ? c.l < a.l : c.h > a.h) ? c : a);
+    const pullPrice = long ? pull.l : pull.h, depth = Math.abs(extreme-pullPrice)/impulse;
+    if (impulse < DYNAMIC_MODEL_CONFIG.minimumImpulseAtr*atr || depth < 0.15 || depth > DYNAMIC_MODEL_CONFIG.maximumRetracement
+      || (long ? pullPrice <= origin : pullPrice >= origin)) continue;
+    const location = levels.filter(([,p]) => Math.abs(p-pullPrice) <= 0.5*atr)
+      .sort((a,b) => Math.abs(a[1]-pullPrice)-Math.abs(b[1]-pullPrice))[0];
+    if (!location) continue;
+    const submodel = depth >= DYNAMIC_MODEL_CONFIG.shallowDeepSplit ? "A1" : "A2";
+    const eventAt = peak.ts, expiresAt = new Date(Date.parse(eventAt)+(BREAKOUT_WINDOW_BARS+1)*900_000).toISOString();
+    if (Date.parse(expiresAt) <= Date.now()) continue;
+    // The entire pre-pullback impulse is the observation invalidation, not an invented entry stop.
+    return [{model:"A",submodel,direction,eventAt,expiresAt,atr,boundary:location[1],locationBasis:location[0],
+      impulseOrigin:origin,impulseExtreme:extreme,retracementFraction:depth,
+      observationInvalidationPrice:long ? origin-0.1*atr : origin+0.1*atr,
+      entryZone:long ? {min:pullPrice,max:Math.min(extreme,location[1]+atr)} : {min:Math.max(extreme,location[1]-atr),max:pullPrice}}];
+  }
+  return [];
+}
+
+function pullbackProgress(seed, asset) {
+  if (Date.now() >= Date.parse(seed.expiresAt)) return {state:"EXPIRED"};
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)) return {state:"DATA_BLOCKED"};
+  const long = seed.direction === "LONG", rows = observationCandles(asset).filter(c => Date.parse(c.ts)>Date.parse(seed.eventAt));
+  if (!rows.length) return {state:"WAIT_PULLBACK"};
+  if (fourHourTrendDirection(asset) !== seed.direction || rows.some(c => long ? c.l<=seed.impulseOrigin : c.h>=seed.impulseOrigin))
+    return {state:"INVALIDATED",reason:"TREND_OR_IMPULSE_ORIGIN_BROKEN"};
+  const pivot = rows.reduce((a,c) => (long ? c.l<a.l : c.h>a.h) ? c : a);
+  const latest = rows.at(-1), atLocation = Math.abs((long?pivot.l:pivot.h)-seed.boundary)<=0.5*seed.atr;
+  const pivotIndex = rows.indexOf(pivot), beforeTurn = rows.slice(Math.max(0,pivotIndex-2),pivotIndex+1);
+  const control = long ? Math.max(...beforeTurn.map(c=>c.h)) : Math.min(...beforeTurn.map(c=>c.l));
+  const after = rows.slice(pivotIndex+1);
+  const protection = after.length && (long ? after.every(c=>c.l>pivot.l) : after.every(c=>c.h<pivot.h));
+  const trigger = protection && after.find(c => long ? c.c>control+0.05*seed.atr : c.c<control-0.05*seed.atr);
+  const shift = Boolean(trigger);
+  return {state:atLocation && shift ? "STRUCTURE_READY" : "WAIT_PULLBACK_SHIFT", locationPassed:atLocation,
+    protectivePrice:long?pivot.l:pivot.h, controlLevel:control, protectionConfirmed:Boolean(protection), triggerAt:trigger?.ts||null,
+    stopLoss:long?pivot.l-0.1*seed.atr:pivot.h+0.1*seed.atr,candleAt:latest.ts,
+    reason:atLocation ? "WAIT_MEANINGFUL_PULLBACK_CONTROL_BREAK_WITH_PROTECTION" : "PULLBACK_LEFT_REGISTERED_LOCATION"};
+}
+
+function compressionSeeds(asset) {
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)) return [];
+  const rows=observationCandles(asset), atr=finite(asset.timeframes["15m"].indicators?.atr14), seeds=[];
+  if (!(atr>0)) return seeds;
+  for(let i=Math.max(16,rows.length-BREAKOUT_WINDOW_BARS);i<rows.length;i++) {
+    const prior=rows.slice(i-16,i-8), box=rows.slice(i-8,i), b=rows[i];
+    const average=a=>a.reduce((s,c)=>s+c.h-c.l,0)/a.length;
+    const width=a=>Math.max(...a.map(c=>c.h))-Math.min(...a.map(c=>c.l));
+    const rangeRatio=average(box)/average(prior), widthRatio=width(box)/width(prior);
+    if (!(rangeRatio<=DYNAMIC_MODEL_CONFIG.compressionRangeRatio && widthRatio<=DYNAMIC_MODEL_CONFIG.compressionWidthRatio)) continue;
+    const high=Math.max(...box.map(c=>c.h)),low=Math.min(...box.map(c=>c.l));
+    const long=b.o<=high && b.c>high+0.15*atr, short=b.o>=low && b.c<low-0.15*atr;
+    if (long===short) continue;
+    const expiresAt=new Date(Date.parse(b.ts)+(BREAKOUT_WINDOW_BARS+1)*900_000).toISOString();
+    if(Date.parse(expiresAt)<=Date.now())continue;
+    seeds.push({model:"B",submodel:"B2",direction:long?"LONG":"SHORT",boundary:long?high:low,atr,
+      breakoutAt:b.ts,breakoutHigh:b.h,breakoutLow:b.l,expiresAt,
+      compression:{rangeRatio,widthRatio,boxStartAt:box[0].ts,boxEndAt:box.at(-1).ts,high,low},
+      entryZone:long?{min:high,max:high+atr}:{min:low-atr,max:low}});
+  }
+  return seeds;
+}
+
+function nearestStructuralTarget(direction,asset,price,seed) {
+  const long=direction==="LONG",t=asset.timeframes;
+  const targets=[t["1h"].levels,t["4h"].levels].flatMap(l=>long?[l?.resistance20,l?.resistance50]:[l?.support20,l?.support50]);
+  // A trend pullback must not skip its prior impulse extreme to beautify RR.
+  if(seed?.model==="A")targets.push(seed.impulseExtreme);
+  return targets.filter(p=>Number.isFinite(p)&&(long?p>price:p<price)).sort((a,b)=>long?a-b:b-a)[0]??null;
+}
+
+function stopOutsideNearbyStructuralPool(direction, rawStop, asset, atr) {
+  const long=direction==="LONG", context=asset.liquidityRisk||buildMarketLiquidityContext(asset);
+  const pools=long?context?.visibleLiquidityPools?.equalLowClusters:context?.visibleLiquidityPools?.equalHighClusters;
+  let stop=rawStop;
+  for(const p of Array.isArray(pools)?pools:[]) {
+    if(!Number.isFinite(p.price)||p.touches<2||Math.abs(rawStop-p.price)>0.35*atr)continue;
+    // Keep the existing dangerous-stop gate. Place the candidate's invalidation
+    // outside the observed structural cluster, then recalculate RR and size.
+    stop=long?Math.min(stop,p.price-0.4*atr):Math.max(stop,p.price+0.4*atr);
+  }
+  return stop;
+}
+
+function confirmedExternalBreakoutAcceptance(direction, boundary, asset) {
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)) return false;
+  const long=direction==="LONG", context=asset.rangeContext, atr=finite(asset.timeframes["15m"].indicators?.atr14);
+  const external=finite(long?context?.upperBoundary:context?.lowerBoundary), price=finite(asset.ticker?.last);
+  if (!(atr>0) || !Number.isFinite(boundary) || !Number.isFinite(external) || !Number.isFinite(price)
+    || Math.abs(boundary-external)>0.2*atr || context?.locationZone==="MIDDLE") return false;
+  const rows=observationCandles(asset).slice(-2);
+  return rows.length===2 && (long?price>external:price<external)
+    && rows.every(c=>long?c.c>external+0.1*atr:c.c<external-0.1*atr);
+}
+
+function opportunityAssessment(seed,asset,btc) {
+  const progress=seed.model==="A"?pullbackProgress(seed,asset):breakoutProgress(seed,asset);
+  const result={submodel:seed.submodel,direction:seed.direction,state:progress.state,progress,
+    minNetRR:MIN_NET_RR,netRR:null,candidate:null,failedGate:null};
+  if(progress.state!=="STRUCTURE_READY")return {...result,failedGate:progress.reason||progress.state};
+  const direction=seed.direction,long=direction==="LONG",t=asset.timeframes;
+  if(!observationStructureReady(btc))return {...result,failedGate:"BTC_STRUCTURE_DATA_UNAVAILABLE"};
+  const externalAcceptance=seed.model==="B"&&confirmedExternalBreakoutAcceptance(direction,seed.boundary,asset);
+  if(asset.marketRegimeRouter?.regime!=="TREND"&&!externalAcceptance)return {...result,failedGate:"REGIME_ACCEPTANCE_PENDING"};
+  const ethConflict=seed.model==="A"?fourHourTrendDirection(asset)!==direction
+    :trendAgainst(direction,t["4h"])||(!externalAcceptance&&trendAgainst(direction,t["1h"]));
+  const btcConflict=trendAgainst(direction,btc.timeframes["4h"])&&trendAgainst(direction,btc.timeframes["1h"]);
+  if(ethConflict||btcConflict)return {...result,failedGate:ethConflict?"ETH_TREND_CONFLICT":"BTC_SYSTEMIC_CONFLICT"};
+  const price=finite(asset.ticker?.last),target=nearestStructuralTarget(direction,asset,price,seed);
+  if(!priceInsideEntryZone(price,seed.entryZone))return {...result,failedGate:"PRICE_OUTSIDE_FROZEN_ZONE_NO_CHASING"};
+  if(!Number.isFinite(target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_MISSING"};
+  const stopLoss=stopOutsideNearbyStructuralPool(direction,progress.stopLoss,asset,seed.atr);
+  const costPct=0.15,netRR=planNetRR({direction,stopLoss,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
+  const cap=(target+MIN_NET_RR*stopLoss)/((1+MIN_NET_RR)*(long?1+costPct/100:1-costPct/100));
+  const epsilon=Math.max(price*1e-10,1e-10);
+  const zone=long?{min:Math.max(seed.entryZone.min,stopLoss+epsilon),max:Math.min(seed.entryZone.max,cap)}
+    :{min:Math.max(seed.entryZone.min,cap),max:Math.min(seed.entryZone.max,stopLoss-epsilon)};
+  const rrQualifiedEntryZone=zone.min<=zone.max&&(long?zone.min>stopLoss:zone.max<stopLoss)?zone:null;
+  const pricing={entry:price,stopLoss,rawProtectiveStop:progress.stopLoss,structuralPoolBufferApplied:stopLoss!==progress.stopLoss,
+    target,estimatedRoundTripCostPct:costPct,netRR,rrQualifiedEntryZone};
+  if(!(netRR>=MIN_NET_RR))return {...result,...pricing,failedGate:"FIRST_TARGET_NET_RR_BELOW_2"};
+  const candidate={...seed,...pricing,candleAt:progress.candleAt,externalBoundaryAcceptance:externalAcceptance,openNowAllowed:false,
+    validationStatus:"DETECTOR_NOT_PROVEN_HIGH_WIN_RATE",reviewRequired:["MODEL_LOCATION","NEWS_MACRO","ACCOUNT_PSYCHOLOGY","ACTUAL_COSTS"]};
+  return {...result,...pricing,state:"CANDIDATE_FOR_REVIEW",candidate};
+}
+
+function dynamicMarketContext(asset) {
+  const rows=observationCandles(asset),latest=freshObservationCandle(asset),atr=finite(asset?.timeframes?.["15m"]?.indicators?.atr14);
+  const normalVolume=percentile(rows.slice(-21,-1).map(c=>c.volume),0.5);
+  const volumeRatio=normalVolume>0&&latest?finite(latest.volume)/normalVolume:null;
+  const rangeAtr=atr>0&&latest?(latest.h-latest.l)/atr:null;
+  const trades=asset?.capitalFlow?.largeTrades;
+  const end=Date.parse(trades?.sampleEndAt),flowFresh=trades?.status==="ok"&&Number.isFinite(end)&&Date.now()-end>=0&&Date.now()-end<=120_000
+    && trades?.dataFreshness?.state!=="stale-on-error";
+  const buy=finite(trades?.largeTrades?.buyUsdEstimate,0),sell=finite(trades?.largeTrades?.sellUsdEstimate,0),total=buy+sell;
+  const count=finite(trades?.largeTrades?.buyCount,0)+finite(trades?.largeTrades?.sellCount,0);
+  const flowDirection=flowFresh&&total>0&&count>=DYNAMIC_MODEL_CONFIG.minimumLargeTradeCount
+    ?buy/total>=0.7?"BUY":sell/total>=0.7?"SELL":null:null;
+  const response=flowFresh?finite(trades?.priceResponse?.changePct):null;
+  const responseClass=flowDirection&&Number.isFinite(response)
+    ?flowDirection==="BUY"?(response>0.02?"BUY_FLOW_PRICE_ADVANCE":"BUY_FLOW_POOR_ADVANCE_REVIEW_ABSORPTION")
+      :(response< -0.02?"SELL_FLOW_PRICE_DECLINE":"SELL_FLOW_POOR_DECLINE_REVIEW_ABSORPTION"):"UNKNOWN";
+  const closedShock=observationStructureReady(asset)&&rangeAtr>=2.5&&volumeRatio>=2;
+  const flags=[];
+  if(closedShock)flags.push("CLOSED_CANDLE_VOLUME_VOLATILITY_SHOCK");
+  if(flowDirection)flags.push("LARGE_EXECUTED_"+flowDirection+"_IMBALANCE");
+  const bucket=flowDirection?Math.floor(end/900_000)*900_000:Date.parse(latest?.ts);
+  return {status:flags.length?"REASSESS":"NORMAL_OR_INCONCLUSIVE",flags,volumeRatio,rangeAtr,flowFresh,flowDirection,
+    flowWindow:flowFresh?{startAt:trades.sampleStartAt,endAt:trades.sampleEndAt,sampleTradeCount:trades.sampleTradeCount,largeTradeCount:count}:null,
+    priceResponsePct:response,priceResponseClassification:responseClass,
+    eventKey:flags.length?[bucket,closedShock?"SHOCK":"FLOW",flowDirection||Math.sign(latest.c-latest.o)].join(":"):null,
+    nextAction:flags.length?"RESCAN_ALL_SIX_VERIFY_NEWS_AND_EXISTING_THESIS":"CONTINUE_SCANNING",
+    headlineFeedAvailable:false,newsCause:"UNVERIFIED",standaloneDirection:false,openNowAllowed:false,
+    limitation:"Sample-window executed trades, not all-market order-flow imbalance, whale identities, instant news or automatic entry."};
+}
+
+function buildOpportunityScan(asset,btc) {
+  const a=trendPullbackSeeds(asset),b2=compressionSeeds(asset),b1=breakoutSeeds(asset);
+  const raw=[...a,...b2,...b1];
+  const assessments=raw.map(s=>opportunityAssessment(s,asset,btc));
+  const range=discoverRangeReversal(asset,btc);
+  if(range)assessments.push({submodel:range.submodel,direction:range.direction,state:"CANDIDATE_FOR_REVIEW",minNetRR:MIN_NET_RR,netRR:range.netRR,candidate:range,failedGate:null});
+  const rank={CANDIDATE_FOR_REVIEW:5,STRUCTURE_READY:4,RETEST_ACCEPTED:3,WAIT_PULLBACK_SHIFT:2,WAIT_RETEST:2};
+  const models=["A1","A2","B1","B2","C1","C2"].map(submodel=>{
+    const found=assessments.filter(x=>x.submodel===submodel).sort((x,y)=>(rank[y.state]||0)-(rank[x.state]||0)||finite(y.netRR,0)-finite(x.netRR,0))[0];
+    return found||{submodel,state:observationStructureReady(asset)?"NO_SETUP":"DATA_BLOCKED",candidate:null,
+      failedGate:submodel[0]==="A"?"NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL":submodel==="B2"?"NO_COMPRESSION_BREAKOUT":submodel[0]==="C"?"NO_COMPLETE_RANGE_EDGE_REVERSAL":"NO_BREAKOUT",minNetRR:MIN_NET_RR};
+  });
+  return {checkedAt:new Date(Date.now()).toISOString(),models,dynamicContext:dynamicMarketContext(asset),
+    minimumNetRR:MIN_NET_RR,coverage:"ALL_SIX_SUBMODELS_WITH_SPECIFIED_DETECTORS_NOT_ALL_MARKET_OPPORTUNITIES",
+    measuredWinRate:null,validationStatus:"NO_EMPIRICAL_WIN_RATE_CLAIM",openNowAllowed:false};
+}
+
+async function processDynamicAlert(env,context,previous,deadlineAt) {
+  const now=Date.now(),old=previous||{},sentKeys=old.sentKeys||[];
+  const lastObservedFlow=context?.flowFresh?context.flowDirection:old.lastObservedFlow||null;
+  const next={...old,lastObservedFlow};
+  if(!context?.eventKey)return {...next,pending:null};
+  const shock=context.flags.includes("CLOSED_CANDLE_VOLUME_VOLATILITY_SHOCK");
+  const changed=shock||context.flowDirection!==old.lastObservedFlow;
+  // A steady flow imbalance crossing a 15m clock boundary is not a new shock.
+  const retry=old.pending&&(old.pending.eventKey===context.eventKey||(!shock&&old.pending.flowDirection===context.flowDirection));
+  if((!changed&&!retry)||sentKeys.includes(context.eventKey))return {...next,pending:null};
+  const pending=retry?old.pending:{eventKey:context.eventKey,flowDirection:context.flowDirection,attempts:0,nextAttemptAt:0};
+  if(pending.nextAttemptAt>now||now+6500>deadlineAt)return {...next,pending};
+  let result;
+  try{result=await sendBark(env,{title:"ETH（以太坊）成交/波动突变，重新评估",body:
+    "检测到"+(context.flags.includes("CLOSED_CANDLE_VOLUME_VOLATILITY_SHOCK")?"已收盘K线放量扩大波动；":"")
+    +(context.flowDirection==="BUY"?"近期大额主动买入偏多。":context.flowDirection==="SELL"?"近期大额主动卖出偏多。":"")
+    +"\n六子模型已重新扫描；这不是开仓信号。需核实新闻原因、价格响应及原方案是否仍成立。检测时间 "+new Date(now).toISOString(),level:"timeSensitive"});}
+  catch(error){result={sent:false,reason:String(error?.message||error)};}
+  return result.sent?{...next,sentKeys:[...sentKeys,pending.eventKey,context.eventKey].slice(-32),pending:null,lastAcceptedAt:new Date(now).toISOString(),deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"}
+    :{...next,pending:{...pending,attempts:pending.attempts+1,nextAttemptAt:now+Math.min(15,2**Math.min(pending.attempts+1,4))*60_000,lastError:result.reason}};
+}
+
+function effectivePlanMinNetRR(plan) {
+  // Old persisted plans inherit the user's new policy; explicit V24 stricter limits remain meaningful.
+  return plan.rrPolicyVersion===RR_POLICY_VERSION?Math.max(MIN_NET_RR,finite(plan.minNetRR,MIN_NET_RR)):MIN_NET_RR;
+}
 
 const RANGE_CONFIG = {
   maximumFourHourAdx: 22,
@@ -45,39 +298,81 @@ const RANGE_CONFIG = {
 
 // Autonomous discovery never opens or saves a plan. It only surfaces completed
 // price/structure candidates for fresh GPT, news, account and psychology review.
-function discoverBreakoutRetest(asset, btc) {
+function observationStructureReady(asset) {
   const tfs = asset?.timeframes;
-  const structureSources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
-  const coherentPerpetualSource = structureSources.every(source => source === structureSources[0])
-    && ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(structureSources[0]);
-  if (!coherentPerpetualSource || !["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed && tfs[tf].dataFreshness?.state !== "stale-on-error")) return null;
-  if (asset.marketRegimeRouter?.regime !== "TREND") return null;
-  const rows = tfs["15m"].recentCandles.filter(c => c.confirmed === true);
-  if (rows.length < 20) return null;
-  const range = rows.slice(0, -3);
-  const [breakout, retest, continuation] = rows.slice(-3);
-  const closeAge = Date.now() - (Date.parse(continuation.ts) + 15 * 60_000);
-  if (!Number.isFinite(closeAge) || closeAge < 0 || closeAge > 20 * 60_000) return null;
-  const high = Math.max(...range.map(c => c.h));
-  const low = Math.min(...range.map(c => c.l));
-  const atr15 = finite(tfs["15m"].indicators?.atr14);
-  if (!(atr15 > 0)) return null;
-  const long = breakout.c > high + 0.15 * atr15 && breakout.o <= high && retest.l <= high && retest.c > high && continuation.c > breakout.h;
-  const short = breakout.c < low - 0.15 * atr15 && breakout.o >= low && retest.h >= low && retest.c < low && continuation.c < breakout.l;
-  if (long === short) return null;
-  const direction = long ? "LONG" : "SHORT";
-  if (trendAgainst(direction, tfs["4h"]) || trendAgainst(direction, tfs["1h"]) || trendAgainst(direction, btc?.timeframes?.["4h"]) || trendAgainst(direction, btc?.timeframes?.["1h"])) return null;
-  const price = finite(asset.ticker?.last);
-  const boundary = long ? high : low;
-  // No chasing: still within one ATR of the reclaimed boundary.
-  if (!Number.isFinite(price) || Math.abs(price - boundary) > atr15 || (long ? price <= boundary : price >= boundary)) return null;
-  const stopLoss = long ? retest.l : retest.h;
-  const targets = [tfs["1h"].levels, tfs["4h"].levels].flatMap(levels => long ? [levels?.resistance20, levels?.resistance50] : [levels?.support20, levels?.support50]).filter(p => Number.isFinite(p) && (long ? p > price : p < price)).sort((a,b) => long ? a-b : b-a);
-  if (!targets.length) return null;
-  const plan = { direction, stopLoss, takeProfits: [{ price: targets[0] }], estimatedRoundTripCostPct: 0.15 };
-  const netRR = planNetRR(plan, price);
-  if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.A)) return null;
-  return { model: "B", submodel: "B1", direction, boundary, stopLoss, target: targets[0], netRR, candleAt: continuation.ts, entryZone: { min: long ? boundary : boundary - atr15, max: long ? boundary + atr15 : boundary }, openNowAllowed: false };
+  const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
+  return ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0])
+    && sources.every(source => source === sources[0])
+    && ["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed === true && tfs[tf].dataFreshness?.state !== "stale-on-error");
+}
+
+function observationCandles(asset) {
+  return (asset?.timeframes?.["15m"]?.recentCandles || []).filter(c => c.confirmed === true
+    && [c.o, c.h, c.l, c.c].every(Number.isFinite) && Date.parse(c.ts) + 900_000 <= Date.now());
+}
+
+function freshObservationCandle(asset) {
+  const candle = observationCandles(asset).at(-1);
+  const age = Date.now() - (Date.parse(candle?.ts) + 900_000);
+  return candle && age >= 0 && age <= 20 * 60_000 ? candle : null;
+}
+
+// Freeze the pre-break boundary and event clock. Later bars cannot move either
+// anchor to make an unqualified pattern qualify. Eight bars is an observation
+// timeout, not an empirically validated trading parameter.
+function breakoutSeeds(asset) {
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)) return [];
+  const rows = observationCandles(asset);
+  const atr = finite(asset.timeframes["15m"].indicators?.atr14);
+  if (!(atr > 0)) return [];
+  const seeds = [];
+  for (let i = Math.max(16, rows.length - BREAKOUT_WINDOW_BARS); i < rows.length; i++) {
+    const before = rows.slice(Math.max(0, i - 20), i);
+    const high = Math.max(...before.map(c => c.h));
+    const low = Math.min(...before.map(c => c.l));
+    const b = rows[i];
+    const long = b.o <= high && b.c > high + 0.15 * atr;
+    const short = b.o >= low && b.c < low - 0.15 * atr;
+    if (long === short) continue;
+    const expiresAt = Date.parse(b.ts) + (BREAKOUT_WINDOW_BARS + 1) * 900_000;
+    if (expiresAt <= Date.now()) continue;
+    seeds.push({ model: "B", submodel: "B1", direction: long ? "LONG" : "SHORT",
+      boundary: long ? high : low, atr, breakoutAt: b.ts, breakoutHigh: b.h, breakoutLow: b.l,
+      expiresAt: new Date(expiresAt).toISOString(),
+      entryZone: { min: long ? high : low - atr, max: long ? high + atr : low } });
+  }
+  return seeds;
+}
+
+function breakoutProgress(seed, asset) {
+  if (Date.now() >= Date.parse(seed.expiresAt)) return { state: "EXPIRED" };
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)) return { state: "DATA_BLOCKED" };
+  const long = seed.direction === "LONG";
+  const rows = observationCandles(asset).filter(c => Date.parse(c.ts) > Date.parse(seed.breakoutAt));
+  let retest = null, outside = 0;
+  for (const c of rows) {
+    outside = (long ? c.c < seed.boundary - 0.1 * seed.atr : c.c > seed.boundary + 0.1 * seed.atr) ? outside + 1 : 0;
+    if (outside >= 2) return { state: "INVALIDATED", reason: "TWO_CLOSES_ACCEPTED_BACK_INSIDE" };
+    // A new lower/higher retest resets the protected swing, not the event clock.
+    if (retest && (long ? c.l < retest.l : c.h > retest.h)) retest = null;
+    if (!retest && (long ? c.l <= seed.boundary + 0.2 * seed.atr && c.h >= seed.boundary - 0.2 * seed.atr && c.c > seed.boundary : c.h >= seed.boundary - 0.2 * seed.atr && c.l <= seed.boundary + 0.2 * seed.atr && c.c < seed.boundary)) retest = c;
+  }
+  const latest = rows.at(-1);
+  const trigger = retest && rows.find(c => Date.parse(c.ts) > Date.parse(retest.ts)
+    && (long ? c.c > retest.h + 0.05 * seed.atr : c.c < retest.l - 0.05 * seed.atr));
+  const confirmed = Boolean(trigger);
+  // The controlling retest swing, not the oversized original impulse wick, supplies the continuation trigger.
+  return { state: confirmed ? "STRUCTURE_READY" : retest ? "RETEST_ACCEPTED" : "WAIT_RETEST", retest, triggerAt: trigger?.ts || null,
+    stopLoss: retest ? (long ? retest.l - 0.1 * seed.atr : retest.h + 0.1 * seed.atr) : null,
+    candleAt: latest?.ts || seed.breakoutAt };
+}
+
+function breakoutCandidate(seed, asset, btc) {
+  return opportunityAssessment(seed, asset, btc).candidate;
+}
+
+function discoverBreakoutRetest(asset, btc) {
+  return breakoutSeeds(asset).map(seed => breakoutCandidate(seed, asset, btc)).find(Boolean) || null;
 }
 
 function discoverRangeReversal(asset, btc) {
@@ -139,46 +434,338 @@ function discoverRangeReversal(asset, btc) {
   };
 }
 
-async function runDiscovery(env) {
-  if (String(env?.DISCOVERY_ENABLED ?? "true") === "false") return { status: "idle", reason: "DISCOVERY_DISABLED" };
-  if (!scannerStateStub(env)) return { status: "idle", reason: "DISCOVERY_REQUIRES_DURABLE_STATE" };
-  const state = await scannerStateBundle(env, [DISCOVERY_STATE_KEY, MANUAL_PRIORITY_KEY]);
-  const old = state[DISCOVERY_STATE_KEY] || {};
-  const now = Date.now();
-  if (state[MANUAL_PRIORITY_KEY]?.until > now || now - finite(old.lastRunAt, 0) < 5 * 60_000) return { status: "idle", reason: "DISCOVERY_DEFERRED" };
-  await scannerStatePut(env, DISCOVERY_STATE_KEY, { ...old, lastRunAt: now }, 86400);
-  try {
-    // Discovery and manual analysis consume the exact same persistent market
-    // state. It no longer downloads a second independent six-series bundle.
-    const full = await buildSnapshot({ env, scannerMode: true });
-    if (!full.coverage?.openNowDataReady) return { status: "idle", reason: "DISCOVERY_DATA_BLOCKED" };
-    const assets = full.assets;
-    let candidate = discoverBreakoutRetest(assets.ETHUSDT, assets.BTCUSDT) || discoverRangeReversal(assets.ETHUSDT, assets.BTCUSDT);
-    if (!candidate) return { status: "idle", reason: "NO_B1_C1_C2_CANDIDATE" };
-    const signature = `${candidate.model}:${candidate.submodel}:${candidate.direction}:${candidate.boundary.toFixed(1)}:${candidate.candleAt}`;
-    if (old.signature === signature) return { status: "idle", reason: "DISCOVERY_DUPLICATE_CANDIDATE" };
-    if (now - finite(old.lastAlertAt, 0) < 30 * 60_000) return { status: "idle", reason: "DISCOVERY_NOTIFICATION_COOLDOWN" };
-    const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY);
-    if (priority?.until > Date.now()) return { status: "idle", reason: "MANUAL_REQUEST_PRIORITY" };
-    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT) || discoverRangeReversal(full.assets.ETHUSDT, full.assets.BTCUSDT);
-    if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
-    const verified = await verifyOkxScannerZone("ETHUSDT", candidate.entryZone);
-    if (!verified.confirmed) return { status: "idle", reason: "PRICE_LEFT_CANDIDATE_ZONE" };
-    full.assets.ETHUSDT.ticker = verified.current;
-    candidate = discoverBreakoutRetest(full.assets.ETHUSDT, full.assets.BTCUSDT) || discoverRangeReversal(full.assets.ETHUSDT, full.assets.BTCUSDT);
-    if (!candidate) return { status: "idle", reason: "CANDIDATE_NO_LONGER_VALID" };
-    const liq = planLiquidityRisk({ ...candidate, symbol: "ETHUSDT", liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, full.assets.ETHUSDT);
-    if (!liq.passed || full.assets.ETHUSDT.executionLiquidity?.status !== "ok") return { status: "idle", reason: "DISCOVERY_EXECUTION_OR_LIQUIDITY_BLOCKED" };
-    candidate.softWarnings = full.assets.ETHUSDT.capitalFlow?.status === "ok" ? [] : ["AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED"];
-    const current = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, MANUAL_PRIORITY_KEY]);
-    if (current[ACTIVE_PLAN_KEY]?.status === "ARMED" || current[MANUAL_PRIORITY_KEY]?.until > Date.now()) return { status: "idle", reason: "USER_PLAN_OR_MANUAL_PRIORITY" };
-    if (Date.now() - now > 45_000) return { status: "idle", reason: "DISCOVERY_RUNTIME_BUDGET_EXCEEDED" };
-    const notification = await sendBark(env, { title: `ETH（以太坊）${candidate.submodel}（${candidate.model === "B" ? "突破回测" : "区间边缘反转"}）候选`, body: `方向候选：${candidate.direction === "LONG" ? "做多" : "做空"}，当前欧易价格 ${verified.current.last}。价格结构链已完成初筛；不是开仓许可。新闻、账户风险和心理状态未核验，请打开GPT最终复核。${candidate.softWarnings.length ? "辅助资金流未获取，须核对其是否为本模型必要证据。" : ""}没有保存或替换交易计划。`, level: "active" });
-    if (notification.sent) await scannerStatePut(env, DISCOVERY_STATE_KEY, { lastRunAt: now, lastAlertAt: Date.now(), signature, candidate }, 86400);
-    return { status: "candidate", notification, candidate, openNowAllowed: false };
-  } catch (error) { return { status: "idle", reason: "DISCOVERY_DATA_UNAVAILABLE", detail: error?.message, notification: { sent: false } }; }
+// Observation records have no execution authority and do not overwrite plans.
+async function scannerCompareAndPut(env, expected, values, ttlSeconds = 7 * 86400) {
+  if (scannerStateStub(env)) {
+    const result = await durableStateCall(env, { op: "compareAndPut", expected,
+      values: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value, ttlSeconds }])) });
+    return result?.applied === true;
+  }
+  // Backward-compatible KV installations remain best-effort, not atomic.
+  for (const [key, value] of Object.entries(expected)) {
+    if (JSON.stringify(await scannerStateGet(env, key)) !== JSON.stringify(value)) return false;
+  }
+  for (const [key, value] of Object.entries(values)) await scannerStatePut(env, key, value, ttlSeconds);
+  return true;
 }
 
+async function mutateObservationBook(env, transform) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const old = await scannerStateGet(env, OBSERVATIONS_KEY);
+    const book = old && Array.isArray(old.records) ? structuredClone(old) : { records: [] };
+    const result = transform(book);
+    if (result?.unchanged) return result;
+    const active = book.records.filter(r => !OBSERVATION_TERMINAL.includes(r.state) && Date.parse(r.expiresAt) > Date.now());
+    const history = book.records.filter(r => !active.includes(r));
+    const historySlots = Math.max(0, OBSERVATION_HISTORY_LIMIT - active.length);
+    book.records = [...(historySlots ? history.slice(-historySlots) : []), ...active];
+    book.updatedAt = new Date(Date.now()).toISOString();
+    if (await scannerCompareAndPut(env, { [OBSERVATIONS_KEY]: old }, { [OBSERVATIONS_KEY]: book })) return result;
+  }
+  throw new Error("OBSERVATION_STATE_CONFLICT_RETRY");
+}
+
+function normalizeObservation(input) {
+  const now = Date.now(), symbol = scannerText(input.symbol || "ETHUSDT", "", 16).toUpperCase();
+  const direction = scannerText(input.direction, "", 16).toUpperCase();
+  const model = scannerText(input.model, "", 4).toUpperCase(), submodel = scannerText(input.submodel, "", 8).toUpperCase();
+  if (symbol !== "ETHUSDT") throw new Error("Observation symbol must be ETHUSDT; BTC is the environment filter");
+  if (!["LONG", "SHORT"].includes(direction) || SUBMODEL_DEFINITIONS[submodel]?.parent !== model) throw new Error("Valid direction and matching A1/A2/B1/B2/C1/C2 required");
+  const marketRegime = scannerText(input.marketRegime, "", 24).toUpperCase();
+  if (submodelRegimePermission(model, submodel, marketRegime) === "BLOCKED") throw new Error("Observation regime does not permit this submodel");
+  const zone = input.observationZone;
+  const min = scannerNumber(zone?.min, "observationZone.min", { positive: true });
+  const max = scannerNumber(zone?.max, "observationZone.max", { positive: true });
+  if (min > max) throw new Error("Observation zone is reversed");
+  const invalidation = { level: scannerNumber(input.observationInvalidation?.level, "observationInvalidation.level", { positive: true }),
+    mode: scannerText(input.observationInvalidation?.mode, "CLOSE_15M", 16).toUpperCase() };
+  if (!["PRICE", "CLOSE_15M"].includes(invalidation.mode)) throw new Error("Invalidation mode must be PRICE or CLOSE_15M");
+  if (direction === "LONG" ? invalidation.level >= min : invalidation.level <= max) throw new Error("Observation invalidation must be outside the zone on the risk side");
+  const thesis = scannerText(input.strategySummary, "", 1000), pending = scannerText(input.pendingCondition, "", 1000);
+  if (!thesis || !pending) throw new Error("strategySummary and precise pendingCondition are required");
+  const sourceAt = Date.parse(input.sourceAnalysisAt);
+  if (!Number.isFinite(sourceAt) || now - sourceAt > MAX_SOURCE_ANALYSIS_AGE_MS || sourceAt > now + MAX_SOURCE_ANALYSIS_FUTURE_SKEW_MS) throw new Error("Fresh sourceAnalysisAt required");
+  const expiry = input.expiresAt ? Date.parse(input.expiresAt) : now + 4 * 3600_000;
+  if (!Number.isFinite(expiry) || expiry <= now || expiry > now + 24 * 3600_000) throw new Error("Observation expiry must be within 24 hours");
+  let trigger = null;
+  if (input.observationTrigger != null) {
+    const t = input.observationTrigger;
+    if (t.meaningful !== true || !["CLOSE_ABOVE", "CLOSE_BELOW"].includes(t.type)) throw new Error("Observation trigger needs meaningful closed-15m condition");
+    if ((direction === "LONG") !== (t.type === "CLOSE_ABOVE")) throw new Error("Trigger direction contradicts observation");
+    trigger = { type: t.type, level: scannerNumber(t.level, "observationTrigger.level", { positive: true }), meaningful: true };
+  }
+  return { observationId: scannerText(input.observationId || crypto.randomUUID(), "", 100), revision: 1,
+    recordType: "OBSERVATION", origin: "GPT", symbol, direction, model, submodel, marketRegime,
+    observationZone: { min, max }, observationInvalidation: invalidation, observationTrigger: trigger,
+    strategySummary: thesis, pendingCondition: pending, sourceAnalysisAt: new Date(sourceAt).toISOString(),
+    createdAt: new Date(now).toISOString(), expiresAt: new Date(expiry).toISOString(),
+    state: "OBSERVING", openNowAllowed: false, alerts: {}, history: [] };
+}
+
+function observationSignature(record) {
+  return JSON.stringify([record.symbol, record.direction, record.model, record.submodel, record.marketRegime,
+    record.observationZone, record.observationInvalidation, record.observationTrigger, record.pendingCondition]);
+}
+
+async function saveObservation(env, input) {
+  const next = normalizeObservation(input);
+  return mutateObservationBook(env, book => {
+    const exact = book.records.find(r => !OBSERVATION_TERMINAL.includes(r.state)
+      && Date.parse(r.expiresAt) > Date.now() && observationSignature(r) === observationSignature(next)
+      && (!input.observationId || input.observationId === r.observationId));
+    if (exact) return { unchanged: true, status: "unchanged", build: BUILD, observation: exact, openNowAllowed: false };
+    const old = book.records.find(r => r.observationId === next.observationId);
+    if (old) {
+      next.revision = old.revision + 1;
+      book.records = book.records.filter(r => r.observationId !== old.observationId);
+    }
+    const active = book.records.filter(r => !OBSERVATION_TERMINAL.includes(r.state) && Date.parse(r.expiresAt) > Date.now());
+    if (active.length >= OBSERVATION_LIMIT) throw new Error("OBSERVATION_CAPACITY_REACHED_CANCEL_UNUSED_RECORD");
+    book.records.push(next);
+    return { status: "observation_saved", build: BUILD, observation: next, openNowAllowed: false,
+      next: "Cron follows this zone without requiring fabricated entry, stop, RR or verified account. Registered trigger alerts require final model/news/account review." };
+  });
+}
+
+function autoObservation(seed, kind, asset) {
+  const now = Date.now(), long = seed.direction === "LONG";
+  const atr = finite(asset.timeframes?.["15m"]?.indicators?.atr14);
+  const eventAt = seed.breakoutAt || seed.eventAt || seed.candleAt;
+  return { recordType: "OBSERVATION", origin: "AUTONOMOUS", observationId: (kind === "PULLBACK" || seed.submodel === "B2" ? kind + ":" + seed.submodel : kind) + ":" + seed.direction + ":" + eventAt,
+    revision: 1, symbol: "ETHUSDT", model: seed.model, submodel: seed.submodel, direction: seed.direction,
+    marketRegime: asset.marketRegimeRouter?.regime, observationZone: seed.entryZone,
+    observationInvalidation: { level: seed.observationInvalidationPrice || (long ? seed.entryZone.min - atr : seed.entryZone.max + atr), mode: "CLOSE_15M" },
+    observationTrigger: null, strategySummary: kind === "PULLBACK" ? "完整4小时趋势内的1小时位置回调，等待15分钟保护结构及关键转变" : kind === "BREAKOUT" ? "固定突破边界，等待回测接受和结构推进" : "确认区间边缘，等待扫荡/假突破、收回和关键结构转变",
+    pendingCondition: kind === "PULLBACK" ? "原趋势未破坏，在固定回调位置形成保护结构及关键收盘；第一现实目标净盈亏比至少2" : kind === "BREAKOUT" ? "在原边界完成回测接受，随后关键收盘突破；实时位置、止损及净风险收益比仍须通过" : "边缘扫荡或假突破收回，形成保护结构及关键结构转变",
+    sourceAnalysisAt: new Date(now).toISOString(), createdAt: new Date(now).toISOString(),
+    expiresAt: seed.expiresAt || new Date(now + 4 * 3600_000).toISOString(),
+    seed: { ...seed, kind }, state: "OBSERVING", openNowAllowed: false, alerts: {}, history: [] };
+}
+
+function rangeObservationSeed(asset) {
+  const c = asset?.rangeContext;
+  if (!observationStructureReady(asset) || !freshObservationCandle(asset)
+    || asset.marketRegimeRouter?.regime !== "RANGE" || c?.confirmed !== true
+    || !["LOWER_EDGE", "UPPER_EDGE"].includes(c.locationZone)) return null;
+  const low = finite(c.lowerBoundary), high = finite(c.upperBoundary), mid = finite(c.midpoint);
+  if (!(low > 0 && high > low && mid > low && mid < high)) return null;
+  const long = c.locationZone === "LOWER_EDGE";
+  // The event id uses the 4h candle; repeated five-minute scans do not re-arm it.
+  const anchor = latestConfirmedCandle(asset.timeframes["4h"])?.ts;
+  if (!anchor) return null;
+  return { model: "C", submodel: "C1", direction: long ? "LONG" : "SHORT", boundary: long ? low : high,
+    lowerBoundary: low, upperBoundary: high, eventAt: anchor, candidateFamily: ["C1", "C2"],
+    entryZone: long ? { min: low, max: low + 0.25 * (high - low) } : { min: high - 0.25 * (high - low), max: high } };
+}
+
+function observationVerification(samples, zone) {
+  if (samples?.passed !== true || samples?.current?.source !== "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"
+    || samples.current.verification?.passed !== true || samples.samples?.length !== 2) return null;
+  return { ...samples, confirmed: samples.samples.every(p => priceInsideEntryZone(p.last, zone)), entryZone: zone };
+}
+
+function evaluateObservation(record, snapshot, verified) {
+  const now = Date.now(), base = { checkedAt: new Date(now).toISOString(), openNowAllowed: false };
+  if (now >= Date.parse(record.expiresAt)) return { ...base, state: "EXPIRED", reason: "OBSERVATION_EXPIRED" };
+  const asset = snapshot?.assets?.[record.symbol], candle = freshObservationCandle(asset);
+  const structureOK = observationStructureReady(asset) && candle;
+  if (!verified) return { ...base, state: "DATA_BLOCKED", reason: "DIRECT_OKX_PRICE_VERIFICATION_FAILED" };
+  const long = record.direction === "LONG", inv = record.observationInvalidation;
+  const beyond = p => long ? p <= inv.level : p >= inv.level;
+  if ((inv.mode === "PRICE" && verified.samples.every(p => beyond(p.last)))
+    || (inv.mode === "CLOSE_15M" && structureOK && Date.parse(candle.ts) + 900_000 >= Date.parse(record.sourceAnalysisAt) && beyond(candle.c))) {
+    return { ...base, state: "INVALIDATED", reason: "OBSERVATION_INVALIDATION_REACHED", price: verified.current.last };
+  }
+  let progress = null;
+  if (["BREAKOUT", "PULLBACK"].includes(record.seed?.kind) && structureOK) {
+    progress = record.seed.kind === "PULLBACK" ? pullbackProgress(record.seed, asset) : breakoutProgress(record.seed, asset);
+    if (OBSERVATION_TERMINAL.includes(progress.state)) return { ...base, ...progress };
+  }
+  if (record.seed?.kind === "RANGE" && structureOK) {
+    const current = asset.rangeContext;
+    if (!current?.confirmed || asset.marketRegimeRouter?.regime !== "RANGE"
+      || Math.abs(finite(current.lowerBoundary) - record.seed.lowerBoundary) > 0.01
+      || Math.abs(finite(current.upperBoundary) - record.seed.upperBoundary) > 0.01) {
+      return { ...base, state: "INVALIDATED", reason: "REGISTERED_RANGE_CHANGED_REVIEW_NEW_RANGE" };
+    }
+  }
+  const inZone = verified.confirmed, price = verified.current.last, zone = record.observationZone;
+  const atr = finite(asset?.timeframes?.["15m"]?.indicators?.atr14, 0);
+  const distance = Math.max(zone.min - price, price - zone.max, 0);
+  const near = Math.max(zone.max - zone.min, 0.5 * atr);
+  const approaching = verified.samples.every(p => p.last >= zone.min - near && p.last <= zone.max + near);
+  let state = inZone ? "IN_ZONE" : approaching ? "APPROACHING" : "OBSERVING";
+  let reason = inZone ? "TWO_CURRENT_OKX_SAMPLES_INSIDE_OBSERVATION_ZONE" : "WAIT_FOR_OBSERVATION_ZONE";
+  let triggerAt = record.triggerAt || null, candidate = null;
+  const t = record.observationTrigger;
+  if (structureOK && t && Date.parse(candle.ts) + 900_000 >= Date.parse(record.sourceAnalysisAt)
+    && (long ? candle.c > t.level : candle.c < t.level)) triggerAt = candle.ts;
+  if (inZone && structureOK && triggerAt) { state = "TRIGGER_MET"; reason = "REGISTERED_PRICE_CONDITION_ONLY_FULL_REVIEW_REQUIRED"; }
+  if (inZone && structureOK && record.origin === "AUTONOMOUS") {
+    candidate = ["BREAKOUT", "PULLBACK"].includes(record.seed?.kind) ? opportunityAssessment(record.seed, asset, snapshot.assets.BTCUSDT).candidate
+      : discoverRangeReversal(asset, snapshot.assets.BTCUSDT);
+    if (candidate && candidate.direction !== record.direction) candidate = null;
+    if (candidate) {
+      const liq = planLiquidityRisk({ ...candidate, symbol: record.symbol, liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, asset);
+      if (liq.passed && asset.executionLiquidity?.status === "ok" && snapshot.coverage?.openNowDataReady) {
+        candidate.softWarnings = asset.capitalFlow?.status === "ok" ? [] : ["AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED"];
+        state = "MARKET_CANDIDATE"; reason = "MARKET_FILTERS_PASSED_NEWS_ACCOUNT_PSYCHOLOGY_PENDING";
+      } else { candidate = null; reason = "EXECUTION_OR_LIQUIDITY_REVIEW_PENDING"; }
+    }
+  }
+  // A past close/touch is retained for diagnosis, never substituted for present entry.
+  if (!inZone && (triggerAt || record.lastCandidateAt)) reason = "CONDITION_SEEN_BUT_CURRENT_PRICE_OUTSIDE_ZONE_NO_CHASING";
+  if (!structureOK && inZone) reason = "ZONE_REACHED_STRUCTURE_DATA_PENDING";
+  return { ...base, state, reason, price, currentInZone: inZone, distanceToZone: distance,
+    structureReady: Boolean(structureOK), triggerAt, progress, candidate,
+    missing: state === "MARKET_CANDIDATE" ? ["NEWS_MACRO_REVIEW", "CURRENT_ACCOUNT_AND_PSYCHOLOGY"]
+      : ["FULL_MODEL_REVIEW", "STRUCTURAL_STOP_AND_FIRST_TARGET_NET_RR", "NEWS_MACRO_REVIEW", "CURRENT_ACCOUNT_AND_PSYCHOLOGY"] };
+}
+
+function observationAlert(record, evaluation) {
+  const labels = { APPROACHING: "接近观察区", IN_ZONE: "已到观察区", TRIGGER_MET: "登记的收盘条件已满足",
+    MARKET_CANDIDATE: "市场候选条件已满足", EXPIRED: "观察已到期", INVALIDATED: "观察已失效" };
+  if (!labels[evaluation.state]) return null;
+  const zone = record.observationZone;
+  return { title: "ETH（以太坊）" + record.submodel + "（子模型）" + labels[evaluation.state],
+    body: "方向：" + (record.direction === "LONG" ? "做多" : "做空") + "；观察区 " + zone.min + "—" + zone.max
+      + "；核验价 " + (evaluation.price ?? "未获取") + "；状态时间 " + evaluation.checkedAt
+      + "。\n" + record.pendingCondition + "。\n"
+      + (OBSERVATION_TERMINAL.includes(evaluation.state) ? "本观察停止，自动发现继续。"
+        : "此为观察/条件提醒，尚未核验完整执行权限。打开GPT复核当前价格、模型、新闻及账户；价格已离区时禁止按旧通知追单。"),
+    level: ["IN_ZONE", "TRIGGER_MET", "MARKET_CANDIDATE"].includes(evaluation.state) ? "timeSensitive" : "active" };
+}
+
+async function updateObservation(env, record, transform) {
+  return mutateObservationBook(env, book => {
+    const index = book.records.findIndex(r => r.observationId === record.observationId && r.revision === record.revision);
+    if (index < 0 || book.records[index].state === "CANCELLED") return { unchanged: true, stale: true };
+    const next = transform(book.records[index]);
+    book.records[index] = next;
+    return { record: next };
+  });
+}
+
+async function processObservation(env, original, evaluation, deadlineAt = Infinity) {
+  const updated = await updateObservation(env, original, current => {
+    const changed = current.state !== evaluation.state;
+    const alerts = { ...current.alerts };
+    // Pending lower-stage messages must not arrive after invalidation or a newer stage.
+    for (const [stage, alert] of Object.entries(alerts)) {
+      if (stage !== evaluation.state && alert.status === "PENDING") alerts[stage] = { ...alert, status: "SUPERSEDED" };
+    }
+    const message = observationAlert(current, evaluation);
+    if (message && !["SENT", "PENDING"].includes(alerts[evaluation.state]?.status)) alerts[evaluation.state] = { status: "PENDING", attempts: 0, nextAttemptAt: 0 };
+    return { ...current, ...evaluation, alerts,
+      lastCandidateAt: evaluation.candidate ? evaluation.checkedAt : current.lastCandidateAt || null,
+      history: changed ? [...(current.history || []), { at: evaluation.checkedAt, state: evaluation.state, reason: evaluation.reason }].slice(-24) : current.history };
+  });
+  const record = updated?.record;
+  if (!record) return { status: "stale" };
+  const pending = record.alerts[record.state];
+  if (pending?.status !== "PENDING" || pending.nextAttemptAt > Date.now()) return { state: record.state, sent: false };
+  if (Date.now() + 6500 > deadlineAt) return { state: record.state, sent: false, reason: "PUSH_DEFERRED_RUNTIME_BUDGET" };
+  // Re-read before sending; a cancelled/revised observation cannot reuse an old evaluation.
+  const current = (await scannerStateGet(env, OBSERVATIONS_KEY))?.records?.find(r => r.observationId === record.observationId);
+  if (current?.revision !== record.revision || current.state !== record.state) return { status: "stale" };
+  let notification;
+  try { notification = await sendBark(env, observationAlert(record, record)); }
+  catch (error) { notification = { sent: false, reason: String(error?.message || error) }; }
+  const attempts = pending.attempts + 1;
+  await updateObservation(env, record, r => ({ ...r, alerts: { ...r.alerts, [record.state]: {
+    status: notification.sent ? "SENT" : "PENDING", attempts, lastAttemptAt: new Date(Date.now()).toISOString(),
+    nextAttemptAt: Date.now() + Math.min(15, 2 ** Math.min(attempts, 4)) * 60_000,
+    deliveredAt: notification.sent ? new Date(Date.now()).toISOString() : null,
+    lastError: notification.sent ? null : notification.reason,
+    deliveryMeaning: "PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT", } } }));
+  return { state: record.state, notification };
+}
+
+function scannerCycle(env) {
+  let snapshot;
+  const prices = new Map();
+  return {
+    deadlineAt: Date.now() + 45_000,
+    getSnapshot() { return snapshot ||= buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); },
+    getPrices(symbol) {
+      // Broad zone affects only the sampling helper's flag. Each consumer checks its own zone.
+      const cached = prices.get(symbol);
+      if (!cached || Date.now() - cached.startedAt > 8000) {
+        prices.set(symbol, { startedAt: Date.now(), promise: verifyOkxScannerZone(symbol, { min: 0, max: Number.MAX_VALUE }) });
+      }
+      return prices.get(symbol).promise;
+    },
+  };
+}
+
+async function runDiscovery(env, cycle = scannerCycle(env)) {
+  const now = Date.now();
+  const state = await scannerStateBundle(env, [DISCOVERY_STATE_KEY, OBSERVATIONS_KEY, MANUAL_PRIORITY_KEY]);
+  const old = state[DISCOVERY_STATE_KEY] || {};
+  const enabled = String(env?.DISCOVERY_ENABLED ?? "true") !== "false";
+  const due = enabled && now - finite(old.lastRunAt, 0) >= DISCOVERY_INTERVAL_MS;
+  let records = state[OBSERVATIONS_KEY]?.records || [], full = null, reason = due ? "NO_NEW_AUTONOMOUS_CANDIDATE" : "DISCOVERY_INTERVAL_NOT_DUE";
+  let discoveryError = null, added = 0, capacityReached = false;
+  if (state[MANUAL_PRIORITY_KEY]?.until > now) return { status: "deferred", reason: "MANUAL_REQUEST_PRIORITY", openNowAllowed: false };
+  if (due) {
+    try {
+      full = await cycle.getSnapshot();
+      const asset = full.assets?.ETHUSDT;
+      if (!observationStructureReady(asset)) reason = "DISCOVERY_STRUCTURE_DATA_BLOCKED";
+      else {
+        const breakout = [...compressionSeeds(asset), ...breakoutSeeds(asset)];
+        const uniqueBreakout = breakout.filter((seed, index) => !breakout.slice(0, index).some(other => other.direction === seed.direction && other.breakoutAt === seed.breakoutAt && Math.abs(other.boundary-seed.boundary) <= seed.atr * 0.2));
+        const seeds = [...trendPullbackSeeds(asset).map(seed => autoObservation(seed, "PULLBACK", asset)),
+          ...uniqueBreakout.map(seed => autoObservation(seed, "BREAKOUT", asset))];
+        const range = rangeObservationSeed(asset);
+        if (range) seeds.push(autoObservation(range, "RANGE", asset));
+        const merged = await mutateObservationBook(env, book => {
+          let count = 0, capacity = false;
+          for (const record of seeds) {
+            if (book.records.some(r => r.observationId === record.observationId)) continue;
+            if (book.records.filter(r => !OBSERVATION_TERMINAL.includes(r.state) && Date.parse(r.expiresAt) > now).length >= OBSERVATION_LIMIT) { capacity = true; break; }
+            book.records.push(record); count++;
+          }
+          return { added: count, capacity };
+        });
+        added = merged.added; capacityReached = merged.capacity;
+        reason = capacityReached ? "OBSERVATION_CAPACITY_REACHED" : added ? "NEW_OBSERVATIONS_REGISTERED" : "NO_NEW_AUTONOMOUS_CANDIDATE";
+      }
+    } catch (error) { discoveryError = String(error?.message || error); reason = "DISCOVERY_DATA_UNAVAILABLE"; }
+    records = (await scannerStateGet(env, OBSERVATIONS_KEY))?.records || [];
+  }
+  const active = records.filter(r => !OBSERVATION_TERMINAL.includes(r.state));
+  const terminalRetries = records.filter(r => OBSERVATION_TERMINAL.includes(r.state) && r.state !== "CANCELLED" && r.alerts?.[r.state]?.status === "PENDING");
+  const evaluations = [], notifications = [];
+  let verification = null, priceError = null;
+  if (active.some(r => Date.parse(r.expiresAt) > now)) {
+    try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { priceError = String(error?.message || error); }
+    // Closed-candle invalidation is checked even when price is outside a zone.
+    if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
+    // Slow upstream recovery must not turn earlier samples into a current-price alert.
+    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { verification = null; priceError = String(error?.message || error); } }
+    if (full?.assets?.ETHUSDT && verification?.current) full.assets.ETHUSDT.ticker = verification.current;
+  }
+  for (const record of active.concat(terminalRetries)) {
+    const verified = observationVerification(verification, record.observationZone);
+    const evaluation = OBSERVATION_TERMINAL.includes(record.state) ? record : evaluateObservation(record, full, verified);
+    const result = await processObservation(env, record, evaluation, cycle.deadlineAt);
+    evaluations.push({ observationId: record.observationId, submodel: record.submodel, state: evaluation.state, reason: evaluation.reason });
+    if (result.notification) notifications.push({ observationId: record.observationId, ...result.notification });
+  }
+  const opportunityAudit = full?.assets?.ETHUSDT ? buildOpportunityScan(full.assets.ETHUSDT, full.assets.BTCUSDT) : null;
+  const dynamicAlert = enabled && opportunityAudit ? await processDynamicAlert(env, opportunityAudit.dynamicContext, old.dynamicAlert, cycle.deadlineAt) : old.dynamicAlert || null;
+  const detail = { ...old, opportunityAudit, dynamicAlert, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
+    lastSuccessAt: due && !discoveryError && observationStructureReady(full?.assets?.ETHUSDT) ? new Date(now).toISOString() : old.lastSuccessAt || null,
+    nextDiscoveryAt: new Date((due ? now : finite(old.lastRunAt, now)) + DISCOVERY_INTERVAL_MS).toISOString(),
+    reason: enabled ? reason : "AUTONOMOUS_DISCOVERY_DISABLED_REGISTERED_OBSERVATIONS_CONTINUE",
+    discoveryError, priceError, added, capacityReached, evaluated: evaluations.length, evaluations, notifications, openNowAllowed: false };
+  await scannerStatePut(env, DISCOVERY_STATE_KEY, detail, 7 * 86400);
+  const latestRecords = (await scannerStateGet(env, OBSERVATIONS_KEY))?.records || [];
+  const candidate = latestRecords.find(r => r.state === "MARKET_CANDIDATE")?.candidate || null;
+  return { status: evaluations.some(r => r.state === "MARKET_CANDIDATE") ? "candidate" : evaluations.length ? "monitoring" : "idle",
+    ...detail, candidate, notification: { sent: notifications.some(n => n.sent) } };
+}
 const LEGACY_CONFIG = {
   status: "LEGACY_CONFIG_UNVALIDATED",
   accountEquityUsdt: 17_000,
@@ -188,16 +775,16 @@ const LEGACY_CONFIG = {
   consecutiveFullStopLimit: 2,
   riskByGradePct: { "A+": [5, 6], A: [4, 5], B: [2.5, 3.5], C: [0, 0], D: [0, 0] },
   minimumNetRR: {
-    SHORT: { B: 1.5, A: 1.8, "A+": 2.2 },
-    MEDIUM_SHORT: { B: 1.7, A: 2.0, "A+": 2.5 },
-    SWING: { B: 2.0, A: 2.3, "A+": 2.8 },
+    SHORT: { B: 2, A: 2, "A+": 2 },
+    MEDIUM_SHORT: { B: 2, A: 2, "A+": 2 },
+    SWING: { B: 2, A: 2, "A+": 2 },
   },
   policy: "These values remain configurable safety defaults pending separate Model A/B/C backtests; they are not course truths.",
 };
 
 const SUBMODEL_DEFINITIONS = {
-  A1: { parent: "A", name: "DEEP_TREND_PULLBACK", directRegimes: ["TREND"] },
-  A2: { parent: "A", name: "SHALLOW_TREND_CONTINUATION", directRegimes: ["TREND"] },
+  A1: { parent: "A", name: "DEEP_TREND_PULLBACK", directRegimes: ["TREND"], watchRegimes: ["TRANSITION"] },
+  A2: { parent: "A", name: "SHALLOW_TREND_CONTINUATION", directRegimes: ["TREND"], watchRegimes: ["TRANSITION"] },
   B1: { parent: "B", name: "RANGE_BREAKOUT_RETEST", directRegimes: ["TREND"], watchRegimes: ["RANGE", "COMPRESSION", "TRANSITION"] },
   B2: { parent: "B", name: "VOLATILITY_COMPRESSION_BREAKOUT_RETEST", directRegimes: ["TREND"], watchRegimes: ["COMPRESSION", "RANGE", "TRANSITION"] },
   C1: { parent: "C", name: "EXTERNAL_LIQUIDITY_SWEEP_REVERSAL", directRegimes: ["RANGE"], watchRegimes: ["TRANSITION"] },
@@ -860,6 +1447,7 @@ function parseGateLargeTrades(rows, multiplier, minimumUsd) {
     const timestampMs = epochMilliseconds(row?.create_time_ms) ?? epochMilliseconds(row?.create_time);
     return {
       side: size > 0 ? "buy" : size < 0 ? "sell" : null,
+      price,
       notionalUsd: Number.isFinite(size) && Number.isFinite(price) ? Math.abs(size) * multiplier * price : null,
       timestampMs,
     };
@@ -882,6 +1470,9 @@ function parseGateLargeTrades(rows, multiplier, minimumUsd) {
     identityWarning: "Large trades are an estimate; they do not identify institutions or individual traders.",
     thresholdUsd: round(thresholdUsd, 2),
     sampleTradeCount: trades.length,
+    priceResponse: { first: trades[0].price, last: trades.at(-1).price,
+      changePct: (trades.at(-1).price / trades[0].price - 1) * 100,
+      scope: "SAME_EXECUTED_TRADE_SAMPLE_NOT_CAUSAL_PROOF" },
     sampleStartAt: new Date(trades[0].timestampMs).toISOString(),
     sampleEndAt: new Date(trades.at(-1).timestampMs).toISOString(),
     coverageSeconds: round((trades.at(-1).timestampMs - trades[0].timestampMs) / 1000, 3),
@@ -1483,43 +2074,27 @@ function buildLargeParticipantProxy(asset) {
 }
 
 function buildEffortVsResult(asset) {
-  const tf15 = asset?.timeframes?.["15m"];
-  const rows = confirmedRecentCandles(tf15, 12);
-  const flow15 = asset?.capitalFlow?.periods?.["15m"] || {};
-  const netFlow = finite(flow15.activeNetFlowUsdEstimate);
-  const buyUsd = finite(flow15.activeBuyUsdEstimate);
-  const sellUsd = finite(flow15.activeSellUsdEstimate);
-  const atrValue = finite(tf15?.indicators?.atr14);
-  const start = finite(rows[0]?.c);
-  const end = finite(rows.at(-1)?.c);
-  const priceChange = Number.isFinite(start) && Number.isFinite(end) ? end - start : null;
-  const priceResultAtr = Number.isFinite(priceChange) && Number.isFinite(atrValue) && atrValue > 0 ? priceChange / atrValue : null;
-  const totalAggression = Number.isFinite(buyUsd) && Number.isFinite(sellUsd) ? buyUsd + sellUsd : null;
-  const imbalanceShare = Number.isFinite(netFlow) && Number.isFinite(totalAggression) && totalAggression > 0 ? netFlow / totalAggression : null;
-  if (![netFlow, priceResultAtr, imbalanceShare].every(Number.isFinite)) {
-    return { status: "unavailable", classification: "UNKNOWN", reason: "Taker-flow or confirmed price-response data unavailable" };
+  // Compare effort and response over the same executed-trade window. The old
+  // code compared 15m flow with up to 3 hours of price change.
+  const sample = asset?.capitalFlow?.largeTrades;
+  const endAt = Date.parse(sample?.sampleEndAt);
+  const age = Date.now() - endAt;
+  const atrValue = finite(asset?.timeframes?.["15m"]?.indicators?.atr14);
+  const first = finite(sample?.priceResponse?.first), last = finite(sample?.priceResponse?.last);
+  const buy = finite(sample?.allTrades?.activeBuyUsdEstimate), sell = finite(sample?.allTrades?.activeSellUsdEstimate);
+  if (sample?.status !== "ok" || !Number.isFinite(age) || age < 0 || age > 120_000
+    || sample.dataFreshness?.state === "stale-on-error" || !(atrValue > 0) || !(buy + sell > 0)
+    || ![first, last, buy, sell].every(Number.isFinite)) {
+    return { status: "unavailable", classification: "UNKNOWN", reason: "Aligned fresh executed-trade effort and price-response window unavailable" };
   }
-  const strongBuyEffort = imbalanceShare >= 0.12;
-  const strongSellEffort = imbalanceShare <= -0.12;
-  const poorUpResult = priceResultAtr <= 0.2;
-  const poorDownResult = priceResultAtr >= -0.2;
-  const classification = strongSellEffort && poorDownResult
+  const imbalanceShare = (buy - sell) / (buy + sell), priceResultAtr = (last - first) / atrValue;
+  const classification = imbalanceShare <= -0.12 && priceResultAtr >= -0.2
     ? "SELL_ABSORPTION_CANDIDATE"
-    : strongBuyEffort && poorUpResult
-      ? "BUY_ABSORPTION_CANDIDATE"
-      : "EFFORT_AND_RESULT_ALIGNED_OR_INCONCLUSIVE";
-  return {
-    status: "ok",
-    source: "GATE_TAKER_FLOW_PLUS_CONFIRMED_15M_PRICE_RESPONSE",
-    classification,
-    activeNetFlowUsdEstimate: round(netFlow, 2),
-    aggressionImbalancePct: round(imbalanceShare * 100, 4),
-    priceChangeAtr: round(priceResultAtr, 4),
-    windowStartAt: rows[0]?.ts || null,
-    windowEndAt: rows.at(-1)?.ts || null,
-    standaloneSignal: false,
-    limitation: "Candidate confirmation only; it cannot create direction, a setup or an entry without meaningful structure.",
-  };
+    : imbalanceShare >= 0.12 && priceResultAtr <= 0.2 ? "BUY_ABSORPTION_CANDIDATE" : "EFFORT_AND_RESULT_ALIGNED_OR_INCONCLUSIVE";
+  return { status: "ok", source: "GATE_EXECUTED_TRADES_SAME_WINDOW_PRICE_RESPONSE", classification,
+    activeNetFlowUsdEstimate: round(buy-sell,2), aggressionImbalancePct: round(imbalanceShare*100,4),
+    priceChangeAtr: round(priceResultAtr,4), windowStartAt: sample.sampleStartAt, windowEndAt: sample.sampleEndAt,
+    standaloneSignal: false, limitation: "Same sampled window only; absorption is a hypothesis, not causal proof, full-market flow or an entry." };
 }
 
 function buildRangeContext(asset) {
@@ -1646,7 +2221,7 @@ function buildMarketRegimeRouter(asset) {
       ? "TRANSITION"
     : fourHourRange
       ? "RANGE"
-      : (fourHourUp || fourHourDown) && !oneHourOpposes
+      : (fourHourUp || fourHourDown) && (!oneHourOpposes || fourHourTrendDirection(asset) !== null)
         ? "TREND"
         : "TRANSITION";
   const entries = Object.entries(SUBMODEL_DEFINITIONS);
@@ -2897,6 +3472,7 @@ async function buildSnapshot(options = {}) {
     asset.effortVsResult = buildEffortVsResult(asset);
     asset.rangeContext = buildRangeContext(asset);
     asset.marketRegimeRouter = buildMarketRegimeRouter(asset);
+    asset.dynamicContext = dynamicMarketContext(asset);
     asset.dataGaps = {
       spotCvd: asset.spotMarket?.status === "ok"
         ? { status: "proxy_available", reason: "Real OKX spot trades and sample-window taker delta are available, but this is not a persistent historical Spot CVD series." }
@@ -2909,6 +3485,7 @@ async function buildSnapshot(options = {}) {
     };
   }
 
+  assets.ETHUSDT.opportunityEngine = buildOpportunityScan(assets.ETHUSDT, assets.BTCUSDT);
   const modules = [];
   for (const asset of Object.values(assets)) modules.push(asset.ticker, ...Object.values(asset.timeframes), asset.derivatives.openInterest, asset.derivatives.funding);
   const available = modules.filter((module) => module.status === "ok").length;
@@ -3015,7 +3592,9 @@ async function buildSnapshot(options = {}) {
         optionalConfirmationCannotVetoByDefault: true,
         pureEvaluatorRole: "REFERENCE_VALIDATOR_NOT_AUTONOMOUS_CHAT_VERDICT",
         manualReviewSubmodels: ["A1", "A2", "B1", "B2", "C1", "C2"],
-        automaticDiscoverySubmodels: ["B1", "C1", "C2"],
+        automaticDiscoverySubmodels: ["A1", "A2", "B1", "B2", "C1", "C2"],
+        minimumNetRR: MIN_NET_RR,
+        dynamicContextRole: "REASSESSMENT_ONLY_NOT_NEWS_ATTRIBUTION",
         noDiscoveryAlertDoesNotMeanNoManualSetup: true,
       },
       timeframeFramework: {
@@ -3189,18 +3768,29 @@ function scannerConfiguration(env) {
     stateConfigured: Boolean(scannerStateStub(env) || (env?.ALERT_STATE?.get && env?.ALERT_STATE?.put)),
     stateBackend: scannerStateStub(env) ? "DURABLE_OBJECT" : env?.ALERT_STATE?.get ? "KV" : "MISSING",
     cron: "* * * * *",
-    mode: "GPT_PLAN_LINKED_VALIDATION_ONLY",
+    mode: "INDEPENDENT_OBSERVATIONS_AND_PLAN_VALIDATION",
+    registeredObservationSubmodels: ["A1", "A2", "B1", "B2", "C1", "C2"],
+    observationLimit: OBSERVATION_LIMIT,
+    observationPollingSeconds: 60,
+    atomicStateUpdates: Boolean(scannerStateStub(env)),
+    executionAuthority: "NONE_NEWS_ACCOUNT_PSYCHOLOGY_REVIEW_REQUIRED",
     discovery: {
       enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false",
-      intervalMinutes: 5,
-      supportedSubmodels: ["B1", "C1", "C2"],
-      manualReviewOnlySubmodels: ["A1", "A2", "B2"],
+      intervalMinutes: 1,
+      supportedSubmodels: ["A1", "A2", "B1", "B2", "C1", "C2"],
+      manualReviewOnlySubmodels: [],
+      parameterValidation: "NO_EMPIRICAL_HIGH_WIN_RATE_CLAIM",
+      minimumNetRR: MIN_NET_RR,
+      dynamicMarketReassessment: true,
+      automaticHeadlineFeed: false,
       coverageIsPartial: true,
       noAlertMeansNoTrade: false,
       perpetualStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"],
       coherentSourceRequired: true,
       spotStructureAllowed: false,
-      notificationCooldownMinutes: 30,
+      notificationDeduplication: "PER_OBSERVATION_REVISION_AND_STAGE",
+      failedNotificationRetryMinutes: [2, 4, 8, 15],
+      breakoutWindowBars: BREAKOUT_WINDOW_BARS,
       openNowAllowed: false,
       savesTradingPlan: false,
       newsAndAccountReview: "MANUAL_REQUIRED",
@@ -3389,6 +3979,7 @@ function normalizeTradingPlan(input) {
     minimumExecutionPrice: Number.isFinite(finite(input.minimumExecutionPrice)) ? round(finite(input.minimumExecutionPrice), 8) : null,
     minNetRR: requestedMinNetRR,
     configuredMinNetRR,
+    rrPolicyVersion: RR_POLICY_VERSION,
     estimatedRoundTripCostPct,
     confirmation: {
       close15mAbove: Number.isFinite(close15mAbove) ? round(close15mAbove, 8) : null,
@@ -3686,10 +4277,15 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const rangeReversalAtLiveEdge = plan.model === "C" && asset?.marketRegimeRouter?.regime === "RANGE"
     && currentRange?.confirmed === true
     && currentRange.locationZone === (directionLong ? "LOWER_EDGE" : "UPPER_EDGE");
-  const trendPassed = rangeReversalAtLiveEdge || plan.confirmation.allowCountertrend || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
+  const externalBoundaryAcceptance = plan.model === "B" && confirmedExternalBreakoutAcceptance(plan.direction, finite(plan.trigger?.acceptanceLevel), asset);
+  const trendPassed = rangeReversalAtLiveEdge || plan.confirmation.allowCountertrend
+    || (plan.model === "A" && fourHourTrendDirection(asset) === plan.direction)
+    || (externalBoundaryAcceptance && !trendAgainst(plan.direction, tf4h))
+    || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
   const executionReality = planExecutionReality(plan, asset, price);
   const rr = executionReality.baselineNetRR;
-  const rrPassed = Number.isFinite(rr) && rr >= plan.minNetRR;
+  const minimumNetRR = effectivePlanMinNetRR(plan);
+  const rrPassed = Number.isFinite(rr) && rr >= minimumNetRR;
   const flow = capitalFlowEvidence(plan.direction, asset, btc);
   const flowPassed = !plan.confirmation.requireFlowSupport || flow.passed;
   const orderBookPassed = !plan.confirmation.requireOrderBookSupport || (
@@ -3702,14 +4298,14 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const registeredSubmodel = Boolean(SUBMODEL_DEFINITIONS[plan.submodel]?.parent === plan.model);
   const currentRegime = scannerText(asset?.marketRegimeRouter?.regime, "UNKNOWN", 24).toUpperCase();
   const regimePermission = submodelRegimePermission(plan.model, plan.submodel, currentRegime);
-  const regimeDirectPermission = regimePermission === "DIRECT";
+  const regimeDirectPermission = regimePermission === "DIRECT" || (externalBoundaryAcceptance && regimePermission === "WAIT_ONLY");
   const regimeChanged = currentRegime !== plan.marketRegime;
   // B plans are allowed to be armed before regime acceptance. A legitimate
   // watch -> trend transition must not permanently block the original plan.
   const expectedBreakoutPromotion = plan.model === "B"
     && submodelRegimePermission(plan.model, plan.submodel, plan.marketRegime) === "WAIT_ONLY"
     && currentRegime === "TREND" && regimeDirectPermission;
-  const regimeCompatible = !regimeChanged || expectedBreakoutPromotion;
+  const regimeCompatible = !regimeChanged || expectedBreakoutPromotion || externalBoundaryAcceptance;
   const perpetualStructureReady = [tf15, tf1h, tf4h].every(isExecutionStructureTimeframe);
   const locationPassed = plan.location?.quality === "GOOD" && plan.location?.rangePosition !== "MIDDLE"
     && !(currentRange?.confirmed === true && currentRange.locationZone === "MIDDLE")
@@ -3793,12 +4389,14 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     priceExchangeTimestamp,
     entryZone: plan.entryZone,
     netRR: rr,
+    minimumNetRR,
     executionReality,
     confirmed15mAt: confirmed15m.ts,
     confirmed15mClose: candleClose,
     checks,
     failedChecks,
     expectedBreakoutPromotion,
+    externalBoundaryAcceptance,
     flow,
     liquidityRisk,
     hardBlockerScan: { passed: hardBlockers.length === 0, blockers: [...new Set(hardBlockers)], cannotBeOverriddenByScore: true },
@@ -3806,7 +4404,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
       ...(plan.softWarnings || []),
       ...(liquidityRisk.warnings || []),
       ...(!flow.passed && !plan.confirmation.requireFlowSupport ? ["AUXILIARY_FLOW_NOT_SUPPORTIVE_REVIEW_REQUIRED"] : []),
-      ...(Number.isFinite(executionReality.stressedNetRR) && executionReality.stressedNetRR < plan.minNetRR ? ["COST_STRESS_NET_RR_BELOW_THRESHOLD_REQUIRES_REVIEW"] : []),
+      ...(Number.isFinite(executionReality.stressedNetRR) && executionReality.stressedNetRR < minimumNetRR ? ["COST_STRESS_NET_RR_BELOW_THRESHOLD_REQUIRES_REVIEW"] : []),
     ])],
     touch,
     regimePermission,
@@ -3858,8 +4456,12 @@ async function sendBark(env, notification) {
   const deviceKey = String(env?.BARK_DEVICE_KEY || "").trim();
   if (!deviceKey) return { sent: false, reason: "BARK_DEVICE_KEY_NOT_CONFIGURED" };
   const base = String(env?.BARK_SERVER_BASE || "https://api.day.app").replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  try {
   const response = await fetch(`${base}/push`, {
     method: "POST",
+    signal: controller.signal,
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({
       device_key: deviceKey,
@@ -3873,12 +4475,15 @@ async function sendBark(env, notification) {
   });
   if (!response.ok) throw new Error(`Bark HTTP ${response.status}`);
   const result = await response.json().catch(() => ({}));
-  if (Number.isFinite(finite(result?.code)) && finite(result.code) !== 200) throw new Error(`Bark rejected push: ${result?.message || result.code}`);
+  if (finite(result?.code) !== 200) throw new Error(`Bark rejected or unverified push: ${result?.message || result?.code || "MISSING_SUCCESS_CODE"}`);
   return { sent: true, provider: "BARK", status: response.status };
+  } finally { clearTimeout(timeout); }
 }
 
 async function saveTradingPlan(env, input) {
   if (!scannerStateStub(env) && (!env?.ALERT_STATE?.get || !env?.ALERT_STATE?.put)) throw new Error("SCANNER_STATE durable binding is required before a plan can be armed");
+  if (input?.recordType === "OBSERVATION") return saveObservation(env, input);
+  if (input?.recordType && input.recordType !== "PLAN") throw new Error("recordType must be PLAN or OBSERVATION");
   const plan = normalizeTradingPlan(input);
   const previousPlan = await scannerStateGet(env, ACTIVE_PLAN_KEY);
   if (previousPlan?.status === "ARMED" && Date.parse(previousPlan.expiresAt) > Date.now()) {
@@ -3892,7 +4497,7 @@ async function saveTradingPlan(env, input) {
   }
   if (previousPlan?.planId === plan.planId) plan.revision = finite(previousPlan.revision, 0) + 1;
   const ttlSeconds = Math.max(3600, Math.ceil((Date.parse(plan.expiresAt) - Date.now()) / 1000) + 24 * 60 * 60);
-  const storage = await scannerStatePut(env, ACTIVE_PLAN_KEY, plan, ttlSeconds);
+  const storage = scannerStateStub(env) ? "DURABLE_OBJECT" : "KV";
   const runtime = {
     planId: plan.planId,
     state: "ARMED",
@@ -3910,7 +4515,7 @@ async function saveTradingPlan(env, input) {
     zoneAlertSentAt: null,
     evaluation: { state: "ARMED", reason: "GPT plan saved; waiting for scanner" },
   };
-  await scannerStatePut(env, SCANNER_RUNTIME_KEY, runtime, ttlSeconds);
+  if (!(await scannerCompareAndPut(env, { [ACTIVE_PLAN_KEY]: previousPlan }, { [ACTIVE_PLAN_KEY]: plan, [SCANNER_RUNTIME_KEY]: runtime }, ttlSeconds))) throw new Error("PLAN_CHANGED_DURING_SAVE_RETRY");
   let notification;
   try {
     notification = await sendBark(env, {
@@ -3939,7 +4544,7 @@ function scannerShouldNotify(previous, evaluation) {
   return false;
 }
 
-async function runScannerUnlocked(env) {
+async function scanActivePlan(env, cycle = scannerCycle(env)) {
   if (!scannerStateStub(env) && (!env?.ALERT_STATE?.get || !env?.ALERT_STATE?.put)) {
     return { status: "configuration_required", build: BUILD, reason: "SCANNER_STATE_BINDING_MISSING", configuration: scannerConfiguration(env) };
   }
@@ -3948,19 +4553,36 @@ async function runScannerUnlocked(env) {
   const previous = state[SCANNER_RUNTIME_KEY];
   let failureHistory = Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [];
   if (!plan || plan.status !== "ARMED") {
-    return { build: BUILD, configuration: scannerConfiguration(env), ...(await runDiscovery(env)) };
+    // A terminal state releases scanning immediately. Failed terminal notices
+    // can still retry without resurrecting the plan or blocking discovery.
+    if (plan && ["EXPIRED", "INVALIDATED"].includes(plan.status) && previous?.planId === plan.planId
+      && previous.notification?.sent === false && scannerShouldNotify(previous, previous.evaluation)) {
+      let notification;
+      try { notification = await sendBark(env, scannerNotification(plan, previous.evaluation)); }
+      catch (error) { notification = { sent: false, reason: String(error?.message || error) }; }
+      const now = new Date(Date.now()).toISOString();
+      await scannerCompareAndPut(env, { [ACTIVE_PLAN_KEY]: plan, [SCANNER_RUNTIME_KEY]: previous }, {
+        [SCANNER_RUNTIME_KEY]: { ...previous, notification, lastAttemptAt: now, lastAlertAt: notification.sent ? now : previous.lastAlertAt },
+      });
+    }
+    return { status: "idle", reason: "NO_ACTIVE_PLAN", build: BUILD };
   }
+  const expired = Date.now() >= Date.parse(plan.expiresAt);
   let snapshot = { decisionState: "DATA_BLOCKED", assets: {}, lightweightPriceOnly: true };
   let zoneVerification;
   try {
-    zoneVerification = await verifyOkxScannerZone(plan.symbol, plan.entryZone);
+    if (expired) throw new Error("PLAN_EXPIRED_NO_PRICE_REQUIRED");
+    const sampled = await cycle.getPrices(plan.symbol);
+    zoneVerification = { ...sampled, confirmed: sampled.samples?.length === 2 && sampled.samples.every(p => priceInsideEntryZone(p.last, plan.entryZone)), entryZone: plan.entryZone };
     const price = zoneVerification.current.last;
     const terminal = Date.now() >= Date.parse(plan.expiresAt)
       || (plan.direction === "LONG" ? price <= plan.invalidationPrice : price >= plan.invalidationPrice);
     // Outside the exact plan zone no complete market snapshot is needed.
     if (zoneVerification.confirmed && !terminal) {
-      try { snapshot = await buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); }
+      try { snapshot = await cycle.getSnapshot(); }
       catch (error) { snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) }; }
+      const currentSamples = await cycle.getPrices(plan.symbol);
+      zoneVerification = { ...currentSamples, confirmed: currentSamples.samples?.length === 2 && currentSamples.samples.every(p => priceInsideEntryZone(p.last, plan.entryZone)), entryZone: plan.entryZone };
     }
     if (!snapshot.assets) snapshot.assets = {};
     if (!snapshot.assets[plan.symbol]) snapshot.assets[plan.symbol] = {};
@@ -3971,7 +4593,7 @@ async function runScannerUnlocked(env) {
   const directVerified = zoneVerification?.passed === true
     && zoneVerification?.current?.source === "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"
     && zoneVerification?.current?.verification?.passed === true;
-  const evaluation = directVerified
+  const evaluation = expired || directVerified
     ? evaluateTradingPlan(plan, snapshot, previous, zoneVerification, failureHistory)
     : {
       state: "DATA_BLOCKED",
@@ -4012,7 +4634,7 @@ async function runScannerUnlocked(env) {
     await scannerStatePut(env, SCANNER_FAILURE_HISTORY_KEY, failureHistory, FAILURE_HISTORY_DAYS * 24 * 60 * 60);
   }
   const shouldNotify = scannerShouldNotify(previous, evaluation);
-  let notification = { sent: false, reason: "NO_STATE_TRANSITION" };
+  let notification = previous?.notification || { sent: false, reason: "NO_STATE_TRANSITION" };
   if (shouldNotify) {
     if (!(await scannerPlanIsCurrent(env, plan))) return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_BEFORE_NOTIFICATION", notification: { sent: false, reason: "STALE_PLAN" } };
     try { notification = await sendBark(env, scannerNotification(plan, evaluation)); }
@@ -4045,7 +4667,10 @@ async function runScannerUnlocked(env) {
   };
   const ttlSeconds = Math.max(3600, Math.ceil((Date.parse(plan.expiresAt) - Date.now()) / 1000) + 24 * 60 * 60);
   if (!(await scannerPlanIsCurrent(env, plan))) return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_BEFORE_RUNTIME_WRITE", notification };
-  await scannerStatePut(env, SCANNER_RUNTIME_KEY, nextRuntime, ttlSeconds);
+  const terminal = ["EXPIRED", "INVALIDATED"].includes(evaluation.state);
+  const values = { [SCANNER_RUNTIME_KEY]: nextRuntime };
+  if (terminal) values[ACTIVE_PLAN_KEY] = { ...plan, status: evaluation.state, retiredAt: nowIso, retirementReason: evaluation.reason };
+  if (!(await scannerCompareAndPut(env, { [ACTIVE_PLAN_KEY]: plan }, values, ttlSeconds))) return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_AT_COMMIT", notification };
   return {
     status: "ok",
     build: BUILD,
@@ -4056,25 +4681,59 @@ async function runScannerUnlocked(env) {
   };
 }
 
+async function runScannerUnlocked(env) {
+  const cycle = scannerCycle(env);
+  let plan, observations;
+  try { plan = await scanActivePlan(env, cycle); }
+  catch (error) { plan = { status: "error", reason: String(error?.message || error) }; }
+  // A live plan and an expired plan both leave independent observations running.
+  try { observations = await runDiscovery(env, cycle); }
+  catch (error) { observations = { status: "error", reason: String(error?.message || error) }; }
+  return { ...plan, build: BUILD, observations, configuration: scannerConfiguration(env) };
+}
+
 async function runScanner(env) {
   const configuration = scannerConfiguration(env);
   if (!configuration.barkConfigured || !configuration.scannerTokenConfigured || !configuration.stateConfigured) {
-    return { status: "configuration_error", build: BUILD, configuration };
+    const result = { status: "configuration_error", build: BUILD, configuration };
+    if (configuration.stateConfigured) await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...result, lastAttemptAt: new Date(Date.now()).toISOString() });
+    return result;
   }
   const token = crypto.randomUUID();
   if (!(await scannerAcquireLease(env, token))) return { status: "busy", build: BUILD, reason: "SCANNER_RUN_ALREADY_IN_PROGRESS" };
   try {
-    return await runScannerUnlocked(env);
+    const old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
+    const startedAt = new Date(Date.now()).toISOString();
+    await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, status: "running", lastAttemptAt: startedAt });
+    const result = await runScannerUnlocked(env);
+    const completedAt = new Date(Date.now()).toISOString();
+    const degraded = result.status === "error" || result.observations?.status === "error"
+      || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
+    await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { status: degraded ? "degraded" : "completed", lastAttemptAt: startedAt,
+      lastCompletedAt: completedAt, lastSuccessfulCycleAt: degraded ? old.lastSuccessfulCycleAt || null : completedAt,
+      nextScheduledCheckAt: new Date(Date.now() + 60_000).toISOString(),
+      planState: result.evaluation?.state || result.reason || result.status,
+      observationReason: result.observations?.reason || null, observationError: result.observations?.discoveryError || result.observations?.priceError || null,
+      lastError: result.status === "error" ? result.reason : result.observations?.status === "error" ? result.observations.reason : null });
+    return result;
   } finally {
     await scannerReleaseLease(env, token).catch(() => {});
   }
 }
 
 async function scannerStatus(env) {
-  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY, SCANNER_FAILURE_HISTORY_KEY]);
+  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY, SCANNER_FAILURE_HISTORY_KEY, OBSERVATIONS_KEY, DISCOVERY_STATE_KEY, SCANNER_HEARTBEAT_KEY]);
   const plan = state[ACTIVE_PLAN_KEY];
   const runtime = state[SCANNER_RUNTIME_KEY];
-  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), activePlan: plan || null, runtime: runtime || null, failureHistory: Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [] };
+  const records = state[OBSERVATIONS_KEY]?.records || [], heartbeat = state[SCANNER_HEARTBEAT_KEY] || null;
+  const age = heartbeat?.lastCompletedAt ? (Date.now() - Date.parse(heartbeat.lastCompletedAt)) / 1000 : null;
+  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), activePlan: plan || null, runtime: runtime || null,
+    observations: records.filter(r => !OBSERVATION_TERMINAL.includes(r.state)), observationHistory: records.filter(r => OBSERVATION_TERMINAL.includes(r.state)).slice(-12),
+    discovery: state[DISCOVERY_STATE_KEY] || null, heartbeat,
+    diagnostics: { completedCycleAgeSeconds: age, heartbeatHealthy: age !== null && age >= 0 && age <= 180 && heartbeat.status === "completed",
+      pendingObservationPushes: records.reduce((n, r) => n + Object.values(r.alerts || {}).filter(a => a.status === "PENDING").length, 0),
+      configuredIsNotOperationalProof: true, pushAcceptedIsNotDeviceDeliveryProof: true, missedBetweenSamplesPossible: true },
+    failureHistory: Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [] };
 }
 
 function openApi(origin) {
@@ -4104,6 +4763,8 @@ function openApi(origin) {
         properties: { openInterest: moduleSchema, funding: moduleSchema },
       },
       capitalFlow: moduleSchema,
+      dynamicContext: moduleSchema,
+      opportunityEngine: moduleSchema,
       executionLiquidity: moduleSchema,
       liquidationRiskProxy: moduleSchema,
       estimatedLiquidationPressureZones: moduleSchema,
@@ -4119,13 +4780,14 @@ function openApi(origin) {
     type: "object",
     required: ["symbol", "direction", "model", "submodel", "marketRegime", "opportunityGrade", "modelInvalidation", "location", "trigger", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "firstRealisticTarget", "minNetRR", "hardBlockers", "risk", "strategySummary", "triggerExplanation", "sourceAnalysisAt", "expiresAt"],
     properties: {
+      recordType: { type: "string", enum: ["PLAN"], default: "PLAN" },
       planId: { type: "string", description: "Stable identifier for this exact final GPT plan; omit to auto-generate." },
       symbol: { type: "string", enum: ["ETHUSDT", "BTCUSDT"] },
       direction: { type: "string", enum: ["LONG", "SHORT"] },
       model: { type: "string", enum: ["A", "B", "C"], description: "The only allowed course setup models. No model means no plan." },
       submodel: { type: "string", enum: ["A1", "A2", "B1", "B2", "C1", "C2"], description: "Required child of A/B/C; it cannot create a fourth parent model." },
       marketRegime: { type: "string", enum: ["TREND", "RANGE", "COMPRESSION", "TRANSITION"], description: "Technical regime selected before setup evaluation. Event and abnormal-liquidity risk remain independent hard blockers." },
-      opportunityGrade: { type: "string", enum: ["A+", "A", "B"], description: "C/D opportunities cannot be armed. Grade selects the configured risk and minimum-net-RR ceiling." },
+      opportunityGrade: { type: "string", enum: ["A+", "A", "B"], description: "C/D opportunities cannot be armed. Grade selects the configured risk cap; every grade has the same minimum net RR of 2." },
       modelConfluence: { type: "array", items: { type: "string" }, description: "Optional supporting overlap; priority remains A then B then C." },
       modelInvalidation: { type: "string", description: "Causal model invalidation, not merely a price number." },
       location: {
@@ -4191,7 +4853,7 @@ function openApi(origin) {
         properties: { price: { type: "number" }, basis: { type: "string" } },
         description: "Must equal TP1 and be based on the nearest realistic structural/liquidity obstacle.",
       },
-      minNetRR: { type: "number", description: "Explicit configurable net RR threshold. Legacy defaults are unvalidated CONFIG, not course truths." },
+      minNetRR: { type: "number", minimum: 2, description: "Explicit configurable net RR threshold. Minimum 2 after estimated costs; higher explicit limits are allowed. This is a user policy, not a win-rate claim." },
       estimatedRoundTripCostPct: { type: "number", description: "Round-trip fees, slippage and funding as percent of notional; default 0.15." },
       confirmation: {
         type: "object",
@@ -4332,15 +4994,27 @@ function openApi(origin) {
       "/scanner/plan": {
         post: {
           operationId: "saveTradingPlan",
-          summary: "Save the exact final GPT trading plan for automatic monitoring",
-          description: "Save one exact A/B/C plan only after location, invalidation, meaningful trigger, first realistic target, RR and hard-blocker checks are defined.",
+          summary: "Save a non-executable observation or a fully validated trading plan",
+          description: "Use recordType OBSERVATION for a meaningful watch zone even when protective structure, entry, stop, RR or account review is pending. It never replaces an active PLAN. PLAN (default) still requires every original plan/risk field. Exact repeated observations retain expiry and progress.",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
-            content: { "application/json": { schema: planSchema } },
+            content: { "application/json": { schema: {
+              type: "object",
+              required: ["symbol", "direction", "model", "submodel", "marketRegime", "strategySummary", "sourceAnalysisAt"],
+              properties: { ...planSchema.properties,
+                recordType: { type: "string", enum: ["PLAN", "OBSERVATION"], default: "PLAN", description: "PLAN requires all execution/risk fields. OBSERVATION requires observationZone, observationInvalidation and pendingCondition instead." },
+                observationId: { type: "string", description: "Reuse the returned ID only when explicitly revising that observation; identical repeats preserve expiry." },
+                observationZone: { type: "object", required: ["min", "max"], properties: { min: { type: "number", exclusiveMinimum: 0 }, max: { type: "number", exclusiveMinimum: 0 } } },
+                observationInvalidation: { type: "object", required: ["level", "mode"], properties: { level: { type: "number", exclusiveMinimum: 0 }, mode: { type: "string", enum: ["PRICE", "CLOSE_15M"] } }, description: "Risk-side boundary outside the observation zone. PRICE needs two current samples; CLOSE_15M needs a fresh completed candle." },
+                observationTrigger: { type: "object", required: ["type", "level", "meaningful"], properties: { type: { type: "string", enum: ["CLOSE_ABOVE", "CLOSE_BELOW"] }, level: { type: "number", exclusiveMinimum: 0 }, meaningful: { type: "boolean", enum: [true] } }, description: "Optional fixed key-structure close condition, not full execution permission." },
+                pendingCondition: { type: "string", description: "Required for OBSERVATION: exactly which model steps still need review. No vague wait-for-confirmation." },
+                expiresAt: { type: "string", format: "date-time", description: "OBSERVATION: within 24 hours, default 4h. PLAN: required, within seven days." },
+              },
+            } } },
           },
           responses: {
-            200: { description: "Plan saved and armed", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, plan: planSchema, notification: moduleSchema } } } } },
+            200: { description: "Observation or plan saved; check status, record type and actual returned record", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, plan: planSchema, observation: moduleSchema, openNowAllowed: { type: "boolean" }, notification: moduleSchema } } } } },
             400: { description: "Invalid plan" },
             401: { description: "Missing or invalid scanner bearer token" },
           },
@@ -4351,10 +5025,15 @@ function openApi(origin) {
         get: {
           operationId: "getTradingPlanScannerStatus",
           summary: "Check the active GPT plan and automatic scanner state",
-          description: "Returns the currently saved GPT plan, last minute-scan evaluation and alert configuration. Use when the user asks whether monitoring or reminders are active.",
+          description: "Returns plan, independently tracked observations, actual scanner heartbeat, discovery diagnostics and pending/failed notifications. Configured flags do not prove cron is running or phone delivery. Use after saving and when checking reminders.",
           security: [{ bearerAuth: [] }],
           responses: {
-            200: { description: "Scanner status", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, activePlan: { type: ["object", "null"], properties: planSchema.properties }, runtime: { type: ["object", "null"], additionalProperties: true } } } } } },
+            200: { description: "Scanner status", content: { "application/json": { schema: { type: "object", properties: {
+              status: { type: "string" }, activePlan: { type: ["object", "null"], properties: planSchema.properties },
+              runtime: { type: ["object", "null"], additionalProperties: true },
+              observations: { type: "array", items: moduleSchema }, observationHistory: { type: "array", items: moduleSchema },
+              heartbeat: { type: ["object", "null"], additionalProperties: true }, discovery: { type: ["object", "null"], additionalProperties: true }, diagnostics: moduleSchema,
+            } } } } },
             401: { description: "Missing or invalid scanner bearer token" },
           },
         },
@@ -4362,8 +5041,12 @@ function openApi(origin) {
       "/scanner/cancel": {
         post: {
           operationId: "cancelTradingPlanMonitoring",
-          summary: "Cancel the previous GPT plan when the newest analysis has no valid setup",
-          description: "MANDATORY before replying when a fresh market analysis concludes DATA_BLOCKED, no formal plan, no-trade, or that the previous setup is invalid. This prevents an older GPT plan from continuing to alert after the reasoning changed.",
+          summary: "Cancel an invalid plan or a specific observation",
+          description: "Cancel on structural/model invalidation, expiry, explicit replacement or user cancellation. Account review pending, price outside entry, a temporary data gap or a No Trade answer alone must not cancel a still-valid observation. Default scope PLAN preserves independent observations; ALL cancels existing records but does not disable future autonomous discovery.",
+          requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: {
+            scope: { type: "string", enum: ["PLAN", "OBSERVATION", "ALL"], default: "PLAN" },
+            observationId: { type: "string", description: "Required when scope is OBSERVATION" },
+          } } } } },
           security: [{ bearerAuth: [] }],
           responses: {
             200: { description: "Previous plan cancelled or no active plan", content: { "application/json": { schema: { type: "object", properties: { status: { type: "string" }, planId: { type: "string" }, notification: moduleSchema } } } } },
@@ -4423,22 +5106,42 @@ async function readJsonRequest(request) {
   try { return JSON.parse(text); } catch { throw new Error("Request body must be valid JSON"); }
 }
 
-async function cancelTradingPlan(env) {
+async function cancelTradingPlan(env, input = {}) {
+  const scope = input.scope || "PLAN";
+  let observationCancellation = null;
+  if (!["PLAN", "OBSERVATION", "ALL"].includes(scope)) throw new Error("scope must be PLAN, OBSERVATION or ALL");
+  if (scope === "OBSERVATION" || scope === "ALL") {
+    if (scope === "OBSERVATION" && !input.observationId) throw new Error("observationId is required for targeted cancellation");
+    const result = await mutateObservationBook(env, book => {
+      let count = 0;
+      book.records = book.records.map(r => {
+        if ((scope === "ALL" || r.observationId === input.observationId) && !OBSERVATION_TERMINAL.includes(r.state)) {
+          count++;
+          return { ...r, state: "CANCELLED", revision: r.revision + 1, cancelledAt: new Date(Date.now()).toISOString(), alerts: {} };
+        }
+        return r;
+      });
+      return { status: "cancelled", scope, count, openNowAllowed: false };
+    });
+    if (scope === "OBSERVATION") return result;
+    observationCancellation = result;
+  }
   const plan = await scannerStateGet(env, ACTIVE_PLAN_KEY);
-  if (!plan) return { status: "idle", reason: "NO_ACTIVE_PLAN" };
+  if (!plan) return observationCancellation || { status: "idle", reason: "NO_ACTIVE_PLAN" };
+  if (plan.status !== "ARMED") return { status: observationCancellation?.count ? "cancelled" : "unchanged", planId: plan.planId, observationCancellation, reason: "PLAN_ALREADY_INACTIVE", notification: { sent: false, reason: "DUPLICATE_CANCEL_SUPPRESSED" } };
   const cancelled = { ...plan, status: "CANCELLED", cancelledAt: new Date().toISOString() };
-  await scannerStatePut(env, ACTIVE_PLAN_KEY, cancelled, 24 * 60 * 60);
-  await scannerStatePut(env, SCANNER_RUNTIME_KEY, {
+  const runtime = {
     planId: plan.planId,
     state: "CANCELLED",
     checkedAt: cancelled.cancelledAt,
     lastPersistedAt: cancelled.cancelledAt,
     evaluation: { state: "CANCELLED", reason: "Plan cancelled by authenticated request" },
-  }, 24 * 60 * 60);
+  };
+  if (!(await scannerCompareAndPut(env, { [ACTIVE_PLAN_KEY]: plan }, { [ACTIVE_PLAN_KEY]: cancelled, [SCANNER_RUNTIME_KEY]: runtime }, 86400))) throw new Error("PLAN_CHANGED_DURING_CANCEL_RETRY");
   let notification;
   try { notification = await sendBark(env, { title: `🛑 ${plan.symbol} 监控方案已取消`, body: `方案 ${plan.planId} 已停止扫描。`, level: "active" }); }
   catch (error) { notification = { sent: false, reason: error?.message || String(error) }; }
-  return { status: "cancelled", planId: plan.planId, notification };
+  return { status: "cancelled", planId: plan.planId, observationCancellation, notification };
 }
 
 export class ScannerState {
@@ -4471,6 +5174,20 @@ export class ScannerState {
       }
       return Response.json({ status: "ok", stored });
     }
+    if (input?.op === "compareAndPut" && input.expected && input.values) {
+      const applied = await this.ctx.storage.transaction(async txn => {
+        for (const [key, expected] of Object.entries(input.expected).slice(0, 20)) {
+          const record = await txn.get(key);
+          const current = record && record.expiresAt > Date.now() ? record.value : null;
+          if (JSON.stringify(current) !== JSON.stringify(expected)) return false;
+        }
+        for (const [key, item] of Object.entries(input.values).slice(0, 20)) {
+          await txn.put(key, { value: item.value, expiresAt: Date.now() + Math.max(60, finite(item.ttlSeconds, 7 * 86400)) * 1000 });
+        }
+        return true;
+      });
+      return Response.json({ status: "ok", applied });
+    }
     if (input?.op === "acquireLease") {
       const key = String(input.key || SCANNER_LEASE_KEY);
       const now = Date.now();
@@ -4499,7 +5216,10 @@ export function evaluateCourseDecision(input = {}) {
   const model = ["A", "B", "C"].includes(input.model) ? input.model : null;
   const submodel = scannerText(input.submodel, "", 8).toUpperCase();
   const marketRegime = scannerText(input.marketRegime, "", 24).toUpperCase();
-  const regimePermission = submodelRegimePermission(model, submodel, marketRegime);
+  const baseRegimePermission = submodelRegimePermission(model, submodel, marketRegime);
+  const externalAcceptance = model === "B" && input.setup?.retest === true && input.setup?.acceptance === true
+    && confirmedExternalBreakoutAcceptance(input.direction, finite(input.setup?.acceptanceLevel), input.marketAsset);
+  const regimePermission = baseRegimePermission === "WAIT_ONLY" && externalAcceptance ? "DIRECT" : baseRegimePermission;
   const direction = ["LONG", "SHORT"].includes(input.direction) ? input.direction : null;
   if (!model) hardBlockers.push("NO_MODEL");
   if (!SUBMODEL_DEFINITIONS[submodel] || SUBMODEL_DEFINITIONS[submodel].parent !== model) hardBlockers.push("INVALID_SUBMODEL");
@@ -4507,7 +5227,7 @@ export function evaluateCourseDecision(input = {}) {
   if (!direction) hardBlockers.push("NO_DIRECTION_CANDIDATE");
   if (input.locationQuality !== "GOOD" || input.rangePosition === "MIDDLE") hardBlockers.push("BAD_OR_MIDDLE_LOCATION");
   if (input.execution?.clearInvalidation !== true) hardBlockers.push("NO_CLEAR_MODEL_OR_STRUCTURE_INVALIDATION");
-  if (!(finite(input.execution?.netRR) > 0) || !(finite(input.execution?.minNetRR) > 0) || finite(input.execution.netRR) < finite(input.execution.minNetRR)) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
+  if (!(finite(input.execution?.netRR) > 0) || !(finite(input.execution?.minNetRR) > 0) || finite(input.execution.netRR) < Math.max(MIN_NET_RR, finite(input.execution.minNetRR))) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
   if (input.environment?.btcSystemicConflict === true) hardBlockers.push("SEVERE_BTC_SYSTEMIC_CONFLICT");
   if (input.environment?.majorNewsExecutionRisk === true) hardBlockers.push("MAJOR_EVENT_EXECUTION_RISK");
   if (input.environment?.liquidityAbnormal === true || input.execution?.slippageAbnormal === true) hardBlockers.push("ABNORMAL_LIQUIDITY_OR_EXECUTION");
@@ -4590,7 +5310,13 @@ export default {
           return json({ status: "ok", notification });
         } catch (error) { return json({ error: "BARK_TEST_FAILED", message: error?.message || String(error) }, 503); }
       }
-      if (request.method === "POST" && path === "/scanner/cancel") return json(await cancelTradingPlan(env));
+      if (request.method === "POST" && path === "/scanner/cancel") {
+        try {
+          const raw = await request.text();
+          if (raw.length > 64_000) throw new Error("Request body exceeds 64KB");
+          return json(await cancelTradingPlan(env, raw ? JSON.parse(raw) : {}));
+        } catch (error) { return json({ error: "INVALID_CANCEL", message: String(error?.message || error) }, 400); }
+      }
       return json({ error: "METHOD_NOT_ALLOWED_OR_UNKNOWN_SCANNER_ROUTE" }, 405, { allow: "GET,POST,OPTIONS" });
     }
     if (!["GET", "POST"].includes(request.method)) return json({ error: "METHOD_NOT_ALLOWED" }, 405, { allow: "GET,POST,OPTIONS" });
@@ -4599,10 +5325,13 @@ export default {
 
   async scheduled(_controller, env, ctx) {
     // Advisory isolate-local priority; this does not claim a global quota lock.
-    if (manualSnapshotWork || Date.now() - lastManualRequestAt < 10_000) return;
     const task = (async () => {
       const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY).catch(() => null);
-      if (priority?.until > Date.now()) return;
+      if (manualSnapshotWork || Date.now() - lastManualRequestAt < 10_000 || priority?.until > Date.now()) {
+        const old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
+        await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, status: "deferred", lastAttemptAt: new Date(Date.now()).toISOString(), reason: "MANUAL_REQUEST_PRIORITY" });
+        return;
+      }
       // Keep the shared structure baseline warm independently of whether a
       // user plan is armed. Due series alone are refreshed; most cron ticks
       // perform zero candle downloads for 1H/4H.
