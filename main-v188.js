@@ -1,12 +1,12 @@
-const BUILD = "crypto-alpha-worker-v24.0.0-six-model-dynamic";
-const API_VERSION = "7.3.0";
+const BUILD = "crypto-alpha-worker-v25.0.0-monitor-quote-repair";
+const API_VERSION = "7.4.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v24.0.0-six-model-dynamic";
+const CACHE_NAMESPACE = "v25.0.0-monitor-quote-repair";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -49,6 +49,168 @@ const DYNAMIC_MODEL_CONFIG = Object.freeze({
   observationBars: 8, shockRangeAtr: 2.5, shockVolumeRatio: 2,
   largeTradeDirectionalShare: 0.7, minimumLargeTradeCount: 3,
 });
+
+// Shared public-market coordinator. No exchange keys, orders or account access.
+const PUBLIC_MARKET_STATE_KEY = "market:public-okx:v25";
+function usableTimestamp(timestamp, maximumSeconds = 35) {
+  const ts = Number(timestamp), age = (Date.now() - ts) / 1000;
+  return Number.isFinite(ts) && ts > 0 && age >= -2 && age <= maximumSeconds;
+}
+function genuineExecutionQuote(ticker, maximumSeconds = 35) {
+  if (ticker?.status !== "ok" || !["OKX_USDT_PERPETUAL", "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"].includes(ticker.source)
+    || ticker.priceType === "MARK_PRICE_ONLY") return false;
+  const {last,bid,ask}=ticker;
+  return [last,bid,ask].every(p=>Number.isFinite(p)&&p>0) && bid<=ask
+    && usableTimestamp(Date.parse(ticker.exchangeTimestamp),maximumSeconds)
+    && (!ticker.lastTradeTimestamp || usableTimestamp(Date.parse(ticker.lastTradeTimestamp),maximumSeconds))
+    && (!ticker.bookTimestamp || usableTimestamp(Date.parse(ticker.bookTimestamp),maximumSeconds));
+}
+function publicMarketDefinitions() {
+  return [
+    {path:"/api/v5/market/tickers?instType=SWAP",policy:CACHE_POLICY.ticker},
+    {path:"/api/v5/public/mark-price?instType=SWAP",policy:CACHE_POLICY.markPrice},
+    {path:"/api/v5/market/index-tickers?quoteCcy=USDT",policy:{freshSeconds:8,staleSeconds:30}},
+    {path:"/api/v5/market/tickers?instType=SPOT",policy:CACHE_POLICY.okxSpotTicker},
+    {path:"/api/v5/public/open-interest?instType=SWAP",policy:CACHE_POLICY.openInterest},
+    ...Object.values(ASSETS).flatMap(a=>[
+      {path:`/api/v5/public/funding-rate?instId=${a.instrumentId}`,policy:CACHE_POLICY.funding},
+      {path:`/api/v5/rubik/stat/contracts/open-interest-history?instId=${a.instrumentId}&period=5m&limit=20`,policy:CACHE_POLICY.openInterestHistory},
+      {path:`/api/v5/market/trades?instId=${encodeURIComponent(a.spotInstrumentId)}&limit=100`,policy:CACHE_POLICY.okxSpotTrades},
+      {path:`/api/v5/market/books?instId=${encodeURIComponent(a.spotInstrumentId)}&sz=20`,policy:CACHE_POLICY.okxSpotBook},
+    ]),
+  ];
+}
+async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
+  owner.publicReady ||= (async()=>{
+    const saved = await owner.ctx.storage.get(PUBLIC_MARKET_STATE_KEY);
+    owner.publicRecords = {entries:saved?.entries&&typeof saved.entries==="object"?saved.entries:{},cooldowns:saved?.cooldowns&&typeof saved.cooldowns==="object"?saved.cooldowns:{}};
+    owner.publicInflight = new Map();
+  })();
+  try {await owner.publicReady;} catch(error) {owner.publicReady=null;throw error;}
+  if(owner.publicInflight.has(path))return owner.publicInflight.get(path);
+  const work=(async()=>{
+    const state=owner.publicRecords, old=state.entries[path], family=cooldownKey(OKX_BASE+path);
+    const age=old?(Date.now()-old.storedAt)/1000:Infinity;
+    if(old && !force && age>=0 && age<=policy.freshSeconds)return {...old,state:"shared-fresh-cache"};
+    try {
+      if(state.cooldowns[family]>Date.now())throw cooldownError(state.cooldowns[family]);
+      const rows=await fetchJson(OKX_BASE+path,"OKX coordinated public market",1,true,body=>{
+        if(body?.code!=="0"||!Array.isArray(body.data)){
+          const e=new Error(`OKX public ${body?.code||"INVALID"}`);if(String(body?.code)==="50011")e.status=429;throw e;
+        }
+        return body.data;
+      },2500);
+      const keep=Object.values(ASSETS).flatMap(a=>[a.instrumentId,a.spotInstrumentId]);
+      const filtered=rows.filter(r=>!r.instId||keep.includes(r.instId));
+      const item={rows:filtered,storedAt:Date.now(),state:"live",endpoint:path,error:null};
+      state.entries[path]=item;return item;
+    } catch(e) {
+      if(e?.status===429)state.cooldowns[family]=Date.now()+Math.max(30,finite(e.retryAfterSeconds,30))*1000;
+      const message=String(e?.message||e);
+      if(old && age>=0 && age<=policy.staleSeconds)return {...old,state:"stale-on-error",error:message};
+      return {rows:null,storedAt:null,state:"unavailable",endpoint:path,error:message};
+    }
+  })();
+  owner.publicInflight.set(path,work);
+  try{return await work;}finally{owner.publicInflight.delete(path);}
+}
+function restorePublicRows(item) {
+  if(!Array.isArray(item?.rows))throw new Error(item?.error||"Public market module unavailable");
+  const rows=structuredClone(item.rows);
+  attachCacheMeta(rows,{state:item.state,storedAt:new Date(item.storedAt).toISOString(),ageSeconds:(Date.now()-item.storedAt)/1000});
+  if(item.error)Object.defineProperty(rows,"__refreshError",{value:item.error,configurable:true});
+  return rows;
+}
+function tickerRowValid(row,age=35) {
+  return row && [row.last,row.bidPx,row.askPx].every(v=>Number.isFinite(finite(v))&&finite(v)>0)
+    && finite(row.bidPx)<=finite(row.askPx) && usableTimestamp(row.ts,age);
+}
+async function recoverOkxTicker(owner,instId,initial,force=false) {
+  if(!force&&tickerRowValid(initial))return {...initial,_endpoint:"/api/v5/market/tickers"};
+  const policy={freshSeconds:2,staleSeconds:15};
+  let data=await coordinatedPublicEndpoint(owner,`/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`,policy,force);
+  let row=data.rows?.find(r=>r.instId===instId);
+  if(tickerRowValid(row,force?20:35)&&(!force||data.state==="live"))return {...row,_endpoint:data.endpoint,_sampleState:data.state};
+  const attempts=[data.error||"Single ticker invalid"];
+  const [trades,initialBook]=await Promise.all([
+    coordinatedPublicEndpoint(owner,`/api/v5/market/trades?instId=${encodeURIComponent(instId)}&limit=1`,policy,force),
+    coordinatedPublicEndpoint(owner,`/api/v5/market/books?instId=${encodeURIComponent(instId)}&sz=5`,policy,force),
+  ]);
+  let book=initialBook;
+  if(!book.rows?.[0]||!usableTimestamp(book.rows[0].ts,force?20:35)||!(finite(book.rows[0].bids?.[0]?.[0])>0)||!(finite(book.rows[0].asks?.[0]?.[0])>0)||finite(book.rows[0].bids?.[0]?.[0])>finite(book.rows[0].asks?.[0]?.[0]))
+    book=await coordinatedPublicEndpoint(owner,`/api/v5/market/books-full?instId=${encodeURIComponent(instId)}&sz=5`,policy,force);
+  const trade=trades.rows?.filter(r=>r.instId===instId).sort((a,b)=>Number(b.ts)-Number(a.ts))[0], b=book.rows?.[0];
+  if(trade&&b&&usableTimestamp(trade.ts,force?20:35)&&usableTimestamp(b.ts,force?20:35)
+    &&(!force||(trades.state==="live"&&book.state==="live"))) {
+    row={instId,last:trade.px,bidPx:b.bids?.[0]?.[0],askPx:b.asks?.[0]?.[0],ts:String(Math.min(Number(trade.ts),Number(b.ts))),
+      _lastTradeTs:trade.ts,_bookTs:b.ts,_endpoint:"OKX_SWAP_TRADES_PLUS_BOOK",_sampleState:"live",_fallbackErrors:attempts};
+    if(tickerRowValid(row,force?20:35))return row;
+  }
+  // Retain a genuine fresh quote for analysis, never pretend it is a new double sample.
+  if(!force&&tickerRowValid(initial))return initial;
+  return null;
+}
+async function coordinatedMarketBundle(owner) {
+  if(owner.marketBundleWork)return owner.marketBundleWork;
+  const work=(async()=>{
+    const defs=publicMarketDefinitions();
+    const values=await Promise.all(defs.map(d=>coordinatedPublicEndpoint(owner,d.path,d.policy)));
+    const modules=Object.fromEntries(defs.map((d,i)=>[d.path,values[i]]));
+    const key=defs[0].path, original=modules[key], recovered=[];
+    for(const a of Object.values(ASSETS)){
+      const row=await recoverOkxTicker(owner,a.instrumentId,original.rows?.find(r=>r.instId===a.instrumentId));
+      if(row)recovered.push(row);
+    }
+    modules[key]={...original,rows:recovered,storedAt:Date.now(),state:original.state==="live"?"live":"shared-or-fallback",error:original.error};
+    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,owner.publicRecords);
+    return {modules,coordinator:"DURABLE_OBJECT_PUBLIC_MARKET",fetchedAt:new Date().toISOString()};
+  })();
+  owner.marketBundleWork=work;
+  try{return await work;}finally{owner.marketBundleWork=null;}
+}
+async function coordinatedDirectQuote(owner,symbol) {
+  const a=ASSETS[symbol];if(!a)throw new Error("Unsupported quote symbol");
+  const row=await recoverOkxTicker(owner,a.instrumentId,null,true);
+  const mark=await coordinatedPublicEndpoint(owner,"/api/v5/public/mark-price?instType=SWAP",CACHE_POLICY.markPrice);
+  await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,owner.publicRecords);
+  if(!row)throw new Error("OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE");
+  return {ticker:row,marks:mark.rows||[]};
+}
+function snapshotReadiness(assets) {
+  const required=Object.keys(ASSETS).map(k=>assets[k]);
+  const executionPriceReady=genuineExecutionQuote(assets.ETHUSDT?.ticker);
+  const semanticQualityReady=required.every(a=>["15m","1h","4h"].every(tf=>a?.timeframes?.[tf]?.status==="ok"&&a.timeframes[tf].quality?.passed===true));
+  const perpetualStructureReady=required.every(a=>["15m","1h","4h"].every(tf=>isExecutionStructureTimeframe(a?.timeframes?.[tf])));
+  const derivativesReady=required.every(a=>a?.derivatives?.openInterest?.status==="ok"&&a?.derivatives?.funding?.status==="ok");
+  return {executionPriceReady,semanticQualityReady,perpetualStructureReady,derivativesReady,
+    observationDataReady:semanticQualityReady&&perpetualStructureReady,
+    criticalReady:executionPriceReady&&semanticQualityReady&&perpetualStructureReady&&derivativesReady};
+}
+function scannerStatusRecord(r) {
+  return {observationId:r.observationId,revision:r.revision,state:r.state,origin:r.origin,symbol:r.symbol,direction:r.direction,
+    model:r.model,submodel:r.submodel,observationZone:r.observationZone,observationInvalidation:r.observationInvalidation,
+    observationTrigger:r.observationTrigger,pendingCondition:r.pendingCondition,sourceAnalysisAt:r.sourceAnalysisAt,expiresAt:r.expiresAt,
+    checkedAt:r.checkedAt,reason:r.reason,price:r.price,alerts:r.alerts||{},lastCandidateAt:r.lastCandidateAt};
+}
+
+const RETIRED_ACCOUNT_BLOCKERS = new Set(["ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED","DAILY_RISK_LIMIT_REACHED","PSYCHOLOGICAL_VETO","CURRENT_ACCOUNT_AND_PSYCHOLOGY"]);
+function marketOnlyBlockers(values) { return (Array.isArray(values)?values:[]).filter(x=>!RETIRED_ACCOUNT_BLOCKERS.has(x)); }
+function compactStatusValue(value, depth=0) {
+  if(typeof value==="string")return value.slice(0,600);
+  if(value===null||typeof value!=="object")return value;
+  if(depth>6)return "OMITTED_DEEP_DIAGNOSTICS";
+  if(Array.isArray(value))return value.slice(-12).map(v=>compactStatusValue(v,depth+1));
+  return Object.fromEntries(Object.entries(value).slice(0,40).filter(([k])=>!["risk","derivedSizing","history","candidate","opportunityAudit"].includes(k)).map(([k,v])=>[k,compactStatusValue(v,depth+1)]));
+}
+function refreshServedSnapshot(snapshot) {
+  const readiness=snapshotReadiness(snapshot.assets||{});
+  snapshot.coverage={...snapshot.coverage,...readiness,executionDataReady:readiness.criticalReady,openNowDataReady:readiness.criticalReady,
+    priceAgeSeconds:Object.fromEntries(Object.entries(snapshot.assets||{}).map(([k,a])=>[k,a.ticker?.exchangeTimestamp?(Date.now()-Date.parse(a.ticker.exchangeTimestamp))/1000:null]))};
+  snapshot.status=readiness.criticalReady?"ok":"partial";
+  snapshot.decisionState=readiness.criticalReady?"DATA_READY":"DATA_BLOCKED";
+  snapshot.servedAt=new Date().toISOString();
+  return snapshot;
+}
 
 function fourHourTrendDirection(asset) {
   const t = asset?.timeframes?.["4h"];
@@ -207,7 +369,7 @@ function opportunityAssessment(seed,asset,btc) {
     target,estimatedRoundTripCostPct:costPct,netRR,rrQualifiedEntryZone};
   if(!(netRR>=MIN_NET_RR))return {...result,...pricing,failedGate:"FIRST_TARGET_NET_RR_BELOW_2"};
   const candidate={...seed,...pricing,candleAt:progress.candleAt,externalBoundaryAcceptance:externalAcceptance,openNowAllowed:false,
-    validationStatus:"DETECTOR_NOT_PROVEN_HIGH_WIN_RATE",reviewRequired:["MODEL_LOCATION","NEWS_MACRO","ACCOUNT_PSYCHOLOGY","ACTUAL_COSTS"]};
+    validationStatus:"DETECTOR_NOT_PROVEN_HIGH_WIN_RATE",reviewRequired:["MODEL_LOCATION","NEWS_MACRO","ACTUAL_COSTS"]};
   return {...result,...pricing,state:"CANDIDATE_FOR_REVIEW",candidate};
 }
 
@@ -297,7 +459,7 @@ const RANGE_CONFIG = {
 };
 
 // Autonomous discovery never opens or saves a plan. It only surfaces completed
-// price/structure candidates for fresh GPT, news, account and psychology review.
+// price/structure candidates for fresh market, model and news review.
 function observationStructureReady(asset) {
   const tfs = asset?.timeframes;
   const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
@@ -452,7 +614,8 @@ async function scannerCompareAndPut(env, expected, values, ttlSeconds = 7 * 8640
 async function mutateObservationBook(env, transform) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const old = await scannerStateGet(env, OBSERVATIONS_KEY);
-    const book = old && Array.isArray(old.records) ? structuredClone(old) : { records: [] };
+    if(old&&(!Array.isArray(old.records)||old.records.some(r=>!r||typeof r!=="object")))throw new Error("OBSERVATION_STATE_FORMAT_INVALID_PRESERVED");
+    const book = old ? structuredClone(old) : { records: [] };
     const result = transform(book);
     if (result?.unchanged) return result;
     const active = book.records.filter(r => !OBSERVATION_TERMINAL.includes(r.state) && Date.parse(r.expiresAt) > Date.now());
@@ -569,12 +732,11 @@ function evaluateObservation(record, snapshot, verified) {
   if (now >= Date.parse(record.expiresAt)) return { ...base, state: "EXPIRED", reason: "OBSERVATION_EXPIRED" };
   const asset = snapshot?.assets?.[record.symbol], candle = freshObservationCandle(asset);
   const structureOK = observationStructureReady(asset) && candle;
-  if (!verified) return { ...base, state: "DATA_BLOCKED", reason: "DIRECT_OKX_PRICE_VERIFICATION_FAILED" };
   const long = record.direction === "LONG", inv = record.observationInvalidation;
   const beyond = p => long ? p <= inv.level : p >= inv.level;
-  if ((inv.mode === "PRICE" && verified.samples.every(p => beyond(p.last)))
+  if ((inv.mode === "PRICE" && verified?.samples?.every(p => beyond(p.last)))
     || (inv.mode === "CLOSE_15M" && structureOK && Date.parse(candle.ts) + 900_000 >= Date.parse(record.sourceAnalysisAt) && beyond(candle.c))) {
-    return { ...base, state: "INVALIDATED", reason: "OBSERVATION_INVALIDATION_REACHED", price: verified.current.last };
+    return { ...base, state: "INVALIDATED", reason: "OBSERVATION_INVALIDATION_REACHED", price: verified?.current?.last ?? null };
   }
   let progress = null;
   if (["BREAKOUT", "PULLBACK"].includes(record.seed?.kind) && structureOK) {
@@ -589,6 +751,7 @@ function evaluateObservation(record, snapshot, verified) {
       return { ...base, state: "INVALIDATED", reason: "REGISTERED_RANGE_CHANGED_REVIEW_NEW_RANGE" };
     }
   }
+  if (!verified) return { ...base, state: "DATA_BLOCKED", reason: "DIRECT_OKX_PRICE_VERIFICATION_FAILED", structureReady:Boolean(structureOK), progress, observationRetained:true };
   const inZone = verified.confirmed, price = verified.current.last, zone = record.observationZone;
   const atr = finite(asset?.timeframes?.["15m"]?.indicators?.atr14, 0);
   const distance = Math.max(zone.min - price, price - zone.max, 0);
@@ -609,7 +772,7 @@ function evaluateObservation(record, snapshot, verified) {
       const liq = planLiquidityRisk({ ...candidate, symbol: record.symbol, liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, asset);
       if (liq.passed && asset.executionLiquidity?.status === "ok" && snapshot.coverage?.openNowDataReady) {
         candidate.softWarnings = asset.capitalFlow?.status === "ok" ? [] : ["AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED"];
-        state = "MARKET_CANDIDATE"; reason = "MARKET_FILTERS_PASSED_NEWS_ACCOUNT_PSYCHOLOGY_PENDING";
+        state = "MARKET_CANDIDATE"; reason = "MARKET_FILTERS_PASSED_FRESH_NEWS_REVIEW_PENDING";
       } else { candidate = null; reason = "EXECUTION_OR_LIQUIDITY_REVIEW_PENDING"; }
     }
   }
@@ -618,8 +781,8 @@ function evaluateObservation(record, snapshot, verified) {
   if (!structureOK && inZone) reason = "ZONE_REACHED_STRUCTURE_DATA_PENDING";
   return { ...base, state, reason, price, currentInZone: inZone, distanceToZone: distance,
     structureReady: Boolean(structureOK), triggerAt, progress, candidate,
-    missing: state === "MARKET_CANDIDATE" ? ["NEWS_MACRO_REVIEW", "CURRENT_ACCOUNT_AND_PSYCHOLOGY"]
-      : ["FULL_MODEL_REVIEW", "STRUCTURAL_STOP_AND_FIRST_TARGET_NET_RR", "NEWS_MACRO_REVIEW", "CURRENT_ACCOUNT_AND_PSYCHOLOGY"] };
+    missing: state === "MARKET_CANDIDATE" ? ["NEWS_MACRO_REVIEW"]
+      : ["FULL_MODEL_REVIEW", "STRUCTURAL_STOP_AND_FIRST_TARGET_NET_RR", "NEWS_MACRO_REVIEW"] };
 }
 
 function observationAlert(record, evaluation) {
@@ -632,7 +795,7 @@ function observationAlert(record, evaluation) {
       + "；核验价 " + (evaluation.price ?? "未获取") + "；状态时间 " + evaluation.checkedAt
       + "。\n" + record.pendingCondition + "。\n"
       + (OBSERVATION_TERMINAL.includes(evaluation.state) ? "本观察停止，自动发现继续。"
-        : "此为观察/条件提醒，尚未核验完整执行权限。打开GPT复核当前价格、模型、新闻及账户；价格已离区时禁止按旧通知追单。"),
+        : "此为观察/条件提醒，尚未核验完整执行权限。打开GPT复核当前价格、模型及新闻；价格已离区时禁止按旧通知追单。"),
     level: ["IN_ZONE", "TRIGGER_MET", "MARKET_CANDIDATE"].includes(evaluation.state) ? "timeSensitive" : "active" };
 }
 
@@ -691,7 +854,7 @@ function scannerCycle(env) {
       // Broad zone affects only the sampling helper's flag. Each consumer checks its own zone.
       const cached = prices.get(symbol);
       if (!cached || Date.now() - cached.startedAt > 8000) {
-        prices.set(symbol, { startedAt: Date.now(), promise: verifyOkxScannerZone(symbol, { min: 0, max: Number.MAX_VALUE }) });
+        prices.set(symbol, { startedAt: Date.now(), promise: verifyOkxScannerZone(symbol, { min: 0, max: Number.MAX_VALUE }, env) });
       }
       return prices.get(symbol).promise;
     },
@@ -706,7 +869,6 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const due = enabled && now - finite(old.lastRunAt, 0) >= DISCOVERY_INTERVAL_MS;
   let records = state[OBSERVATIONS_KEY]?.records || [], full = null, reason = due ? "NO_NEW_AUTONOMOUS_CANDIDATE" : "DISCOVERY_INTERVAL_NOT_DUE";
   let discoveryError = null, added = 0, capacityReached = false;
-  if (state[MANUAL_PRIORITY_KEY]?.until > now) return { status: "deferred", reason: "MANUAL_REQUEST_PRIORITY", openNowAllowed: false };
   if (due) {
     try {
       full = await cycle.getSnapshot();
@@ -744,7 +906,11 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
     if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
     // Slow upstream recovery must not turn earlier samples into a current-price alert.
     if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { verification = null; priceError = String(error?.message || error); } }
-    if (full?.assets?.ETHUSDT && verification?.current) full.assets.ETHUSDT.ticker = verification.current;
+    if (full?.assets?.ETHUSDT && verification?.current) {
+      full.assets.ETHUSDT.ticker = verification.current;
+      full.assets.ETHUSDT.executionLiquidity=buildExecutionLiquidity(full.assets.ETHUSDT);
+      refreshServedSnapshot(full);
+    }
   }
   for (const record of active.concat(terminalRetries)) {
     const verified = observationVerification(verification, record.observationZone);
@@ -1827,9 +1993,7 @@ function buildExecutionLiquidity(asset) {
   const bid = finite(ticker.bid);
   const ask = finite(ticker.ask);
   const midpoint = Number.isFinite(bid) && Number.isFinite(ask) && bid <= ask ? (bid + ask) / 2 : null;
-  const executionReady = ticker.status === "ok"
-    && ticker.source === "OKX_USDT_PERPETUAL"
-    && [last, markPrice, bid, ask, midpoint].every((value) => Number.isFinite(value) && value > 0);
+  const executionReady = genuineExecutionQuote(ticker);
   const auxiliaryReady = orderBook.status === "ok";
   return {
     status: executionReady ? "ok" : "unavailable",
@@ -1841,11 +2005,11 @@ function buildExecutionLiquidity(asset) {
       ask: round(ask, 8),
       midpoint: round(midpoint, 8),
       spreadBps: round((ask - bid) / midpoint * 10_000, 4),
-      markBasisBps: round((last - markPrice) / markPrice * 10_000, 4),
+      markBasisBps: markPrice > 0 ? round((last - markPrice) / markPrice * 10_000, 4) : null,
       indexPrice: Number.isFinite(indexPrice) ? round(indexPrice, 8) : null,
       perpetualIndexBasisBps: Number.isFinite(indexPrice) && indexPrice > 0 ? round((last - indexPrice) / indexPrice * 10_000, 4) : null,
       exchangeTimestamp: ticker.exchangeTimestamp || null,
-    } : errorModule("Exact OKX bid/ask/mark execution liquidity unavailable"),
+    } : errorModule("Exact OKX last/bid/ask execution quote unavailable"),
     auxiliaryDepth: auxiliaryReady ? {
       source: "GATE_USDT_PERPETUAL_PUBLIC",
       role: "AUXILIARY_CONFIRMATION_ONLY",
@@ -1858,7 +2022,7 @@ function buildExecutionLiquidity(asset) {
       exchangeTimestamp: orderBook.exchangeTimestamp,
     } : errorModule("Gate auxiliary order-book depth unavailable"),
     policy: {
-      executionAndSlippage: "Use OKX bid/ask and mark price only",
+      executionAndSlippage: "Use genuine OKX perpetual last/bid/ask; mark is a reference, depth remains unmeasured for user-managed size",
       depthAndWalls: "Gate single-exchange order book is auxiliary confirmation only",
       standaloneSignal: false,
       automaticOrderPlacement: false,
@@ -2824,18 +2988,22 @@ function parseOkxExecutionPrice(markRows, tickerRows, instrumentId) {
   const markTimestamp = Number(markRow?.ts);
   const tickerAgeSeconds = Number.isFinite(tickerTimestamp) ? Math.max(0, (Date.now() - tickerTimestamp) / 1000) : Infinity;
   const markAgeSeconds = Number.isFinite(markTimestamp) ? Math.max(0, (Date.now() - markTimestamp) / 1000) : Infinity;
-  const usableTicker = Number.isFinite(tickerLast) && tickerAgeSeconds <= 35;
-  const usableMark = Number.isFinite(markPrice) && markAgeSeconds <= 35;
+  const usableTicker = tickerRowValid(tickerRow);
+  const usableMark = markPrice > 0 && usableTimestamp(markTimestamp);
   if (!usableTicker && !usableMark) {
     throw new Error(`OKX realtime ticker and mark price unavailable for ${instrumentId}`);
   }
-  const last = usableTicker ? tickerLast : markPrice;
+  const last = usableTicker ? tickerLast : null;
   const open24h = usableTicker ? finite(tickerRow?.open24h) : null;
   return {
-    status: "ok",
+    status: usableTicker ? "ok" : "partial",
     source: "OKX_USDT_PERPETUAL",
     priceType: usableTicker && usableMark ? "LAST_BID_ASK_AND_MARK" : usableTicker ? "LAST_BID_ASK" : "MARK_PRICE_ONLY",
-    primaryEndpoint: "/api/v5/market/tickers?instType=SWAP",
+    primaryEndpoint: tickerRow?._endpoint || "/api/v5/market/tickers?instType=SWAP",
+    executionQuoteReady: usableTicker,
+    lastTradeTimestamp: tickerRow?._lastTradeTs ? new Date(Number(tickerRow._lastTradeTs)).toISOString() : null,
+    bookTimestamp: tickerRow?._bookTs ? new Date(Number(tickerRow._bookTs)).toISOString() : null,
+    markTimestamp: usableMark ? new Date(markTimestamp).toISOString() : null,
     fallbackEndpoint: "/api/v5/public/mark-price?instType=SWAP",
     last: round(last, 8),
     markPrice: usableMark ? round(markPrice, 8) : null,
@@ -2951,86 +3119,25 @@ function parseOkxIndexPrice(rows, symbol) {
   };
 }
 
-async function verifyOkxScannerPrice(symbol) {
-  const asset = ASSETS[symbol];
-  if (!asset) throw new Error(`Unsupported scanner symbol ${symbol}`);
-  const instId = asset.instrumentId;
-  const validate = (body) => {
-    if (body?.code !== "0" || !Array.isArray(body?.data) || body.data.length === 0) {
-      throw new Error(`OKX direct response invalid for ${instId}`);
-    }
-    return body.data;
-  };
-  const [tickerRows, markRows] = await Promise.all([
-    fetchJson(
-      `${OKX_BASE}/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`,
-      `OKX direct ticker ${instId}`,
-      2,
-      true,
-      validate,
-      3500,
-    ),
-    fetchJson(
-      `${OKX_BASE}/api/v5/public/mark-price?instType=SWAP&instId=${encodeURIComponent(instId)}`,
-      `OKX direct mark price ${instId}`,
-      2,
-      true,
-      validate,
-      3500,
-    ),
-  ]);
-  const ticker = tickerRows.find((row) => row?.instId === instId);
-  const mark = markRows.find((row) => row?.instId === instId);
-  if (!ticker || !mark) throw new Error(`OKX exact instrument ${instId} missing from direct response`);
-  const last = finite(ticker?.last);
-  const markPrice = finite(mark?.markPx);
-  const bid = finite(ticker?.bidPx);
-  const ask = finite(ticker?.askPx);
-  const tickerTs = finite(ticker?.ts);
-  const markTs = finite(mark?.ts);
-  const checkedAtMs = Date.now();
-  const tickerAgeSeconds = Number.isFinite(tickerTs) ? Math.max(0, (checkedAtMs - tickerTs) / 1000) : Infinity;
-  const markAgeSeconds = Number.isFinite(markTs) ? Math.max(0, (checkedAtMs - markTs) / 1000) : Infinity;
-  if (![last, markPrice, bid, ask].every((value) => Number.isFinite(value) && value > 0)) throw new Error(`OKX direct last/mark/bid/ask missing for ${instId}`);
-  if (bid > ask) throw new Error(`OKX direct bid exceeds ask for ${instId}`);
-  if (tickerAgeSeconds > 20 || markAgeSeconds > 20) throw new Error(`OKX direct price stale for ${instId}`);
-  const deviationPct = Math.abs(last - markPrice) / markPrice * 100;
-  if (!Number.isFinite(deviationPct) || deviationPct > 0.35) throw new Error(`OKX direct ticker/mark deviation ${round(deviationPct, 6)}% for ${instId}`);
-  const midpoint = (bid + ask) / 2;
-  const spreadBps = (ask - bid) / midpoint * 10_000;
-  const lastToMidBps = Math.abs(last - midpoint) / midpoint * 10_000;
-  if (!Number.isFinite(spreadBps) || spreadBps > 20) throw new Error(`OKX direct spread ${round(spreadBps, 4)}bps is abnormal for ${instId}`);
-  if (!Number.isFinite(lastToMidBps) || lastToMidBps > 25) throw new Error(`OKX last/mid deviation ${round(lastToMidBps, 4)}bps is abnormal for ${instId}`);
-  const open24h = finite(ticker?.open24h);
-  const checkedAt = new Date(checkedAtMs).toISOString();
-  return {
-    status: "ok",
-    source: "OKX_USDT_PERPETUAL_DIRECT_VERIFIED",
-    priceType: "LAST_AND_MARK_DIRECT_VERIFIED",
-    primaryEndpoint: `/api/v5/market/ticker?instId=${instId}`,
-    fallbackEndpoint: null,
-    last: round(last, 8),
-    markPrice: round(markPrice, 8),
-    bid: round(bid, 8),
-    ask: round(ask, 8),
-    midpoint: round(midpoint, 8),
-    spreadBps: round(spreadBps, 4),
-    high24h: round(finite(ticker?.high24h), 8),
-    low24h: round(finite(ticker?.low24h), 8),
-    volume24hContracts: round(finite(ticker?.vol24h), 4),
-    change24hPct: open24h ? round(((last - open24h) / open24h) * 100, 4) : null,
-    exchangeTimestamp: new Date(tickerTs).toISOString(),
-    dataFreshness: { state: "live-direct", ageSeconds: round(tickerAgeSeconds, 3), storedAt: checkedAt },
-    verification: {
-      passed: true,
-      checkedAt,
-      deviationPct: round(deviationPct, 6),
-      spreadBps: round(spreadBps, 4),
-      lastToMidBps: round(lastToMidBps, 4),
-      tickerAgeSeconds: round(tickerAgeSeconds, 3),
-      markAgeSeconds: round(markAgeSeconds, 3),
-    },
-  };
+async function verifyOkxScannerPrice(symbol, env = null) {
+  const a=ASSETS[symbol];if(!a)throw new Error(`Unsupported scanner symbol ${symbol}`);
+  let result;
+  if(scannerStateStub(env)) result=await durableStateCall(env,{op:"directQuote",symbol});
+  else {
+    const memory=new Map();
+    result=await coordinatedDirectQuote({ctx:{storage:{get:async k=>memory.get(k),put:async(k,v)=>memory.set(k,v)}}},symbol);
+  }
+  const price=parseOkxExecutionPrice(result.marks,[result.ticker],a.instrumentId);
+  if(!genuineExecutionQuote(price,20))throw new Error("OKX direct genuine price stale or unavailable");
+  const midpoint=(price.bid+price.ask)/2, spreadBps=(price.ask-price.bid)/midpoint*10000;
+  const lastToMidBps=Math.abs(price.last-midpoint)/midpoint*10000;
+  const deviationPct=price.markPrice>0?Math.abs(price.last-price.markPrice)/price.markPrice*100:null;
+  if(spreadBps>20||lastToMidBps>25)throw new Error("OKX direct spread/last-mid deviation abnormal");
+  if(deviationPct!==null&&deviationPct>0.35)throw new Error("OKX direct ticker/mark deviation abnormal");
+  return {...price,source:"OKX_USDT_PERPETUAL_DIRECT_VERIFIED",midpoint,spreadBps,
+    verification:{passed:true,checkedAt:new Date().toISOString(),deviationPct,spreadBps,lastToMidBps,
+      tickerAgeSeconds:(Date.now()-Date.parse(price.exchangeTimestamp))/1000,
+      markBasisAvailable:price.markPrice>0,markAgeSeconds:price.markTimestamp?(Date.now()-Date.parse(price.markTimestamp))/1000:null}};
 }
 
 function priceInsideEntryZone(price, entryZone) {
@@ -3041,10 +3148,10 @@ function priceInsideEntryZone(price, entryZone) {
     && price <= finite(entryZone.max);
 }
 
-async function verifyOkxScannerZone(symbol, entryZone) {
-  const first = await verifyOkxScannerPrice(symbol);
+async function verifyOkxScannerZone(symbol, entryZone, env = null) {
+  const first = await verifyOkxScannerPrice(symbol, env);
   await delay(SCANNER_DOUBLE_SAMPLE_DELAY_MS);
-  const second = await verifyOkxScannerPrice(symbol);
+  const second = await verifyOkxScannerPrice(symbol, env);
   const samples = [first, second].map((sample) => ({
     last: sample.last,
     markPrice: sample.markPrice,
@@ -3230,6 +3337,19 @@ async function buildSnapshot(options = {}) {
     };
   }
 
+  // Independent structure and auxiliary reads must not wait behind slow quote recovery.
+  const structureStatePromise=loadDurableStructureRecords(options.env,{force:options.forceStructureRefresh===true})
+    .then(value=>({value}),error=>({error}));
+  const capitalFlowEntries = Object.entries(ASSETS);
+  const capitalFlowPromise=mapLimit(capitalFlowEntries,2,([,config])=>gateCapitalFlowRaw(config.gateSymbol,options));
+  const sharedMarketPromise = scannerStateStub(options.env)
+    ? durableStateCall(options.env,{op:"publicMarket"}).catch(e=>({modules:{},error:String(e.message||e)})) : null;
+  const marketRead = async(path,policy) => {
+    if(!sharedMarketPromise)return okx(path,policy);
+    const shared=await sharedMarketPromise;
+    if(shared.error)throw new Error(shared.error);
+    return restorePublicRows(shared.modules?.[path]);
+  };
   const coinalyzePromise = loadCoinalyzeLiquidations(options.coinalyzeApiKey);
 
   let krakenTickerPromise;
@@ -3245,20 +3365,10 @@ async function buildSnapshot(options = {}) {
   }
 
   const priceResults = await Promise.allSettled([
-    okx("/api/v5/market/tickers?instType=SWAP", CACHE_POLICY.ticker),
-    okx("/api/v5/public/mark-price?instType=SWAP", CACHE_POLICY.markPrice),
-    fetchJson(
-      `${OKX_BASE}/api/v5/market/index-tickers?quoteCcy=USDT`,
-      "OKX index tickers",
-      1,
-      true,
-      (body) => {
-        if (body?.code !== "0" || !Array.isArray(body?.data)) throw new Error(`OKX index ${body?.code || "invalid response"}`);
-        return body.data;
-      },
-      3500,
-    ),
-    okx("/api/v5/market/tickers?instType=SPOT", CACHE_POLICY.okxSpotTicker),
+    marketRead("/api/v5/market/tickers?instType=SWAP", CACHE_POLICY.ticker),
+    marketRead("/api/v5/public/mark-price?instType=SWAP", CACHE_POLICY.markPrice),
+    marketRead("/api/v5/market/index-tickers?quoteCcy=USDT", {freshSeconds:8,staleSeconds:30}),
+    marketRead("/api/v5/market/tickers?instType=SPOT", CACHE_POLICY.okxSpotTicker),
   ]);
   const tickerRows = priceResults[0].status === "fulfilled" ? priceResults[0].value : null;
   const markRows = priceResults[1].status === "fulfilled" ? priceResults[1].value : null;
@@ -3297,7 +3407,7 @@ async function buildSnapshot(options = {}) {
   let structureCoordinator = { status: "unavailable", error: "Not loaded" };
   const candleWork = (async () => {
     try {
-      const state = await loadDurableStructureRecords(options.env, { force: options.forceStructureRefresh === true });
+      const loaded=await structureStatePromise;if(loaded.error)throw loaded.error;const state=loaded.value;
       structureCoordinator = {
         status: "ok",
         backend: "DURABLE_OBJECT",
@@ -3311,18 +3421,21 @@ async function buildSnapshot(options = {}) {
       for (const { symbol, timeframe, key } of state.definitions) {
         try {
           const executionPrice = assets[symbol].ticker;
-          if (executionPrice.status !== "ok" || executionPrice.source !== "OKX_USDT_PERPETUAL" || !Number.isFinite(executionPrice.last)) {
-            throw new Error("Exact OKX USDT perpetual reference price unavailable for candle validation");
-          }
           const record = state.records[key];
           if (!structureRecordUsable(record, timeframe)) throw new Error(record?.refreshError || "Persistent structure series is missing or expired");
+          const genuine=genuineExecutionQuote(executionPrice);
+          const markReference=executionPrice.source==="OKX_USDT_PERPETUAL" && executionPrice.markPrice>0
+            &&usableTimestamp(Date.parse(executionPrice.markTimestamp));
+          const referencePrice=genuine?executionPrice.last:markReference?executionPrice.markPrice:record.candles.at(-1)?.close;
           const collectionAgeSeconds = Math.max(0, (Date.now() - record.updatedAt) / 1000);
           const candles = attachCacheMeta(plainCandles(record.candles), {
             state: record.refreshError ? "persisted-fresh-after-refresh-error" : "durable-incremental",
             ageSeconds: round(collectionAgeSeconds, 3),
             storedAt: new Date(record.updatedAt).toISOString(),
           });
-          const quality = candleQuality(candles, executionPrice.last, timeframe, TIMEFRAMES[timeframe], record.source);
+          const quality = candleQuality(candles, referencePrice, timeframe, TIMEFRAMES[timeframe], record.source);
+          quality.validationReference=genuine?"OKX_GENUINE_QUOTE":markReference?"OKX_MARK_REFERENCE_ONLY":"PERPETUAL_STRUCTURE_SOURCE_SELF";
+          quality.crossVenueReferenceAvailable=genuine||markReference;
           if (!quality.passed) throw new Error(`quality rejected: ${quality.reasons.join(",")}`);
           const fallbackUsed = record.source !== "GATE_USDT_PERPETUAL";
           if (fallbackUsed) fallbacks.push({ symbol, timeframe, primary: "GATE_USDT_PERPETUAL", fallback: record.source, reason: record.refreshError || "Gate baseline unavailable" });
@@ -3358,8 +3471,8 @@ async function buildSnapshot(options = {}) {
   const spotWork = mapLimit(Object.entries(ASSETS), 2, async ([symbol, config]) => {
     try {
       const [trades, book] = await Promise.all([
-        okx(`/api/v5/market/trades?instId=${encodeURIComponent(config.spotInstrumentId)}&limit=100`, CACHE_POLICY.okxSpotTrades),
-        okx(`/api/v5/market/books?instId=${encodeURIComponent(config.spotInstrumentId)}&sz=20`, CACHE_POLICY.okxSpotBook),
+        marketRead(`/api/v5/market/trades?instId=${encodeURIComponent(config.spotInstrumentId)}&limit=100`, CACHE_POLICY.okxSpotTrades),
+        marketRead(`/api/v5/market/books?instId=${encodeURIComponent(config.spotInstrumentId)}&sz=20`, CACHE_POLICY.okxSpotBook),
       ]);
       assets[symbol].spotMarket = parseOkxSpotMarket(spotTickerRows, trades, book, config.spotInstrumentId);
     } catch (error) {
@@ -3374,10 +3487,9 @@ async function buildSnapshot(options = {}) {
     ...Object.entries(ASSETS).map(([symbol, config]) => ({ symbol, type: "funding", path: `/api/v5/public/funding-rate?instId=${config.instrumentId}`, policy: CACHE_POLICY.funding })),
     ...Object.entries(ASSETS).map(([symbol, config]) => ({ symbol, type: "openInterestHistory", path: `/api/v5/rubik/stat/contracts/open-interest-history?instId=${config.instrumentId}&period=5m&limit=20`, policy: CACHE_POLICY.openInterestHistory })),
   ];
-  const derivativeWork = Promise.allSettled(derivativeDefinitions.map((item) => okx(item.path, item.policy)));
-  const capitalFlowEntries = Object.entries(ASSETS);
+  const derivativeWork = Promise.allSettled(derivativeDefinitions.map((item) => marketRead(item.path, item.policy)));
   const [, derivativeResults] = await Promise.all([Promise.all([candleWork, spotWork]), derivativeWork]);
-  const capitalFlowResults = await mapLimit(capitalFlowEntries, 2, ([, config]) => gateCapitalFlowRaw(config.gateSymbol, options));
+  const capitalFlowResults = await capitalFlowPromise;
 
   for (let index = 0; index < capitalFlowEntries.length; index += 1) {
     const [symbol, config] = capitalFlowEntries[index];
@@ -3494,21 +3606,7 @@ async function buildSnapshot(options = {}) {
     const timestamp = Date.parse(asset.ticker.exchangeTimestamp || "");
     return [symbol, Number.isFinite(timestamp) ? round(Math.max(0, (Date.now() - timestamp) / 1000), 3) : null];
   }));
-  const executionPriceReady = Object.entries(assets).every(([symbol, asset]) =>
-    asset.ticker.status === "ok" && asset.ticker.source === "OKX_USDT_PERPETUAL" && Number.isFinite(priceAgeSeconds[symbol]) && priceAgeSeconds[symbol] <= 35,
-  );
-  const semanticQualityReady = Object.values(assets).every((asset) =>
-    Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true),
-  );
-  const perpetualStructureReady = Object.values(assets).every((asset) =>
-    Object.values(asset.timeframes).every(isExecutionStructureTimeframe),
-  );
-  const criticalReady = Object.values(assets).every((asset) =>
-    asset.ticker.status === "ok" &&
-    Object.values(asset.timeframes).every((tf) => tf.status === "ok" && tf.quality?.passed === true) &&
-    asset.derivatives.openInterest.status === "ok" &&
-    asset.derivatives.funding.status === "ok",
-  ) && executionPriceReady && semanticQualityReady;
+  const {executionPriceReady,semanticQualityReady,perpetualStructureReady,derivativesReady,observationDataReady,criticalReady}=snapshotReadiness(assets);
   const capitalFlowReady = Object.fromEntries(Object.entries(assets).map(([symbol, asset]) => [symbol, asset.capitalFlow.status === "ok"]));
   const capitalFlowAvailable = Object.values(assets).filter((asset) => asset.capitalFlow.status !== "unavailable").length;
   const coinalyzeAssetStatus = Object.fromEntries(Object.keys(ASSETS).map((symbol) => [symbol, {
@@ -3528,6 +3626,7 @@ async function buildSnapshot(options = {}) {
     timezone: "UTC",
     source: "OKX USDT perpetual execution/index/mark price/OI/funding plus Durable Object coordinated Gate primary and OKX recovery perpetual candles, OKX spot recent trades, Gate flow and optional Coinalyze realized liquidations; no spot structure fallback",
     dataProviders: {
+      publicMarketCoordinator: sharedMarketPromise ? "DURABLE_OBJECT_SHARED_ENDPOINT_CACHE" : "ISOLATE_FALLBACK",
       structureCoordinator,
       coinalyze: {
         configured: coinalyze.configured,
@@ -3584,7 +3683,8 @@ async function buildSnapshot(options = {}) {
         courseStates: ["LONG", "SHORT", "WAIT", "NO_TRADE"],
         operational: { OPEN_NOW: "LONG_OR_SHORT", ARMED: "WAIT", NO_TRADE: "NO_TRADE", DATA_BLOCKED: "NO_TRADE_WITH_DATA_GAP" },
       },
-      legacyConfig: LEGACY_CONFIG,
+      accountPolicy: { management:"USER_MANAGED", accountAccess:false, psychologyGate:false, positionSizingProvided:false, automaticOrders:false },
+      minimumNetRR: MIN_NET_RR,
       decisionAuditContract: {
         marketAssessmentSeparateFromAccountPermission: true,
         requiredRejectionEvidence: ["MODEL_SUBMODEL", "FAILED_GATE", "OBSERVED_VALUE", "REQUIRED_VALUE", "FIRST_TARGET_NET_RR_INPUTS", "NEXT_REASSESSMENT_CONDITION"],
@@ -3643,7 +3743,7 @@ async function buildSnapshot(options = {}) {
         oneMinuteCandleTouchAllowed: false,
       },
     },
-    coverage: { availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, semanticQualityReady, perpetualStructureReady, openNowDataReady: criticalReady && perpetualStructureReady, priceAgeSeconds, criticalReady, capitalFlowReady, capitalFlowAvailable, capitalFlowTotal: Object.keys(assets).length },
+    coverage: { observationDataReady, executionDataReady: criticalReady, derivativesReady, availableModules: available, totalModules: modules.length, coveragePct, executionPriceReady, semanticQualityReady, perpetualStructureReady, openNowDataReady: criticalReady && perpetualStructureReady, priceAgeSeconds, criticalReady, capitalFlowReady, capitalFlowAvailable, capitalFlowTotal: Object.keys(assets).length },
     assets,
     fallbacks,
     supplementalErrors,
@@ -3666,15 +3766,22 @@ function scannerStateStub(env) {
 }
 
 async function durableStateCall(env, payload) {
-  const stub = scannerStateStub(env);
-  if (!stub?.fetch) return null;
-  const response = await stub.fetch("https://scanner-state.internal/state", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) throw new Error(`Scanner state object HTTP ${response.status}`);
-  return response.json();
+  const stub=scannerStateStub(env);if(!stub?.fetch)return null;
+  const attempts=payload.op==="get"?2:1, timeoutMs=["publicMarket","directQuote"].includes(payload.op)?28000:4000;
+  for(let attempt=0;attempt<attempts;attempt++){
+    let timer;
+    try {
+      return await Promise.race([
+        (async()=>{
+          const response=await stub.fetch("https://scanner-state.internal/state",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
+          if(!response.ok)throw new Error(`STATE_HTTP_${response.status}`);
+          const body=await response.json();if(body?.error)throw new Error(body.error);return body;
+        })(),
+        new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("STATE_TIMEOUT")),timeoutMs);}),
+      ]);
+    }catch(error){if(attempt+1===attempts)throw error;}
+    finally{clearTimeout(timer);}
+  }
 }
 
 async function scannerStateGet(env, key) {
@@ -3773,7 +3880,7 @@ function scannerConfiguration(env) {
     observationLimit: OBSERVATION_LIMIT,
     observationPollingSeconds: 60,
     atomicStateUpdates: Boolean(scannerStateStub(env)),
-    executionAuthority: "NONE_NEWS_ACCOUNT_PSYCHOLOGY_REVIEW_REQUIRED",
+    executionAuthority: "NONE_FRESH_MARKET_AND_NEWS_REVIEW_REQUIRED",
     discovery: {
       enabled: String(env?.DISCOVERY_ENABLED ?? "true") !== "false",
       intervalMinutes: 1,
@@ -3894,23 +4001,7 @@ function normalizeTradingPlan(input) {
   if (model === "B" && !Number.isFinite(finite(triggerInput.acceptanceLevel))) throw new Error("Model B requires trigger.acceptanceLevel");
   if (model === "C" && !Number.isFinite(finite(triggerInput.reclaimLevel))) throw new Error("Model C requires trigger.reclaimLevel");
   const hardBlockers = (Array.isArray(input.hardBlockers) ? input.hardBlockers : []).map((item) => scannerText(item, "", 160)).filter(Boolean);
-  if (hardBlockers.length) throw new Error("A plan with hardBlockers cannot be armed");
-  const riskInput = input.risk && typeof input.risk === "object" ? input.risk : null;
-  if (!riskInput) throw new Error("risk context is required");
-  const accountEquityUsdt = scannerNumber(riskInput.accountEquityUsdt, "risk.accountEquityUsdt", { positive: true });
-  const accountRiskPct = scannerNumber(riskInput.accountRiskPct, "risk.accountRiskPct", { positive: true });
-  const leverage = scannerNumber(riskInput.leverage, "risk.leverage", { positive: true });
-  const gradeRiskRange = LEGACY_CONFIG.riskByGradePct[opportunityGrade];
-  const gradeRiskCapPct = Math.min(LEGACY_CONFIG.absolutePlanRiskCapPct, gradeRiskRange?.[1] ?? 0);
-  if (accountRiskPct > gradeRiskCapPct) throw new Error(`risk.accountRiskPct exceeds ${opportunityGrade} configured cap ${gradeRiskCapPct}%`);
-  if (leverage > MAX_LEVERAGE) throw new Error(`risk.leverage cannot exceed ${MAX_LEVERAGE}x safety ceiling`);
-  const riskAssessmentStatus = scannerText(riskInput.riskAssessmentStatus, "", 32).toUpperCase();
-  if (riskAssessmentStatus !== "VERIFIED_CLEAR") throw new Error("risk.riskAssessmentStatus must be VERIFIED_CLEAR; unknown account or psychology state cannot arm a plan");
-  if (riskInput.dailyRiskLimitReached !== false) throw new Error("risk.dailyRiskLimitReached must be explicitly false");
-  if (riskInput.psychologicalVeto !== false) throw new Error("risk.psychologicalVeto must be explicitly false");
-  const correlatedRiskPct = scannerNumber(riskInput.correlatedRiskPct, "risk.correlatedRiskPct");
-  if (correlatedRiskPct < 0 || correlatedRiskPct > LEGACY_CONFIG.correlatedRiskCapPct) throw new Error("risk.correlatedRiskPct exceeds configured correlated-risk cap");
-  if (correlatedRiskPct + accountRiskPct > LEGACY_CONFIG.correlatedRiskCapPct) throw new Error("Combined existing correlated risk plus this plan exceeds configured cap");
+  if (marketOnlyBlockers(hardBlockers).length) throw new Error("A plan with hardBlockers cannot be armed");
   const timeframeAliases = { SHORT_TERM: "SHORT", SHORT: "SHORT", MEDIUM_SHORT: "MEDIUM_SHORT", SWING: "SWING" };
   const timeframe = timeframeAliases[scannerText(input.timeframe || "SHORT", "SHORT", 40).toUpperCase()];
   if (!timeframe) throw new Error("timeframe must be SHORT, MEDIUM_SHORT or SWING");
@@ -3925,17 +4016,8 @@ function normalizeTradingPlan(input) {
   const stopDistance = Math.abs(entryReference - stopLoss);
   const stopDistancePct = stopDistance / entryReference * 100;
   if (!Number.isFinite(stopDistancePct) || stopDistancePct <= 0) throw new Error("Structural stop distance is invalid");
-  const allowedLossUsdt = accountEquityUsdt * accountRiskPct / 100;
   const estimatedRoundTripCostPct = scannerNumber(input.estimatedRoundTripCostPct ?? 0.15, "estimatedRoundTripCostPct");
   if (estimatedRoundTripCostPct < 0) throw new Error("estimatedRoundTripCostPct cannot be negative");
-  const worstEntry = direction === "LONG" ? entryMax : entryMin;
-  const worstRiskPerUnit = Math.abs(worstEntry - stopLoss) + worstEntry * estimatedRoundTripCostPct / 100;
-  // Round quantity down, and size for any authorized entry in the entire zone.
-  const quantity = Math.floor(allowedLossUsdt / worstRiskPerUnit * 1e8) / 1e8;
-  if (!(quantity > 0)) throw new Error("Risk budget is too small for a positive quantity");
-  const notionalUsdt = quantity * entryMax;
-  const requiredMarginUsdt = notionalUsdt / leverage;
-  if (requiredMarginUsdt + quantity * entryMax * estimatedRoundTripCostPct / 100 > accountEquityUsdt) throw new Error("Required margin plus estimated costs exceeds account equity; reduce size");
   const planId = scannerText(input.planId, "", 80) || `plan-${new Date(now).toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${crypto.randomUUID().slice(0, 8)}`;
   return {
     planId,
@@ -4002,31 +4084,9 @@ function normalizeTradingPlan(input) {
     hardBlockers: [],
     softWarnings: (Array.isArray(input.softWarnings) ? input.softWarnings : []).map((item) => scannerText(item, "", 160)).filter(Boolean).slice(0, 12),
     sourceAnalysisAt: new Date(sourceAnalysisMs).toISOString(),
-    risk: {
-      accountEquityUsdt: round(accountEquityUsdt, 2),
-      accountRiskPct: round(accountRiskPct, 3),
-      leverage: round(leverage, 2),
-      marginMode: scannerText(riskInput.marginMode || "ISOLATED", "ISOLATED", 20).toUpperCase(),
-      configStatus: scannerText(riskInput.configStatus || LEGACY_CONFIG.status, LEGACY_CONFIG.status, 50),
-      riskAssessmentStatus,
-      dailyRiskLimitReached: false,
-      psychologicalVeto: false,
-      correlatedRiskPct: round(correlatedRiskPct, 3),
-      derivedSizing: {
-        entryReference: round(entryReference, 8),
-        structuralStopDistance: round(stopDistance, 8),
-        structuralStopDistancePct: round(stopDistancePct, 5),
-        allowedLossUsdt: round(allowedLossUsdt, 2),
-        worstEntry,
-        estimatedCostPerUnit: worstEntry * estimatedRoundTripCostPct / 100,
-        riskPerUnitIncludingCosts: worstRiskPerUnit,
-        estimatedMaximumLossUsdt: quantity * worstRiskPerUnit,
-        quantity: round(quantity, 8),
-        notionalUsdt: round(notionalUsdt, 2),
-        requiredMarginUsdt: round(requiredMarginUsdt, 2),
-        formula: "quantity=floor8(allowedLoss/(worstEntryStopDistance+estimatedRoundTripCosts)); margin uses entry-zone maximum; actual slippage/gaps may exceed estimates",
-      },
-    },
+    risk: { management: "USER_MANAGED", accountAccess: false, positionSizingProvided: false },
+    signalOnly: true,
+    automaticOrderPlacement: false,
   };
 }
 
@@ -4214,10 +4274,10 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const confirmed15m = latestConfirmedCandle(tf15);
   const directionLong = plan.direction === "LONG";
   const expired = now >= Date.parse(plan.expiresAt);
-  const invalidated = Number.isFinite(price) && (directionLong ? price <= plan.invalidationPrice : price >= plan.invalidationPrice);
+  const invalidated = genuineExecutionQuote(asset?.ticker) && (directionLong ? price <= plan.invalidationPrice : price >= plan.invalidationPrice);
   if (expired) return { state: "EXPIRED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, reason: "GPT plan expired", planId: plan.planId, checkedAt: new Date(now).toISOString() };
   if (invalidated) return { state: "INVALIDATED", valid: false, price, btcPrice, priceSource, priceExchangeTimestamp, reason: "Price crossed the GPT plan invalidation level", planId: plan.planId, checkedAt: new Date(now).toISOString() };
-  const currentInZone = zoneVerification?.confirmed === true
+  const currentInZone = genuineExecutionQuote(asset?.ticker) && zoneVerification?.confirmed === true
     && zoneVerification?.rule === "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE";
   const zoneTouched = currentInZone;
   const touch = {
@@ -4248,8 +4308,8 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
       checkedAt: new Date(now).toISOString(),
     };
   }
-  if (snapshot?.decisionState !== "DATA_READY" || !Number.isFinite(price) || !confirmed15m) {
-    if (snapshot?.lightweightPriceOnly === true && Number.isFinite(price) && !currentInZone) {
+  if (snapshot?.decisionState !== "DATA_READY" || !genuineExecutionQuote(asset?.ticker) || !confirmed15m) {
+    if (snapshot?.lightweightPriceOnly === true && genuineExecutionQuote(asset?.ticker) && !currentInZone) {
       const executionReality = planExecutionReality(plan, asset, price);
       const blockers = executionReality.targetAhead ? [] : ["FIRST_REALISTIC_TARGET_ALREADY_PASSED_OR_WRONG_SIDE", "NET_RR_BELOW_CONFIGURED_THRESHOLD"];
       return { state: "ARMED", valid: false, openNowAllowed: false, price, btcPrice, priceSource, priceExchangeTimestamp, touch,
@@ -4330,8 +4390,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     && meaningfulTriggerPassed
     && protectiveStructurePassed
   );
-  const riskContextPassed = plan.risk?.riskAssessmentStatus === "VERIFIED_CLEAR" && plan.risk?.dailyRiskLimitReached === false && plan.risk?.psychologicalVeto === false;
-  const explicitHardBlockersPassed = !Array.isArray(plan.hardBlockers) || plan.hardBlockers.length === 0;
+  const explicitHardBlockersPassed = marketOnlyBlockers(plan.hardBlockers).length === 0;
   const checks = {
     registeredModel,
     registeredSubmodel,
@@ -4355,7 +4414,6 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     flowPassed,
     orderBookPassed,
     liquidityRiskPassed,
-    riskContextPassed,
     explicitHardBlockersPassed,
   };
   const confirmationPassed = Object.entries(checks).filter(([name]) => name !== "nearZone").every(([, passed]) => passed);
@@ -4370,19 +4428,14 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   if (!executionReality.stopOnInvalidationSide) hardBlockers.push("STOP_NO_LONGER_ON_INVALIDATION_SIDE");
   if (!rrPassed) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
   if (!liquidityRiskPassed) hardBlockers.push(...liquidityRisk.blockers);
-  if (!riskContextPassed) {
-    if (plan.risk?.riskAssessmentStatus !== "VERIFIED_CLEAR") hardBlockers.push("ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED");
-    if (plan.risk?.dailyRiskLimitReached) hardBlockers.push("DAILY_RISK_LIMIT_REACHED");
-    if (plan.risk?.psychologicalVeto) hardBlockers.push("PSYCHOLOGICAL_VETO");
-  }
-  if (!explicitHardBlockersPassed) hardBlockers.push(...plan.hardBlockers);
+  if (!explicitHardBlockersPassed) hardBlockers.push(...marketOnlyBlockers(plan.hardBlockers));
   const state = confirmationPassed ? "MARKET_CONFIRMED" : nearZone && hardBlockers.length ? "RISK_BLOCKED" : nearZone ? "WATCHING" : "ARMED";
   const failedChecks = Object.entries(checks).filter(([name, passed]) => name !== "nearZone" && !passed).map(([name]) => name);
   return {
     state,
     valid: false,
     openNowAllowed: false,
-    finalReviewRequired: ["LATEST_NEWS_AND_MACRO", "ACCOUNT_DAILY_RISK", "PSYCHOLOGICAL_STATE", "FRESH_ACTION_RECHECK"],
+    finalReviewRequired: ["LATEST_NEWS_AND_MACRO", "FRESH_ACTION_RECHECK"],
     price: round(price, 8),
     btcPrice: round(btcPrice, 8),
     priceSource,
@@ -4410,7 +4463,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     regimePermission,
     savedMarketRegime: plan.marketRegime,
     currentMarketRegime: currentRegime,
-    reason: confirmationPassed ? "Market checks passed; OPEN_NOW remains false until GPT completes fresh news, account-risk and psychology review" : state === "RISK_BLOCKED" ? `Hard blocker prevented entry: ${[...new Set(hardBlockers)].join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
+    reason: confirmationPassed ? "Market checks passed; OPEN_NOW remains false until GPT completes fresh market and news review; account management remains the user's responsibility" : state === "RISK_BLOCKED" ? `Hard blocker prevented entry: ${[...new Set(hardBlockers)].join(", ")}` : nearZone ? `Entry area reached; waiting for ${failedChecks.join(", ")}` : "Waiting for GPT plan entry area",
     planId: plan.planId,
     checkedAt: new Date(now).toISOString(),
   };
@@ -4421,7 +4474,7 @@ function scannerNotification(plan, evaluation) {
   const price = Number.isFinite(evaluation.price) ? evaluation.price : "未知";
   if (evaluation.state === "MARKET_CONFIRMED") return {
     title: `✅ ${plan.symbol} 市场条件通过，等待最终复核`,
-    body: `${direction}候选｜当前市场状态 ${evaluation.currentMarketRegime}｜现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M关键触发 ${evaluation.confirmed15mClose}\nOPEN_NOW仍为false；请调用GPT复核最新新闻、账户日内风险和心理状态。`,
+    body: `${direction}候选｜当前市场状态 ${evaluation.currentMarketRegime}｜现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M关键触发 ${evaluation.confirmed15mClose}\nOPEN_NOW仍为false；请调用GPT复核当前行情与最新新闻；仓位及杠杆由用户自行管理。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "ZONE_REACHED") return {
@@ -4587,6 +4640,8 @@ async function scanActivePlan(env, cycle = scannerCycle(env)) {
     if (!snapshot.assets) snapshot.assets = {};
     if (!snapshot.assets[plan.symbol]) snapshot.assets[plan.symbol] = {};
     snapshot.assets[plan.symbol].ticker = zoneVerification.current;
+    snapshot.assets[plan.symbol].executionLiquidity=buildExecutionLiquidity(snapshot.assets[plan.symbol]);
+    if(!snapshot.lightweightPriceOnly)refreshServedSnapshot(snapshot);
   } catch (error) {
     zoneVerification = { passed: false, error: error?.message || String(error), checkedAt: new Date(Date.now()).toISOString(), samples: [] };
   }
@@ -4722,18 +4777,30 @@ async function runScanner(env) {
 }
 
 async function scannerStatus(env) {
-  const state = await scannerStateBundle(env, [ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY, SCANNER_FAILURE_HISTORY_KEY, OBSERVATIONS_KEY, DISCOVERY_STATE_KEY, SCANNER_HEARTBEAT_KEY]);
-  const plan = state[ACTIVE_PLAN_KEY];
-  const runtime = state[SCANNER_RUNTIME_KEY];
-  const records = state[OBSERVATIONS_KEY]?.records || [], heartbeat = state[SCANNER_HEARTBEAT_KEY] || null;
-  const age = heartbeat?.lastCompletedAt ? (Date.now() - Date.parse(heartbeat.lastCompletedAt)) / 1000 : null;
-  return { status: "ok", build: BUILD, apiVersion: API_VERSION, configuration: scannerConfiguration(env), activePlan: plan || null, runtime: runtime || null,
-    observations: records.filter(r => !OBSERVATION_TERMINAL.includes(r.state)), observationHistory: records.filter(r => OBSERVATION_TERMINAL.includes(r.state)).slice(-12),
-    discovery: state[DISCOVERY_STATE_KEY] || null, heartbeat,
-    diagnostics: { completedCycleAgeSeconds: age, heartbeatHealthy: age !== null && age >= 0 && age <= 180 && heartbeat.status === "completed",
-      pendingObservationPushes: records.reduce((n, r) => n + Object.values(r.alerts || {}).filter(a => a.status === "PENDING").length, 0),
-      configuredIsNotOperationalProof: true, pushAcceptedIsNotDeviceDeliveryProof: true, missedBetweenSamplesPossible: true },
-    failureHistory: Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY]) ? state[SCANNER_FAILURE_HISTORY_KEY] : [] };
+  try {
+    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY]);
+    const stored=state[OBSERVATIONS_KEY], malformed=Boolean(stored)&&!Array.isArray(stored.records);
+    const records=Array.isArray(stored?.records)?stored.records.filter(r=>r&&typeof r==="object"&&!Array.isArray(r)):[];
+    const heartbeat=compactStatusValue(state[SCANNER_HEARTBEAT_KEY]||null);
+    const rawAge=heartbeat?.lastCompletedAt?(Date.now()-Date.parse(heartbeat.lastCompletedAt))/1000:null;
+    const age=Number.isFinite(rawAge)?rawAge:null;
+    const result={status:malformed?"degraded":"ok",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
+      activePlan:compactStatusValue(state[ACTIVE_PLAN_KEY]||null),runtime:compactStatusValue(state[SCANNER_RUNTIME_KEY]||null),
+      observations:records.filter(r=>!OBSERVATION_TERMINAL.includes(r.state)).slice(0,OBSERVATION_LIMIT).map(r=>compactStatusValue(scannerStatusRecord(r))),
+      observationHistory:records.filter(r=>OBSERVATION_TERMINAL.includes(r.state)).slice(-12).map(r=>compactStatusValue(scannerStatusRecord(r))),
+      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,
+      diagnostics:{stateReadSucceeded:true,stateFormatIssue:malformed?"OBSERVATION_RECORDS_NOT_ARRAY":null,completedCycleAgeSeconds:age,
+        heartbeatHealthy:!malformed&&age!==null&&age>=0&&age<=180&&heartbeat.status==="completed",
+        pendingObservationPushes:records.reduce((n,r)=>n+Object.values(r.alerts||{}).filter(a=>a?.status==="PENDING").length,0),
+        configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true},
+      failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
+    if(JSON.stringify(result).length>65000){result.observationHistory=[];result.failureHistory=[];result.diagnostics.historyOmittedForResponseBudget=true;}
+    return result;
+  }catch(error){return {status:"degraded",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
+    error:{code:"SCANNER_STATE_READ_FAILED",detail:scannerText(error?.message,"UNKNOWN_STATE_ERROR",200),retryable:true},
+    activePlan:null,observations:null,heartbeat:null,
+    diagnostics:{stateReadSucceeded:false,heartbeatHealthy:false,persistedRecordsUnchanged:true,unknownRecordsAreNotEmpty:true},
+    nextAction:"RETRY_STATUS_AND_CHECK_WORKER_LOGS_BINDING; DO_NOT_CANCEL_OBSERVATIONS"};}
 }
 
 function openApi(origin) {
@@ -4778,7 +4845,7 @@ function openApi(origin) {
   };
   const planSchema = {
     type: "object",
-    required: ["symbol", "direction", "model", "submodel", "marketRegime", "opportunityGrade", "modelInvalidation", "location", "trigger", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "firstRealisticTarget", "minNetRR", "hardBlockers", "risk", "strategySummary", "triggerExplanation", "sourceAnalysisAt", "expiresAt"],
+    required: ["symbol", "direction", "model", "submodel", "marketRegime", "opportunityGrade", "modelInvalidation", "location", "trigger", "entryZone", "stopLoss", "invalidationPrice", "takeProfits", "firstRealisticTarget", "minNetRR", "hardBlockers", "strategySummary", "triggerExplanation", "sourceAnalysisAt", "expiresAt"],
     properties: {
       recordType: { type: "string", enum: ["PLAN"], default: "PLAN" },
       planId: { type: "string", description: "Stable identifier for this exact final GPT plan; omit to auto-generate." },
@@ -4787,7 +4854,7 @@ function openApi(origin) {
       model: { type: "string", enum: ["A", "B", "C"], description: "The only allowed course setup models. No model means no plan." },
       submodel: { type: "string", enum: ["A1", "A2", "B1", "B2", "C1", "C2"], description: "Required child of A/B/C; it cannot create a fourth parent model." },
       marketRegime: { type: "string", enum: ["TREND", "RANGE", "COMPRESSION", "TRANSITION"], description: "Technical regime selected before setup evaluation. Event and abnormal-liquidity risk remain independent hard blockers." },
-      opportunityGrade: { type: "string", enum: ["A+", "A", "B"], description: "C/D opportunities cannot be armed. Grade selects the configured risk cap; every grade has the same minimum net RR of 2." },
+      opportunityGrade: { type: "string", enum: ["A+", "A", "B"], description: "C/D opportunities cannot be armed. Every grade has the same minimum net RR of 2. Account management is outside this signal service." },
       modelConfluence: { type: "array", items: { type: "string" }, description: "Optional supporting overlap; priority remains A then B then C." },
       modelInvalidation: { type: "string", description: "Causal model invalidation, not merely a price number." },
       location: {
@@ -4873,22 +4940,7 @@ function openApi(origin) {
       hardBlockers: { type: "array", items: { type: "string" }, description: "Must be empty. A plan with any hard blocker is rejected." },
       softWarnings: { type: "array", items: { type: "string" } },
       sourceAnalysisAt: { type: "string", format: "date-time" },
-      risk: {
-        type: "object",
-        required: ["accountEquityUsdt", "accountRiskPct", "leverage", "riskAssessmentStatus", "dailyRiskLimitReached", "psychologicalVeto", "correlatedRiskPct"],
-        properties: {
-          accountEquityUsdt: { type: ["number", "null"] },
-          accountRiskPct: { type: ["number", "null"] },
-          leverage: { type: ["number", "null"] },
-          marginMode: { type: "string" },
-          configStatus: { type: "string" },
-          riskAssessmentStatus: { type: "string", enum: ["VERIFIED_CLEAR"], description: "Only after current account and psychology state are explicitly checked. Unknown cannot arm." },
-          dailyRiskLimitReached: { type: "boolean" },
-          psychologicalVeto: { type: "boolean" },
-          correlatedRiskPct: { type: ["number", "null"] },
-          derivedSizing: moduleSchema,
-        },
-      },
+      risk: { type:"object", deprecated:true, description:"Optional legacy input, ignored. Account, leverage, position sizing and psychology are user-managed and are not market signal gates.", additionalProperties:true },
     },
   };
   return {
@@ -5003,7 +5055,7 @@ function openApi(origin) {
               type: "object",
               required: ["symbol", "direction", "model", "submodel", "marketRegime", "strategySummary", "sourceAnalysisAt"],
               properties: { ...planSchema.properties,
-                recordType: { type: "string", enum: ["PLAN", "OBSERVATION"], default: "PLAN", description: "PLAN requires all execution/risk fields. OBSERVATION requires observationZone, observationInvalidation and pendingCondition instead." },
+                recordType: { type: "string", enum: ["PLAN", "OBSERVATION"], default: "PLAN", description: "PLAN requires complete market execution fields, no account/psychology context. OBSERVATION needs a real zone, invalidation and pendingCondition; current execution quote is not required." },
                 observationId: { type: "string", description: "Reuse the returned ID only when explicitly revising that observation; identical repeats preserve expiry." },
                 observationZone: { type: "object", required: ["min", "max"], properties: { min: { type: "number", exclusiveMinimum: 0 }, max: { type: "number", exclusiveMinimum: 0 } } },
                 observationInvalidation: { type: "object", required: ["level", "mode"], properties: { level: { type: "number", exclusiveMinimum: 0 }, mode: { type: "string", enum: ["PRICE", "CLOSE_15M"] } }, description: "Risk-side boundary outside the observation zone. PRICE needs two current samples; CLOSE_15M needs a fresh completed candle." },
@@ -5031,7 +5083,7 @@ function openApi(origin) {
             200: { description: "Scanner status", content: { "application/json": { schema: { type: "object", properties: {
               status: { type: "string" }, activePlan: { type: ["object", "null"], properties: planSchema.properties },
               runtime: { type: ["object", "null"], additionalProperties: true },
-              observations: { type: "array", items: moduleSchema }, observationHistory: { type: "array", items: moduleSchema },
+              observations: { type: ["array", "null"], items: moduleSchema }, observationHistory: { type: "array", items: moduleSchema },
               heartbeat: { type: ["object", "null"], additionalProperties: true }, discovery: { type: ["object", "null"], additionalProperties: true }, diagnostics: moduleSchema,
             } } } } },
             401: { description: "Missing or invalid scanner bearer token" },
@@ -5042,7 +5094,7 @@ function openApi(origin) {
         post: {
           operationId: "cancelTradingPlanMonitoring",
           summary: "Cancel an invalid plan or a specific observation",
-          description: "Cancel for invalidation, expiry, explicit replacement or user request. Pending account review, price outside entry, data gaps or No Trade alone must not cancel valid observations. Default PLAN preserves observations; ALL cancels existing records, not future discovery.",
+          description: "Cancel for invalidation, expiry, explicit replacement or user request. Price outside entry, data gaps or No Trade alone must not cancel valid observations. Default PLAN preserves observations; ALL cancels existing records, not future discovery.",
           requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: {
             scope: { type: "string", enum: ["PLAN", "OBSERVATION", "ALL"], default: "PLAN" },
             observationId: { type: "string", description: "Required when scope is OBSERVATION" },
@@ -5066,14 +5118,13 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数与六组永续结构K线基线保存在 Cloudflare Durable Object 中；系统仅增量更新到期K线，并保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率；Gate USDT 永续作为持久结构K线主源，OKX永续仅在Gate持久基线不可用时完整恢复；OKX现货提供最新成交、订单簿和真实逐笔成交样本。现货样本不冒充持久CVD。Gate还提供主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用或持久数据过期时返回数据阻断，不使用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-09-11</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数与六组永续结构K线基线保存在 Cloudflare Durable Object 中；系统仅增量更新到期K线，并保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率；Gate USDT 永续作为持久结构K线主源，OKX永续仅在Gate持久基线不可用时完整恢复；OKX现货提供最新成交、订单簿和真实逐笔成交样本。现货样本不冒充持久CVD。Gate还提供主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用或持久数据过期时返回数据阻断，不使用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-10-14</p></body></html>`;
 }
 
 async function handleSnapshot(request, env, ctx) {
   lastManualRequestAt = Date.now();
   if (manualSnapshotWork) return (await manualSnapshotWork).clone();
   const work = (async () => {
-    if (scannerStateStub(env)) await scannerStatePut(env, MANUAL_PRIORITY_KEY, { until: Date.now() + 60_000 }, 60).catch(() => {});
     return buildManualResponse(request, env, ctx);
   })();
   manualSnapshotWork = work;
@@ -5086,7 +5137,7 @@ async function buildManualResponse(request, env, ctx) {
   const cacheKey = new Request(`https://crypto-alpha-cache.invalid/${CACHE_NAMESPACE}/realtime`);
   if (cache) {
     const cached = await cache.match(cacheKey);
-    if (cached) return new Response(cached.body, cached);
+    if (cached) return json(refreshServedSnapshot(await cached.json()),200,{"cache-control":"no-store"});
   }
   const snapshot = await buildSnapshot({ env, coinalyzeApiKey: env?.COINALYZE_API_KEY });
   const response = json(snapshot, 200, { "cache-control": `public, max-age=1, s-maxage=${SNAPSHOT_CACHE_SECONDS}` });
@@ -5153,6 +5204,10 @@ export class ScannerState {
     if (request.method !== "POST") return Response.json({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
     let input;
     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
+    if (["publicMarket","directQuote"].includes(input?.op)) {
+      try {return Response.json(input.op==="publicMarket"?await coordinatedMarketBundle(this):await coordinatedDirectQuote(this,input.symbol));}
+      catch(error){return Response.json({error:"PUBLIC_MARKET_COORDINATOR_FAILED",detail:String(error?.message||error).slice(0,200)},{status:503});}
+    }
     if (input?.op === "get" && Array.isArray(input.keys)) {
       const values = {};
       for (const key of input.keys.slice(0, 20)) {
@@ -5233,8 +5288,6 @@ export function evaluateCourseDecision(input = {}) {
   if (input.environment?.liquidityAbnormal === true || input.execution?.slippageAbnormal === true) hardBlockers.push("ABNORMAL_LIQUIDITY_OR_EXECUTION");
   if (input.execution?.dangerousStopZone === true && input.execution?.alignedSweepClearedStopPool !== true) hardBlockers.push("DANGEROUS_STOP_ZONE");
   if (input.data?.requiredFieldsReady !== true) hardBlockers.push("REQUIRED_DATA_GAP");
-  if (input.risk?.dailyRiskLimitReached === true) hardBlockers.push("DAILY_RISK_LIMIT_REACHED");
-  if (input.risk?.psychologicalVeto === true) hardBlockers.push("PSYCHOLOGICAL_VETO");
   const setup = input.setup || {};
   const candidateExists = model === "A" ? setup.trendExists === true && setup.pullbackAtMeaningfulLocation === true
     : model === "B" ? setup.breakout === true && setup.rejection !== true
@@ -5256,14 +5309,9 @@ export function evaluateCourseDecision(input = {}) {
   if (hardBlockers.length) {
     return { finalState: "NO_TRADE", operationalState: input.data?.requiredFieldsReady === true ? "NO_TRADE" : "DATA_BLOCKED", model: model || "NONE", submodel: submodel || "NONE", marketRegime: marketRegime || "UNKNOWN", regimePermission, hardBlockers: [...new Set(hardBlockers)], softWarnings: [...new Set(softWarnings)], openNow: false, scoreIgnoredForPermission: true };
   }
-  const riskVerified = input.risk?.riskAssessmentStatus === "VERIFIED_CLEAR"
-    && input.risk?.dailyRiskLimitReached === false && input.risk?.psychologicalVeto === false
-    && Number.isFinite(finite(input.risk?.correlatedRiskPct)) && finite(input.risk.correlatedRiskPct) >= 0
-    && finite(input.risk.correlatedRiskPct) <= LEGACY_CONFIG.correlatedRiskCapPct;
   const pendingTrigger = scannerText(input.pendingTrigger, "", 500);
   const marketState = modelReady && regimePermission === "DIRECT" ? direction : pendingTrigger ? "WAIT" : "NO_TRADE";
   const reviewBlockers = [];
-  if (!riskVerified) reviewBlockers.push("ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED");
   if (!["btcSystemicConflict", "majorNewsExecutionRisk", "liquidityAbnormal"].every(key => input.environment?.[key] === false)) reviewBlockers.push("ENVIRONMENT_REVIEW_INCOMPLETE");
   if (input.confirmation?.minimumSufficientEvidence !== true) reviewBlockers.push("MINIMUM_SUFFICIENT_EVIDENCE_NOT_VERIFIED");
   if (reviewBlockers.length || marketState === "NO_TRADE") {
@@ -5287,7 +5335,7 @@ export default {
 
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
-      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Durable Object coordinated Gate primary/OKX recovery perpetual structure + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, binanceCandleRequests: 0, gateStructureCandleRequests: "DYNAMIC_DUE_SERIES_ONLY", gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "FULL_RECOVERY_ONLY", binanceCandlesRole: "DISABLED_PRODUCTION_HTTP_403", gateCandlesRole: "PRIMARY_DURABLE_INCREMENTAL_STRUCTURE", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "DURABLE_OBJECT_FULL_BASELINE_THEN_INCREMENTAL_8", structureCoordinator: { backend: "DURABLE_OBJECT", sharedConsumers: ["MANUAL_ACTION", "PLAN_SCANNER", "DISCOVERY"], refreshSeconds: STRUCTURE_REFRESH_SECONDS, maximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS, concurrentRefreshDeduplicated: true }, autonomousDiscoveryStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
+      return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Durable Object coordinated Gate primary/OKX recovery perpetual structure + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, publicMarketCoordinator: {backend:"DURABLE_OBJECT",sharedEndpointCache:true,persistent429Cooldown:true,quoteFallbacks:["BATCH_TICKER","SINGLE_TICKER","OKX_PERPETUAL_TRADES_PLUS_BOOK"],noAccountOrPsychologyGate:true}, binanceCandleRequests: 0, gateStructureCandleRequests: "DYNAMIC_DUE_SERIES_ONLY", gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "FULL_RECOVERY_ONLY", binanceCandlesRole: "DISABLED_PRODUCTION_HTTP_403", gateCandlesRole: "PRIMARY_DURABLE_INCREMENTAL_STRUCTURE", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "DURABLE_OBJECT_FULL_BASELINE_THEN_INCREMENTAL_8", structureCoordinator: { backend: "DURABLE_OBJECT", sharedConsumers: ["MANUAL_ACTION", "PLAN_SCANNER", "DISCOVERY"], refreshSeconds: STRUCTURE_REFRESH_SECONDS, maximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS, concurrentRefreshDeduplicated: true }, autonomousDiscoveryStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
     }
     if (path === "/openapi.json") return json(openApi(origin), 200, { "cache-control": "public, max-age=300" });
     if (path === "/privacy") {
@@ -5324,14 +5372,8 @@ export default {
   },
 
   async scheduled(_controller, env, ctx) {
-    // Advisory isolate-local priority; this does not claim a global quota lock.
+    // Monitoring must continue during manual queries; shared endpoint/structure coordination deduplicates upstream work.
     const task = (async () => {
-      const priority = await scannerStateGet(env, MANUAL_PRIORITY_KEY).catch(() => null);
-      if (manualSnapshotWork || Date.now() - lastManualRequestAt < 10_000 || priority?.until > Date.now()) {
-        const old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
-        await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, status: "deferred", lastAttemptAt: new Date(Date.now()).toISOString(), reason: "MANUAL_REQUEST_PRIORITY" });
-        return;
-      }
       // Keep the shared structure baseline warm independently of whether a
       // user plan is armed. Due series alone are refreshed; most cron ticks
       // perform zero candle downloads for 1H/4H.
