@@ -1,12 +1,12 @@
-const BUILD = "crypto-alpha-worker-v25.0.0-monitor-quote-repair";
-const API_VERSION = "7.4.0";
+const BUILD = "crypto-alpha-worker-v26.0.0-actionable-signal-repair";
+const API_VERSION = "7.5.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v25.0.0-monitor-quote-repair";
+const CACHE_NAMESPACE = "v26.0.0-actionable-signal-repair";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -190,7 +190,7 @@ function scannerStatusRecord(r) {
   return {observationId:r.observationId,revision:r.revision,state:r.state,origin:r.origin,symbol:r.symbol,direction:r.direction,
     model:r.model,submodel:r.submodel,observationZone:r.observationZone,observationInvalidation:r.observationInvalidation,
     observationTrigger:r.observationTrigger,pendingCondition:r.pendingCondition,sourceAnalysisAt:r.sourceAnalysisAt,expiresAt:r.expiresAt,
-    checkedAt:r.checkedAt,reason:r.reason,price:r.price,alerts:r.alerts||{},lastCandidateAt:r.lastCandidateAt};
+    checkedAt:r.checkedAt,reason:r.reason,price:r.price,alerts:r.alerts||{},lastCandidateAt:r.lastCandidateAt,notificationMode:r.notificationMode||"ACTIONABLE_ONLY",preparedTrade:candidateCard(r.candidate,r,r.checkedAt)};
 }
 
 const RETIRED_ACCOUNT_BLOCKERS = new Set(["ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED","DAILY_RISK_LIMIT_REACHED","PSYCHOLOGICAL_VETO","CURRENT_ACCOUNT_AND_PSYCHOLOGY"]);
@@ -251,14 +251,29 @@ function trendPullbackSeeds(asset) {
     const pullPrice = long ? pull.l : pull.h, depth = Math.abs(extreme-pullPrice)/impulse;
     if (impulse < DYNAMIC_MODEL_CONFIG.minimumImpulseAtr*atr || depth < 0.15 || depth > DYNAMIC_MODEL_CONFIG.maximumRetracement
       || (long ? pullPrice <= origin : pullPrice >= origin)) continue;
-    const location = levels.filter(([,p]) => Math.abs(p-pullPrice) <= 0.5*atr)
+    let location = levels.filter(([,p]) => Math.abs(p-pullPrice) <= 0.5*atr)
       .sort((a,b) => Math.abs(a[1]-pullPrice)-Math.abs(b[1]-pullPrice))[0];
+    let locationVariant="H1_PULLBACK";
+    if (!location && depth < DYNAMIC_MODEL_CONFIG.shallowDeepSplit && depth >= 0.15
+      && !trendAgainst(direction,t1) && finite(t1.indicators?.adx14,0)>=25
+      && (direction==="LONG"?["UP","STRONG_UP"]:["DOWN","STRONG_DOWN"]).includes(t1.trend)) {
+      // Two independent anchors: a PRE-impulse local shelf and a 15m EMA/VWAP.
+      // No arbitrary internal wiggle, unfinished bar or indicator alone creates a setup.
+      const shelfRows=prior.slice(0,-2);
+      const shelf=long?Math.max(...shelfRows.map(c=>c.h)):Math.min(...shelfRows.map(c=>c.l));
+      const averages=[asset.timeframes["15m"].indicators?.ema20,asset.timeframes["15m"].indicators?.vwap20]
+        .filter(Number.isFinite);
+      if(shelfRows.length>=3 && Math.abs(shelf-pullPrice)<=0.5*atr
+        && averages.some(v=>Math.abs(v-pullPrice)<=0.5*atr)) {
+        location=["15M_PRIOR_SHELF_WITH_AVERAGE_CONFLUENCE",shelf];locationVariant="STRONG_TREND_LOCAL_CONTINUATION";
+      }
+    }
     if (!location) continue;
     const submodel = depth >= DYNAMIC_MODEL_CONFIG.shallowDeepSplit ? "A1" : "A2";
     const eventAt = peak.ts, expiresAt = new Date(Date.parse(eventAt)+(BREAKOUT_WINDOW_BARS+1)*900_000).toISOString();
     if (Date.parse(expiresAt) <= Date.now()) continue;
     // The entire pre-pullback impulse is the observation invalidation, not an invented entry stop.
-    return [{model:"A",submodel,direction,eventAt,expiresAt,atr,boundary:location[1],locationBasis:location[0],
+    return [{model:"A",submodel,direction,eventAt,expiresAt,atr,boundary:location[1],locationBasis:location[0],locationVariant,
       impulseOrigin:origin,impulseExtreme:extreme,retracementFraction:depth,
       observationInvalidationPrice:long ? origin-0.1*atr : origin+0.1*atr,
       entryZone:long ? {min:pullPrice,max:Math.min(extreme,location[1]+atr)} : {min:Math.max(extreme,location[1]-atr),max:pullPrice}}];
@@ -355,8 +370,9 @@ function opportunityAssessment(seed,asset,btc) {
     :trendAgainst(direction,t["4h"])||(!externalAcceptance&&trendAgainst(direction,t["1h"]));
   const btcConflict=trendAgainst(direction,btc.timeframes["4h"])&&trendAgainst(direction,btc.timeframes["1h"]);
   if(ethConflict||btcConflict)return {...result,failedGate:ethConflict?"ETH_TREND_CONFLICT":"BTC_SYSTEMIC_CONFLICT"};
-  const price=finite(asset.ticker?.last),target=nearestStructuralTarget(direction,asset,price,seed);
-  if(!priceInsideEntryZone(price,seed.entryZone))return {...result,failedGate:"PRICE_OUTSIDE_FROZEN_ZONE_NO_CHASING"};
+  const last=finite(asset.ticker?.last),price=finite(long?asset.ticker?.ask:asset.ticker?.bid,last);
+  const target=nearestStructuralTarget(direction,asset,price,seed);
+
   if(!Number.isFinite(target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_MISSING"};
   const stopLoss=stopOutsideNearbyStructuralPool(direction,progress.stopLoss,asset,seed.atr);
   const costPct=0.15,netRR=planNetRR({direction,stopLoss,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
@@ -365,9 +381,10 @@ function opportunityAssessment(seed,asset,btc) {
   const zone=long?{min:Math.max(seed.entryZone.min,stopLoss+epsilon),max:Math.min(seed.entryZone.max,cap)}
     :{min:Math.max(seed.entryZone.min,cap),max:Math.min(seed.entryZone.max,stopLoss-epsilon)};
   const rrQualifiedEntryZone=zone.min<=zone.max&&(long?zone.min>stopLoss:zone.max<stopLoss)?zone:null;
-  const pricing={entry:price,stopLoss,rawProtectiveStop:progress.stopLoss,structuralPoolBufferApplied:stopLoss!==progress.stopLoss,
+  const pricing={entry:price,entryReference:"DIRECTIONAL_ASK_OR_BID_WHEN_AVAILABLE",stopLoss,rawProtectiveStop:progress.stopLoss,structuralPoolBufferApplied:stopLoss!==progress.stopLoss,
     target,estimatedRoundTripCostPct:costPct,netRR,rrQualifiedEntryZone};
-  if(!(netRR>=MIN_NET_RR))return {...result,...pricing,failedGate:"FIRST_TARGET_NET_RR_BELOW_2"};
+  if(!priceInsideEntryZone(price,seed.entryZone))return {...result,...pricing,state:"WAIT_PRICE",failedGate:"PRICE_OUTSIDE_FROZEN_ZONE_NO_CHASING"};
+  if(!(netRR>=MIN_NET_RR))return {...result,...pricing,state:rrQualifiedEntryZone?"WAIT_PRICE":result.state,failedGate:"FIRST_TARGET_NET_RR_BELOW_2"};
   const candidate={...seed,...pricing,candleAt:progress.candleAt,externalBoundaryAcceptance:externalAcceptance,openNowAllowed:false,
     validationStatus:"DETECTOR_NOT_PROVEN_HIGH_WIN_RATE",reviewRequired:["MODEL_LOCATION","NEWS_MACRO","ACTUAL_COSTS"]};
   return {...result,...pricing,state:"CANDIDATE_FOR_REVIEW",candidate};
@@ -390,6 +407,13 @@ function dynamicMarketContext(asset) {
     ?flowDirection==="BUY"?(response>0.02?"BUY_FLOW_PRICE_ADVANCE":"BUY_FLOW_POOR_ADVANCE_REVIEW_ABSORPTION")
       :(response< -0.02?"SELL_FLOW_PRICE_DECLINE":"SELL_FLOW_POOR_DECLINE_REVIEW_ABSORPTION"):"UNKNOWN";
   const closedShock=observationStructureReady(asset)&&rangeAtr>=2.5&&volumeRatio>=2;
+  const price=finite(asset?.ticker?.last,latest?.c), minMove=Math.max(12,price*0.005,(atr||0)*1.25);
+  const flowMove=flowFresh?Math.abs(finite(trades?.priceResponse?.last,0)-finite(trades?.priceResponse?.first,0)):0;
+  const candleMove=latest?Math.abs(latest.c-latest.o):0;
+  const materialFlow=flowFresh&&flowDirection&&count>=3&&total>=500000
+    && finite(trades.coverageSeconds,0)>=30&&flowMove>=minMove
+    && (flowDirection==="BUY"?response>0:response<0);
+  const materialShock=closedShock&&candleMove>=minMove;
   const flags=[];
   if(closedShock)flags.push("CLOSED_CANDLE_VOLUME_VOLATILITY_SHOCK");
   if(flowDirection)flags.push("LARGE_EXECUTED_"+flowDirection+"_IMBALANCE");
@@ -397,6 +421,11 @@ function dynamicMarketContext(asset) {
   return {status:flags.length?"REASSESS":"NORMAL_OR_INCONCLUSIVE",flags,volumeRatio,rangeAtr,flowFresh,flowDirection,
     flowWindow:flowFresh?{startAt:trades.sampleStartAt,endAt:trades.sampleEndAt,sampleTradeCount:trades.sampleTradeCount,largeTradeCount:count}:null,
     priceResponsePct:response,priceResponseClassification:responseClass,
+    alertEligible:Boolean(materialFlow||materialShock),materialShock:Boolean(materialShock),materialFlow:Boolean(materialFlow),
+    minimumAlertMoveUsd:minMove,observedMoveUsd:materialShock?candleMove:flowMove,
+    observedMovePct:materialShock?(latest.c/latest.o-1)*100:response,
+    alertReason:materialShock?"MATERIAL_CLOSED_CANDLE":materialFlow?"MATERIAL_EXECUTED_FLOW":"BELOW_MATERIAL_PRICE_THRESHOLD",
+    observedAt:flowFresh?trades.sampleEndAt:latest?new Date(Date.parse(latest.ts)+900000).toISOString():null,
     eventKey:flags.length?[bucket,closedShock?"SHOCK":"FLOW",flowDirection||Math.sign(latest.c-latest.o)].join(":"):null,
     nextAction:flags.length?"RESCAN_ALL_SIX_VERIFY_NEWS_AND_EXISTING_THESIS":"CONTINUE_SCANNING",
     headlineFeedAvailable:false,newsCause:"UNVERIFIED",standaloneDirection:false,openNowAllowed:false,
@@ -409,36 +438,42 @@ function buildOpportunityScan(asset,btc) {
   const assessments=raw.map(s=>opportunityAssessment(s,asset,btc));
   const range=discoverRangeReversal(asset,btc);
   if(range)assessments.push({submodel:range.submodel,direction:range.direction,state:"CANDIDATE_FOR_REVIEW",minNetRR:MIN_NET_RR,netRR:range.netRR,candidate:range,failedGate:null});
-  const rank={CANDIDATE_FOR_REVIEW:5,STRUCTURE_READY:4,RETEST_ACCEPTED:3,WAIT_PULLBACK_SHIFT:2,WAIT_RETEST:2};
+  const rank={CANDIDATE_FOR_REVIEW:5,STRUCTURE_READY:4,WAIT_PRICE:4,RETEST_ACCEPTED:3,WAIT_PULLBACK_SHIFT:2,WAIT_RETEST:2};
   const models=["A1","A2","B1","B2","C1","C2"].map(submodel=>{
     const found=assessments.filter(x=>x.submodel===submodel).sort((x,y)=>(rank[y.state]||0)-(rank[x.state]||0)||finite(y.netRR,0)-finite(x.netRR,0))[0];
     return found||{submodel,state:observationStructureReady(asset)?"NO_SETUP":"DATA_BLOCKED",candidate:null,
       failedGate:submodel[0]==="A"?"NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL":submodel==="B2"?"NO_COMPRESSION_BREAKOUT":submodel[0]==="C"?"NO_COMPLETE_RANGE_EDGE_REVERSAL":"NO_BREAKOUT",minNetRR:MIN_NET_RR};
   });
   return {checkedAt:new Date(Date.now()).toISOString(),models,dynamicContext:dynamicMarketContext(asset),
+    preparedCount:models.filter(m=>m.candidate).length, executionQuoteReady:genuineExecutionQuote(asset?.ticker),
     minimumNetRR:MIN_NET_RR,coverage:"ALL_SIX_SUBMODELS_WITH_SPECIFIED_DETECTORS_NOT_ALL_MARKET_OPPORTUNITIES",
     measuredWinRate:null,validationStatus:"NO_EMPIRICAL_WIN_RATE_CLAIM",openNowAllowed:false};
 }
 
 async function processDynamicAlert(env,context,previous,deadlineAt) {
   const now=Date.now(),old=previous||{},sentKeys=old.sentKeys||[];
-  const lastObservedFlow=context?.flowFresh?context.flowDirection:old.lastObservedFlow||null;
-  const next={...old,lastObservedFlow};
-  if(!context?.eventKey)return {...next,pending:null};
-  const shock=context.flags.includes("CLOSED_CANDLE_VOLUME_VOLATILITY_SHOCK");
-  const changed=shock||context.flowDirection!==old.lastObservedFlow;
-  // A steady flow imbalance crossing a 15m clock boundary is not a new shock.
-  const retry=old.pending&&(old.pending.eventKey===context.eventKey||(!shock&&old.pending.flowDirection===context.flowDirection));
-  if((!changed&&!retry)||sentKeys.includes(context.eventKey))return {...next,pending:null};
-  const pending=retry?old.pending:{eventKey:context.eventKey,flowDirection:context.flowDirection,attempts:0,nextAttemptAt:0};
+  const next={...old,lastObservedFlow:context?.flowFresh?context.flowDirection:old.lastObservedFlow||null};
+  const observed=Date.parse(context?.observedAt),maxAge=context?.materialShock?20*60_000:120_000;
+  if(!context?.alertEligible||!context.eventKey||!Number.isFinite(observed)||now-observed<0||now-observed>maxAge)
+    return {...next,pending:null,qualifyingSince:null,qualifyingDirection:null,qualifyingLastAt:null,suppressedReason:context?.alertReason||"NO_FRESH_MATERIAL_CHANGE"};
+  const direction=context.materialShock?"SHOCK":context.flowDirection;
+  const same=old.qualifyingDirection===direction&&old.qualifyingLastAt>=now-120_000;
+  const qualifyingSince=same?old.qualifyingSince:now;
+  Object.assign(next,{qualifyingDirection:direction,qualifyingSince,qualifyingLastAt:now});
+  // Two consecutive scanner observations for sampled flow; closed 15m shocks already have a full bar.
+  if(!context.materialShock&&now-qualifyingSince<45_000)return {...next,pending:null,suppressedReason:"AWAIT_SECOND_PERSISTENT_SAMPLE"};
+  if(sentKeys.includes(context.eventKey)||now-Date.parse(old.lastAcceptedAt||0)<30*60_000)
+    return {...next,pending:null,suppressedReason:"THIRTY_MINUTE_COOLDOWN_OR_DUPLICATE"};
+  const retry=old.pending?.eventKey===context.eventKey;
+  const pending=retry?old.pending:{eventKey:context.eventKey,attempts:0,nextAttemptAt:0};
   if(pending.nextAttemptAt>now||now+6500>deadlineAt)return {...next,pending};
   let result;
-  try{result=await sendBark(env,{title:"ETH（以太坊）成交/波动突变，重新评估",body:
-    "检测到"+(context.flags.includes("CLOSED_CANDLE_VOLUME_VOLATILITY_SHOCK")?"已收盘K线放量扩大波动；":"")
-    +(context.flowDirection==="BUY"?"近期大额主动买入偏多。":context.flowDirection==="SELL"?"近期大额主动卖出偏多。":"")
-    +"\n六子模型已重新扫描；这不是开仓信号。需核实新闻原因、价格响应及原方案是否仍成立。检测时间 "+new Date(now).toISOString(),level:"timeSensitive"});}
+  try{result=await sendBark(env,{title:"ETH（以太坊）显著价格变化，需复核",body:
+    "同窗口价格变动 "+formatPrice(context.observedMoveUsd)+" 美元（"+round(context.observedMovePct,2)+"%）；本次门槛 "+formatPrice(context.minimumAlertMoveUsd)+" 美元。"
+    +"\n"+(context.materialShock?"已收盘15分钟放量扩幅。":"持续大额主动成交与价格同向响应。")
+    +"后台已重新扫描六模型；本条不是开仓信号。新闻原因未核实。北京时间 "+chinaTime(now),level:"active"});}
   catch(error){result={sent:false,reason:String(error?.message||error)};}
-  return result.sent?{...next,sentKeys:[...sentKeys,pending.eventKey,context.eventKey].slice(-32),pending:null,lastAcceptedAt:new Date(now).toISOString(),deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"}
+  return result.sent?{...next,sentKeys:[...sentKeys,context.eventKey].slice(-32),pending:null,lastAcceptedAt:new Date(now).toISOString(),deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"}
     :{...next,pending:{...pending,attempts:pending.attempts+1,nextAttemptAt:now+Math.min(15,2**Math.min(pending.attempts+1,4))*60_000,lastError:result.reason}};
 }
 
@@ -588,7 +623,7 @@ function discoverRangeReversal(asset, btc) {
   const netRR = planNetRR(plan, price);
   if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.B)) return null;
   return {
-    model: "C", submodel, direction, boundary, stopLoss, target: midpoint, netRR,
+    model: "C", submodel, direction, boundary, entry:price,estimatedRoundTripCostPct:0.15,stopLoss, target: midpoint, netRR,
     candleAt: latest.ts,
     entryZone: long ? { min: lower, max: Math.min(midpoint, lower + 0.25 * (upper - lower)) } : { min: Math.max(midpoint, upper - 0.25 * (upper - lower)), max: upper },
     evidence: { reentered, structureShift, event: submodel === "C2" ? "FAILED_BREAKOUT_REENTERED" : "SWEEP_RECLAIMED" },
@@ -659,6 +694,7 @@ function normalizeObservation(input) {
   }
   return { observationId: scannerText(input.observationId || crypto.randomUUID(), "", 100), revision: 1,
     recordType: "OBSERVATION", origin: "GPT", symbol, direction, model, submodel, marketRegime,
+    notificationMode:input.notificationMode==="ALL_STAGES"?"ALL_STAGES":"ACTIONABLE_ONLY",
     observationZone: { min, max }, observationInvalidation: invalidation, observationTrigger: trigger,
     strategySummary: thesis, pendingCondition: pending, sourceAnalysisAt: new Date(sourceAt).toISOString(),
     createdAt: new Date(now).toISOString(), expiresAt: new Date(expiry).toISOString(),
@@ -667,7 +703,7 @@ function normalizeObservation(input) {
 
 function observationSignature(record) {
   return JSON.stringify([record.symbol, record.direction, record.model, record.submodel, record.marketRegime,
-    record.observationZone, record.observationInvalidation, record.observationTrigger, record.pendingCondition]);
+    record.observationZone, record.observationInvalidation, record.observationTrigger, record.pendingCondition,record.notificationMode||"ACTIONABLE_ONLY"]);
 }
 
 async function saveObservation(env, input) {
@@ -686,7 +722,7 @@ async function saveObservation(env, input) {
     if (active.length >= OBSERVATION_LIMIT) throw new Error("OBSERVATION_CAPACITY_REACHED_CANCEL_UNUSED_RECORD");
     book.records.push(next);
     return { status: "observation_saved", build: BUILD, observation: next, openNowAllowed: false,
-      next: "Cron follows this zone without requiring fabricated entry, stop, RR or verified account. Registered trigger alerts require final model/news/account review." };
+      next: "Cron follows this zone without requiring fabricated entry, stop, RR or verified account. Registered trigger alerts require final model/news review; account is user-managed." };
   });
 }
 
@@ -694,7 +730,7 @@ function autoObservation(seed, kind, asset) {
   const now = Date.now(), long = seed.direction === "LONG";
   const atr = finite(asset.timeframes?.["15m"]?.indicators?.atr14);
   const eventAt = seed.breakoutAt || seed.eventAt || seed.candleAt;
-  return { recordType: "OBSERVATION", origin: "AUTONOMOUS", observationId: (kind === "PULLBACK" || seed.submodel === "B2" ? kind + ":" + seed.submodel : kind) + ":" + seed.direction + ":" + eventAt,
+  return { recordType: "OBSERVATION", origin: "AUTONOMOUS", notificationMode:"ACTIONABLE_ONLY", observationId: (kind === "PULLBACK" || seed.submodel === "B2" ? kind + ":" + seed.submodel : kind) + ":" + seed.direction + ":" + eventAt,
     revision: 1, symbol: "ETHUSDT", model: seed.model, submodel: seed.submodel, direction: seed.direction,
     marketRegime: asset.marketRegimeRouter?.regime, observationZone: seed.entryZone,
     observationInvalidation: { level: seed.observationInvalidationPrice || (long ? seed.entryZone.min - atr : seed.entryZone.max + atr), mode: "CLOSE_15M" },
@@ -728,7 +764,7 @@ function observationVerification(samples, zone) {
 }
 
 function evaluateObservation(record, snapshot, verified) {
-  const now = Date.now(), base = { checkedAt: new Date(now).toISOString(), openNowAllowed: false };
+  const now = Date.now(), base = { checkedAt: new Date(now).toISOString(), openNowAllowed: false,notificationSuppressedReason:null };
   if (now >= Date.parse(record.expiresAt)) return { ...base, state: "EXPIRED", reason: "OBSERVATION_EXPIRED" };
   const asset = snapshot?.assets?.[record.symbol], candle = freshObservationCandle(asset);
   const structureOK = observationStructureReady(asset) && candle;
@@ -764,13 +800,15 @@ function evaluateObservation(record, snapshot, verified) {
   if (structureOK && t && Date.parse(candle.ts) + 900_000 >= Date.parse(record.sourceAnalysisAt)
     && (long ? candle.c > t.level : candle.c < t.level)) triggerAt = candle.ts;
   if (inZone && structureOK && triggerAt) { state = "TRIGGER_MET"; reason = "REGISTERED_PRICE_CONDITION_ONLY_FULL_REVIEW_REQUIRED"; }
-  if (inZone && structureOK && record.origin === "AUTONOMOUS") {
+  if (inZone && structureOK) {
     candidate = ["BREAKOUT", "PULLBACK"].includes(record.seed?.kind) ? opportunityAssessment(record.seed, asset, snapshot.assets.BTCUSDT).candidate
-      : discoverRangeReversal(asset, snapshot.assets.BTCUSDT);
+      : record.seed?.kind==="RANGE"?discoverRangeReversal(asset,snapshot.assets.BTCUSDT)
+      : buildOpportunityScan(asset,snapshot.assets.BTCUSDT).models.find(m=>m.submodel===record.submodel&&m.candidate?.direction===record.direction)?.candidate||null;
+    if(candidate&&!priceInsideEntryZone(verified.current.last,candidate.rrQualifiedEntryZone||candidate.entryZone))candidate=null;
     if (candidate && candidate.direction !== record.direction) candidate = null;
     if (candidate) {
       const liq = planLiquidityRisk({ ...candidate, symbol: record.symbol, liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, asset);
-      if (liq.passed && asset.executionLiquidity?.status === "ok" && snapshot.coverage?.openNowDataReady) {
+      if (liq.passed && genuineExecutionQuote(asset.ticker) && asset.executionLiquidity?.status === "ok" && snapshot.coverage?.openNowDataReady) {
         candidate.softWarnings = asset.capitalFlow?.status === "ok" ? [] : ["AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED"];
         state = "MARKET_CANDIDATE"; reason = "MARKET_FILTERS_PASSED_FRESH_NEWS_REVIEW_PENDING";
       } else { candidate = null; reason = "EXECUTION_OR_LIQUIDITY_REVIEW_PENDING"; }
@@ -785,18 +823,41 @@ function evaluateObservation(record, snapshot, verified) {
       : ["FULL_MODEL_REVIEW", "STRUCTURAL_STOP_AND_FIRST_TARGET_NET_RR", "NEWS_MACRO_REVIEW"] };
 }
 
+function formatPrice(value) {return Number.isFinite(value)?value.toFixed(2):"未获取";}
+function chinaTime(value) {
+  const ts=Number.isFinite(value)?value:Date.parse(value);
+  return Number.isFinite(ts)?new Date(ts+8*3600000).toISOString().slice(0,19).replace("T"," ")+"（北京时间）":"未获取";
+}
+
+function candidateCard(candidate,record,checkedAt) {
+  if(!candidate||![candidate.entry,candidate.stopLoss,candidate.target,candidate.netRR].every(Number.isFinite)||candidate.netRR<MIN_NET_RR)return null;
+  return {direction:candidate.direction,submodel:candidate.submodel,entry:candidate.entry,
+    entryZone:candidate.rrQualifiedEntryZone||candidate.entryZone,stopLoss:candidate.stopLoss,firstTarget:candidate.target,
+    netRR:candidate.netRR,costPct:candidate.estimatedRoundTripCostPct??0.15,
+    checkedAt,validUntil:record.expiresAt,remainingReview:["CURRENT_QUOTE","NEWS_MACRO","ACTUAL_COSTS"],
+    technicalConditionsPassed:true,executionPermission:"FINAL_REVIEW_REQUIRED",automaticOrderPlacement:false};
+}
+
 function observationAlert(record, evaluation) {
-  const labels = { APPROACHING: "接近观察区", IN_ZONE: "已到观察区", TRIGGER_MET: "登记的收盘条件已满足",
-    MARKET_CANDIDATE: "市场候选条件已满足", EXPIRED: "观察已到期", INVALIDATED: "观察已失效" };
-  if (!labels[evaluation.state]) return null;
-  const zone = record.observationZone;
-  return { title: "ETH（以太坊）" + record.submodel + "（子模型）" + labels[evaluation.state],
-    body: "方向：" + (record.direction === "LONG" ? "做多" : "做空") + "；观察区 " + zone.min + "—" + zone.max
-      + "；核验价 " + (evaluation.price ?? "未获取") + "；状态时间 " + evaluation.checkedAt
-      + "。\n" + record.pendingCondition + "。\n"
-      + (OBSERVATION_TERMINAL.includes(evaluation.state) ? "本观察停止，自动发现继续。"
-        : "此为观察/条件提醒，尚未核验完整执行权限。打开GPT复核当前价格、模型及新闻；价格已离区时禁止按旧通知追单。"),
-    level: ["IN_ZONE", "TRIGGER_MET", "MARKET_CANDIDATE"].includes(evaluation.state) ? "timeSensitive" : "active" };
+  if(evaluation.notificationSuppressedReason&&!OBSERVATION_TERMINAL.includes(evaluation.state))return null;
+  const detailed=record.notificationMode==="ALL_STAGES";
+  const card=candidateCard(evaluation.candidate,record,evaluation.checkedAt);
+  if(evaluation.state==="MARKET_CANDIDATE"&&card)return {
+    title:"ETH（以太坊）"+record.submodel+" 交易预案已就绪｜待最后复核",
+    body:"方向："+(record.direction==="LONG"?"做多":"做空")+"；核验价 "+formatPrice(card.entry)
+      +"\n准备入场范围 "+formatPrice(card.entryZone.min)+"—"+formatPrice(card.entryZone.max)
+      +"；结构止损 "+formatPrice(card.stopLoss)+"；第一现实目标 "+formatPrice(card.firstTarget)
+      +"\n净盈亏比 "+round(card.netRR,2)+"；预计往返成本 "+card.costPct+"%；核验时间 "+chinaTime(card.checkedAt)
+      +"。技术条件已通过；打开GPT复核当前价格、最新消息及实际成本。复核通过即可按方案自行执行，无需重复等待新触发。离区、失效或过期不得追单。",level:"timeSensitive"};
+  const terminal=OBSERVATION_TERMINAL.includes(evaluation.state);
+  const previouslyNotified=Object.values(record.alerts||{}).some(a=>a?.status==="SENT")||record.alerts?.MARKET_CANDIDATE?.status==="PENDING";
+  if(!detailed&&(!terminal||!previouslyNotified))return null;
+  const labels={APPROACHING:"接近研究区（未备妥）",IN_ZONE:"已到研究区（未备妥）",TRIGGER_MET:"登记收盘条件满足（未完成全审）",EXPIRED:"预案/研究已到期",INVALIDATED:"预案/研究已失效"};
+  if(!labels[evaluation.state])return null;
+  return {title:"ETH（以太坊）"+record.submodel+" "+labels[evaluation.state],body:
+    "方向："+(record.direction==="LONG"?"做多":"做空")+"；研究区 "+formatPrice(record.observationZone.min)+"—"+formatPrice(record.observationZone.max)
+    +"；核验价 "+formatPrice(evaluation.price)+"；时间 "+chinaTime(evaluation.checkedAt)
+    +"\n"+record.pendingCondition+"。"+(terminal?"本记录停止，自动发现继续。":"这是研究进度，不是开仓准备或执行许可。"),level:"active"};
 }
 
 async function updateObservation(env, record, transform) {
@@ -818,6 +879,7 @@ async function processObservation(env, original, evaluation, deadlineAt = Infini
       if (stage !== evaluation.state && alert.status === "PENDING") alerts[stage] = { ...alert, status: "SUPERSEDED" };
     }
     const message = observationAlert(current, evaluation);
+    if(!message&&alerts[evaluation.state]?.status==="PENDING")alerts[evaluation.state]={...alerts[evaluation.state],status:"SUPPRESSED_BY_NOTIFICATION_POLICY"};
     if (message && !["SENT", "PENDING"].includes(alerts[evaluation.state]?.status)) alerts[evaluation.state] = { status: "PENDING", attempts: 0, nextAttemptAt: 0 };
     return { ...current, ...evaluation, alerts,
       lastCandidateAt: evaluation.candidate ? evaluation.checkedAt : current.lastCandidateAt || null,
@@ -831,9 +893,23 @@ async function processObservation(env, original, evaluation, deadlineAt = Infini
   // Re-read before sending; a cancelled/revised observation cannot reuse an old evaluation.
   const current = (await scannerStateGet(env, OBSERVATIONS_KEY))?.records?.find(r => r.observationId === record.observationId);
   if (current?.revision !== record.revision || current.state !== record.state) return { status: "stale" };
+  let recentPrepared=[];
+  if(record.state==="MARKET_CANDIDATE") {
+    recentPrepared=(await scannerStateGet(env,"scanner:prepared-alerts:v26"))||[];
+    if(!Array.isArray(recentPrepared))throw new Error("PREPARED_ALERT_STATE_INVALID_PRESERVED");
+    recentPrepared=recentPrepared.filter(x=>Date.now()-Date.parse(x.at)<30*60_000);
+    const zone=record.candidate?.rrQualifiedEntryZone||record.observationZone;
+    const duplicate=recentPrepared.some(x=>x.direction===record.direction&&x.id!==record.observationId
+      && Math.max(x.min,zone.min)<=Math.min(x.max,zone.max));
+    if(duplicate){await updateObservation(env,record,r=>({...r,alerts:{...r.alerts,MARKET_CANDIDATE:{...pending,status:"DEDUPLICATED",reason:"OVERLAPPING_PREPARED_TRADE_ALREADY_NOTIFIED"}}}));return {state:record.state,sent:false,reason:"OVERLAPPING_PREPARED_TRADE_ALREADY_NOTIFIED"};}
+  }
   let notification;
   try { notification = await sendBark(env, observationAlert(record, record)); }
   catch (error) { notification = { sent: false, reason: String(error?.message || error) }; }
+  if(notification.sent&&record.state==="MARKET_CANDIDATE") {
+    const zone=record.candidate?.rrQualifiedEntryZone||record.observationZone;
+    await scannerStatePut(env,"scanner:prepared-alerts:v26",[...recentPrepared,{id:record.observationId,direction:record.direction,min:zone.min,max:zone.max,at:new Date(Date.now()).toISOString()}].slice(-20),86400);
+  }
   const attempts = pending.attempts + 1;
   await updateObservation(env, record, r => ({ ...r, alerts: { ...r.alerts, [record.state]: {
     status: notification.sent ? "SENT" : "PENDING", attempts, lastAttemptAt: new Date(Date.now()).toISOString(),
@@ -842,6 +918,67 @@ async function processObservation(env, original, evaluation, deadlineAt = Infini
     lastError: notification.sent ? null : notification.reason,
     deliveryMeaning: "PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT", } } }));
   return { state: record.state, notification };
+}
+
+// Forward technical-signal study: no orders, no claim of fills, and no actual account P&L.
+const FORWARD_STUDY_KEY="scanner:forward-study:v26";
+function forwardStudySummary(book) {
+  const rows=book?.records||[],closed=rows.filter(r=>["TARGET","STOP","TIME_EXIT"].includes(r.outcome)&&Number.isFinite(r.netR));
+  const wins=closed.filter(r=>r.netR>0),losses=closed.filter(r=>r.netR<0);
+  let equity=0,peak=0,maxDrawdownR=0;
+  for(const row of [...closed].sort((a,b)=>Date.parse(a.closedAt)-Date.parse(b.closedAt))){equity+=row.netR;peak=Math.max(peak,equity);maxDrawdownR=Math.max(maxDrawdownR,peak-equity);}
+  const positive=wins.reduce((n,r)=>n+r.netR,0),negative=-losses.reduce((n,r)=>n+r.netR,0);
+  return {scope:"FORWARD_TECHNICAL_CANDIDATES_NOT_EXECUTED_TRADES",build:BUILD,retainedRecords:rows.length,
+    active:rows.filter(r=>r.outcome==="OPEN").length,resolved:closed.length,unknown:rows.filter(r=>r.outcome==="UNRESOLVED").length,
+    sampleWinRate:closed.length?wins.length/closed.length:null,meanNetR:closed.length?equity/closed.length:null,
+    profitFactor:negative>0?positive/negative:null,maxDrawdownR:closed.length?maxDrawdownR:null,
+    sufficientForPerformanceClaim:false,minimumReviewSample:100,
+    limitation:"Rolling 200 signal samples; no news review, no actual fills, no account leverage. Estimated costs; ambiguous/missing intervals excluded and disclosed. Never equate this to real win rate."};
+}
+function advanceForwardRecord(record,asset,now) {
+  if(record.outcome!=="OPEN")return record;
+  const long=record.direction==="LONG",cost=record.entry*record.costPct/100;
+  const risk=Math.abs(record.entry-record.stopLoss)+cost,entryAt=Date.parse(record.enteredAt),lastAt=Date.parse(record.lastCheckedAt);
+  const finish=(outcome,exit,reason)=>({...record,outcome,closedAt:new Date(now).toISOString(),exit,
+    netR:Number.isFinite(exit)?((long?exit-record.entry:record.entry-exit)-cost)/risk:null,reason});
+  const rows=observationCandles(asset),newBars=rows.filter(c=>Date.parse(c.ts)+900000>lastAt&&Date.parse(c.ts)+900000<=now);
+  // Any unobserved gap longer than one polling window is unresolved, not silently assumed safe.
+  if(now-lastAt>180000)return finish("UNRESOLVED",null,"POLLING_GAP_OVER_180_SECONDS");
+  for(const c of newBars){
+    const start=Date.parse(c.ts),stop=long?c.l<=record.stopLoss:c.h>=record.stopLoss,target=long?c.h>=record.firstTarget:c.l<=record.firstTarget;
+    if(start<entryAt){if(stop||target)return finish("UNRESOLVED",null,"ENTRY_CANDLE_ORDER_UNKNOWN");continue;}
+    // Entire candle was after entry. When both levels are touched, use the adverse order.
+    if(stop)return finish("STOP",long?Math.min(record.stopLoss,c.o):Math.max(record.stopLoss,c.o),target?"BOTH_TOUCHED_STOP_FIRST":"CLOSED_BAR_STOP");
+    if(target)return finish("TARGET",record.firstTarget,"CLOSED_BAR_TARGET");
+  }
+  if(!genuineExecutionQuote(asset?.ticker)||!observationStructureReady(asset))return {...record,lastDataGapAt:new Date(now).toISOString()};
+  // Do not settle favorable tick targets before the containing 15m bar is closed: it might have hit the stop first.
+  // Stop ticks can conservatively settle immediately; gaps use the worse current bid/ask.
+  const price=finite(long?asset.ticker.bid:asset.ticker.ask);
+  if(long?price<=record.stopLoss:price>=record.stopLoss)return finish("STOP",price,"VERIFIED_ADVERSE_QUOTE");
+  if(now>=Date.parse(record.expiresAt)) {
+    if(record.pendingTargetAt)return finish("UNRESOLVED",null,"EXPIRY_BEFORE_TARGET_BAR_CLOSED");
+    return finish("TIME_EXIT",price,"MAXIMUM_FOUR_HOUR_STUDY_HORIZON");
+  }
+  return {...record,lastCheckedAt:new Date(now).toISOString(),pendingTargetAt:(long?price>=record.firstTarget:price<=record.firstTarget)?new Date(now).toISOString():record.pendingTargetAt||null};
+}
+async function updateForwardStudy(env,snapshot,selected) {
+  const now=Date.now(),old=await scannerStateGet(env,FORWARD_STUDY_KEY);
+  if(old&&!Array.isArray(old.records))return {status:"degraded",reason:"FORWARD_RECORDS_INVALID_PRESERVED"};
+  const book=old?structuredClone(old):{records:[]},asset=snapshot?.assets?.ETHUSDT;
+  book.records=book.records.map(r=>advanceForwardRecord(r,asset,now));
+  const c=selected?.evaluation?.candidate,record=selected?.record;
+  const key=c&&[c.submodel,c.direction,c.eventAt||c.breakoutAt||c.candleAt].join(":");
+  if(c&&genuineExecutionQuote(asset?.ticker)&&!book.records.some(r=>r.outcome==="OPEN"||r.key===key)) {
+    const entry=finite(c.direction==="LONG"?asset.ticker.ask:asset.ticker.bid),costPct=c.estimatedRoundTripCostPct??0.15;
+    const rr=planNetRR({direction:c.direction,stopLoss:c.stopLoss,takeProfits:[{price:c.target}],estimatedRoundTripCostPct:costPct},entry);
+    if(rr>=MIN_NET_RR)book.records.push({key,submodel:c.submodel,variant:c.locationVariant||null,direction:c.direction,
+      entry,stopLoss:c.stopLoss,firstTarget:c.target,costPct,initialNetRR:rr,enteredAt:new Date(now).toISOString(),lastCheckedAt:new Date(now).toISOString(),
+      expiresAt:new Date(now+4*3600000).toISOString(),observationId:record.observationId,outcome:"OPEN"});
+  }
+  book.records=book.records.slice(-200);book.updatedAt=new Date(now).toISOString();
+  await scannerStatePut(env,FORWARD_STUDY_KEY,book,90*86400);
+  return forwardStudySummary(book);
 }
 
 function scannerCycle(env) {
@@ -912,16 +1049,24 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
       refreshServedSnapshot(full);
     }
   }
-  for (const record of active.concat(terminalRetries)) {
-    const verified = observationVerification(verification, record.observationZone);
-    const evaluation = OBSERVATION_TERMINAL.includes(record.state) ? record : evaluateObservation(record, full, verified);
+  const evaluatedRecords=active.concat(terminalRetries).map(record=>({record,evaluation:OBSERVATION_TERMINAL.includes(record.state)?record:
+    evaluateObservation(record,full,observationVerification(verification,record.observationZone))}));
+  const prepared=evaluatedRecords.filter(x=>x.evaluation.state==="MARKET_CANDIDATE"&&x.evaluation.candidate)
+    .sort((x,y)=>finite(y.evaluation.candidate.netRR,0)-finite(x.evaluation.candidate.netRR,0));
+  const preferred=prepared[0]?.record.observationId;
+  for (const {record,evaluation} of evaluatedRecords) {
+    if(evaluation.state==="MARKET_CANDIDATE"&&record.observationId!==preferred)
+      evaluation.notificationSuppressedReason="HIGHER_NET_RR_PREPARED_TRADE_SELECTED_THIS_CYCLE";
     const result = await processObservation(env, record, evaluation, cycle.deadlineAt);
     evaluations.push({ observationId: record.observationId, submodel: record.submodel, state: evaluation.state, reason: evaluation.reason });
     if (result.notification) notifications.push({ observationId: record.observationId, ...result.notification });
   }
+  let forwardStudy;
+  try{forwardStudy=await updateForwardStudy(env,full,prepared[0]);}
+  catch(error){forwardStudy={status:"degraded",reason:String(error?.message||error).slice(0,200)};}
   const opportunityAudit = full?.assets?.ETHUSDT ? buildOpportunityScan(full.assets.ETHUSDT, full.assets.BTCUSDT) : null;
   const dynamicAlert = enabled && opportunityAudit ? await processDynamicAlert(env, opportunityAudit.dynamicContext, old.dynamicAlert, cycle.deadlineAt) : old.dynamicAlert || null;
-  const detail = { ...old, opportunityAudit, dynamicAlert, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
+  const detail = { ...old, opportunityAudit, dynamicAlert,forwardStudy, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
     lastSuccessAt: due && !discoveryError && observationStructureReady(full?.assets?.ETHUSDT) ? new Date(now).toISOString() : old.lastSuccessAt || null,
     nextDiscoveryAt: new Date((due ? now : finite(old.lastRunAt, now)) + DISCOVERY_INTERVAL_MS).toISOString(),
     reason: enabled ? reason : "AUTONOMOUS_DISCOVERY_DISABLED_REGISTERED_OBSERVATIONS_CONTINUE",
@@ -3900,7 +4045,10 @@ function scannerConfiguration(env) {
       breakoutWindowBars: BREAKOUT_WINDOW_BARS,
       openNowAllowed: false,
       savesTradingPlan: false,
-      newsAndAccountReview: "MANUAL_REQUIRED",
+      newsAndAccountReview: "NEWS_REVIEW_REQUIRED_ACCOUNT_USER_MANAGED",
+      notificationMode:"ACTIONABLE_ONLY_DEFAULT_ALL_STAGES_OPT_IN",
+      dynamicAlertPolicy:{minimumDollars:12,minimumPercent:0.5,minimumAtrMultiple:1.25,flowPersistenceSeconds:45,cooldownMinutes:30},
+      forwardStudy:"TECHNICAL_CANDIDATES_ONLY_NOT_ACTUAL_FILLS",
       rangePolicy: "C1/C2 discovery requires a confirmed 4H range edge, sweep or failed breakout, re-entry, meaningful 15M structure shift, structural stop and net RR to the midpoint; range-middle alerts are forbidden.",
     },
   };
@@ -4293,7 +4441,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     historicalCrossingIgnored: true,
     oneMinuteCandleTouchIgnored: true,
   };
-  if (zoneTouched && !previousRuntime?.zoneAlertSentAt) {
+  if (zoneTouched && !previousRuntime?.zoneAlertSentAt && (snapshot?.decisionState!=="DATA_READY"||!confirmed15m)) {
     return {
       state: "ZONE_REACHED",
       valid: false,
@@ -4323,8 +4471,10 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   const atr15 = finite(tf15?.indicators?.atr14, price * 0.003);
   const distanceToZone = price < plan.entryZone.min ? plan.entryZone.min - price : price > plan.entryZone.max ? price - plan.entryZone.max : 0;
   const nearZone = inZone || distanceToZone <= Math.max(atr15 * 0.5, price * 0.0015);
-  const executionCapPassed = (!Number.isFinite(plan.maximumExecutionPrice) || price <= plan.maximumExecutionPrice)
-    && (!Number.isFinite(plan.minimumExecutionPrice) || price >= plan.minimumExecutionPrice);
+  const executablePrice=finite(directionLong?asset.ticker.ask:asset.ticker.bid,price);
+  const executionSideInsideZone=priceInsideEntryZone(executablePrice,plan.entryZone);
+  const executionCapPassed = (!Number.isFinite(plan.maximumExecutionPrice) || executablePrice <= plan.maximumExecutionPrice)
+    && (!Number.isFinite(plan.minimumExecutionPrice) || executablePrice >= plan.minimumExecutionPrice);
   const candleClose = finite(confirmed15m.c);
   const candleOpen = finite(confirmed15m.o);
   const explicitCandleRule = directionLong ? plan.confirmation.close15mAbove : plan.confirmation.close15mBelow;
@@ -4342,7 +4492,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     || (plan.model === "A" && fourHourTrendDirection(asset) === plan.direction)
     || (externalBoundaryAcceptance && !trendAgainst(plan.direction, tf4h))
     || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
-  const executionReality = planExecutionReality(plan, asset, price);
+  const executionReality = planExecutionReality(plan, asset, executablePrice);
   const rr = executionReality.baselineNetRR;
   const minimumNetRR = effectivePlanMinNetRR(plan);
   const rrPassed = Number.isFinite(rr) && rr >= minimumNetRR;
@@ -4406,6 +4556,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     inZone,
     nearZone,
     executionCapPassed,
+    executionSideInsideZone,
     candlePassed,
     btcPricePassed,
     trendPassed,
@@ -4473,8 +4624,8 @@ function scannerNotification(plan, evaluation) {
   const direction = plan.direction === "LONG" ? "做多" : "做空";
   const price = Number.isFinite(evaluation.price) ? evaluation.price : "未知";
   if (evaluation.state === "MARKET_CONFIRMED") return {
-    title: `✅ ${plan.symbol} 市场条件通过，等待最终复核`,
-    body: `${direction}候选｜当前市场状态 ${evaluation.currentMarketRegime}｜现价 ${price}\nGPT方案 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜TP ${plan.takeProfits.map((x) => x.price).join("/")}\n净RR ${evaluation.netRR}｜15M关键触发 ${evaluation.confirmed15mClose}\nOPEN_NOW仍为false；请调用GPT复核当前行情与最新新闻；仓位及杠杆由用户自行管理。`,
+    title: `✅ ETH（以太坊）交易预案已就绪｜待最后复核`,
+    body: `${direction}｜核验价 ${formatPrice(evaluation.price)}\n准备入场区 ${formatPrice(plan.entryZone.min)}—${formatPrice(plan.entryZone.max)}｜结构止损 ${formatPrice(plan.stopLoss)}｜第一现实目标 ${formatPrice(plan.takeProfits[0]?.price)}\n净盈亏比 ${round(evaluation.netRR,2)}｜15分钟关键收盘 ${formatPrice(evaluation.confirmed15mClose)}\n核验时间 ${chinaTime(evaluation.checkedAt)}。技术条件已通过；复核当前报价、消息及实际成本通过后即可自行执行，无需重新等待同一触发。有效期 ${chinaTime(plan.expiresAt)}；离区或失效不追单。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "ZONE_REACHED") return {
@@ -4776,10 +4927,40 @@ async function runScanner(env) {
   }
 }
 
+function boundedScannerStatus(result) {
+  const pick=(v,keys)=>v&&typeof v==="object"?Object.fromEntries(keys.filter(k=>v[k]!==undefined).map(k=>[k,compactStatusValue(v[k])])):v??null;
+  result.heartbeat=pick(result.heartbeat,["status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError"]);
+  result.responseMode="COMPACT_V26";
+  result.generatedAt=new Date(Date.now()).toISOString();
+  result.runtime=pick(result.runtime,["planId","state","checkedAt","lastAlertAt","lastAttemptAt","lastObservedPrice","notification"]);
+  result.discovery=pick(result.discovery,["lastCheckedAt","lastSuccessAt","nextDiscoveryAt","reason","discoveryError","priceError","added","capacityReached","evaluated","dynamicAlert","forwardStudy"]);
+  result.configuration=pick(result.configuration,["barkConfigured","scannerTokenConfigured","stateConfigured","stateBackend","mode","cron","noAlertMeansNoTrade"]);
+  result.observationHistory=(result.observationHistory||[]).slice(-4);
+  result.failureHistory=(result.failureHistory||[]).slice(-4);
+  const budget=24000;
+  if(JSON.stringify(result).length>budget){result.observationHistory=[];result.failureHistory=[];result.diagnostics.detailsOmitted=true;}
+  if(JSON.stringify(result).length>budget){
+    result.observations=(result.observations||[]).map(r=>pick(r,["observationId","revision","state","submodel","direction","observationZone","expiresAt","checkedAt","preparedTrade"]));
+    result.activePlan=pick(result.activePlan,["planId","symbol","direction","model","submodel","status","entryZone","stopLoss","takeProfits","expiresAt"]);
+    result.discovery=pick(result.discovery,["lastCheckedAt","lastSuccessAt","reason","discoveryError","priceError"]);
+  }
+  if(JSON.stringify(result).length>budget){
+    result.activePlan=pick(result.activePlan,["planId","status"]);result.observations=(result.observations||[]).map(r=>pick(r,["observationId","state","expiresAt"]));
+    result.diagnostics.detailsOmitted=true;
+  }
+  if(JSON.stringify(result).length>budget){
+    result.activePlan=result.activePlan?{planId:String(result.activePlan.planId||"").slice(0,100),status:String(result.activePlan.status||"UNKNOWN").slice(0,30)}:null;
+    result.observations=Array.isArray(result.observations)?result.observations.slice(0,12).map(r=>({observationId:String(r.observationId||"").slice(0,100),state:String(r.state||"UNKNOWN").slice(0,30)})):null;
+    result.runtime=null;result.discovery=null;result.diagnostics.detailsOmitted=true;
+  }
+  result.diagnostics.responseCharacterBudget=budget;
+  return result;
+}
+
 async function scannerStatus(env) {
   try {
     const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY]);
-    const stored=state[OBSERVATIONS_KEY], malformed=Boolean(stored)&&!Array.isArray(stored.records);
+    const stored=state[OBSERVATIONS_KEY], malformed=Boolean(stored)&&(!Array.isArray(stored.records)||stored.records.some(r=>!r||typeof r!=="object"||Array.isArray(r)));
     const records=Array.isArray(stored?.records)?stored.records.filter(r=>r&&typeof r==="object"&&!Array.isArray(r)):[];
     const heartbeat=compactStatusValue(state[SCANNER_HEARTBEAT_KEY]||null);
     const rawAge=heartbeat?.lastCompletedAt?(Date.now()-Date.parse(heartbeat.lastCompletedAt))/1000:null;
@@ -4795,7 +4976,7 @@ async function scannerStatus(env) {
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
     if(JSON.stringify(result).length>65000){result.observationHistory=[];result.failureHistory=[];result.diagnostics.historyOmittedForResponseBudget=true;}
-    return result;
+    return boundedScannerStatus(result);
   }catch(error){return {status:"degraded",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
     error:{code:"SCANNER_STATE_READ_FAILED",detail:scannerText(error?.message,"UNKNOWN_STATE_ERROR",200),retryable:true},
     activePlan:null,observations:null,heartbeat:null,
@@ -4956,8 +5137,9 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns source-labelled realtime data, structure candidates, volume-profile estimates, effort/result, flow and data gaps for the 32-lesson decision order.",
-          security: [],
+          description: "Returns source-labelled market data and six-model diagnostics. Set view=scanner-status for a compact authenticated fallback if the scanner-status Action fails; no market fetch is performed in that mode.",
+          security: [{bearerAuth:[]}],
+          parameters:[{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","scanner-status"],default:"market"},description:"market returns prices; scanner-status returns a compact authenticated monitoring diagnostic without fetching markets."}],
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -4966,7 +5148,7 @@ function openApi(origin) {
                   schema: {
                     type: "object",
                     properties: {
-                      status: { type: "string", enum: ["ok", "partial"] },
+                      status: { type: "string" },
                       decisionState: { type: "string", enum: ["DATA_READY", "DATA_BLOCKED"] },
                       build: { type: "string" },
                       apiVersion: { type: "string" },
@@ -5060,6 +5242,7 @@ function openApi(origin) {
                 observationZone: { type: "object", required: ["min", "max"], properties: { min: { type: "number", exclusiveMinimum: 0 }, max: { type: "number", exclusiveMinimum: 0 } } },
                 observationInvalidation: { type: "object", required: ["level", "mode"], properties: { level: { type: "number", exclusiveMinimum: 0 }, mode: { type: "string", enum: ["PRICE", "CLOSE_15M"] } }, description: "Risk-side boundary outside the observation zone. PRICE needs two current samples; CLOSE_15M needs a fresh completed candle." },
                 observationTrigger: { type: "object", required: ["type", "level", "meaningful"], properties: { type: { type: "string", enum: ["CLOSE_ABOVE", "CLOSE_BELOW"] }, level: { type: "number", exclusiveMinimum: 0 }, meaningful: { type: "boolean", enum: [true] } }, description: "Optional fixed key-structure close condition, not full execution permission." },
+                notificationMode:{type:"string",enum:["ACTIONABLE_ONLY","ALL_STAGES"],default:"ACTIONABLE_ONLY",description:"Default suppresses raw research-zone touches and only alerts complete technical trade cards. ALL_STAGES is explicit research-progress opt-in."},
                 pendingCondition: { type: "string", description: "Required for OBSERVATION: exactly which model steps still need review. No vague wait-for-confirmation." },
                 expiresAt: { type: "string", format: "date-time", description: "OBSERVATION: within 24 hours, default 4h. PLAN: required, within seven days." },
               },
@@ -5333,6 +5516,10 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const origin = url.origin;
 
+    if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="scanner-status") {
+      if(!scannerAuthorized(request,env))return json({error:"UNAUTHORIZED",code:"SCANNER_TOKEN_REQUIRED"},401);
+      return json(await scannerStatus(env),200,{"cache-control":"no-store"});
+    }
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
     if (path === "/health") {
       return json({ status: "ok", build: BUILD, apiVersion: API_VERSION, upstream: "OKX perpetual execution/index/OI/funding + Durable Object coordinated Gate primary/OKX recovery perpetual structure + OKX spot and Gate flow + optional realized liquidations; no spot structure fallback", normalOkxRequests: 13, publicMarketCoordinator: {backend:"DURABLE_OBJECT",sharedEndpointCache:true,persistent429Cooldown:true,quoteFallbacks:["BATCH_TICKER","SINGLE_TICKER","OKX_PERPETUAL_TRADES_PLUS_BOOK"],noAccountOrPsychologyGate:true}, binanceCandleRequests: 0, gateStructureCandleRequests: "DYNAMIC_DUE_SERIES_ONLY", gateCapitalFlowRequests: 6, coinalyzeConfigured: Boolean(env?.COINALYZE_API_KEY), coinalyzeMaximumSelectedMarkets: 6, coinalyzeRole: "OPTIONAL_REALIZED_LIQUIDATION_PROXY_NOT_FUTURE_MAP", spotFlowRole: "ACTUAL_OKX_RECENT_TRADES_NOT_PERSISTENT_CVD", futureLiquidationMapAvailable: false, exactWhalePositionsAvailable: false, coinGlassApiRequested: false, okxCandlesRequested: true, okxCandlesRole: "FULL_RECOVERY_ONLY", binanceCandlesRole: "DISABLED_PRODUCTION_HTTP_403", gateCandlesRole: "PRIMARY_DURABLE_INCREMENTAL_STRUCTURE", candleRateCircuit: { persistent: true, minimumCooldownSeconds: 300, scope: "OKX_CANDLE_ENDPOINT" }, candlePersistentCache: true, candleCacheReason: "DURABLE_OBJECT_FULL_BASELINE_THEN_INCREMENTAL_8", structureCoordinator: { backend: "DURABLE_OBJECT", sharedConsumers: ["MANUAL_ACTION", "PLAN_SCANNER", "DISCOVERY"], refreshSeconds: STRUCTURE_REFRESH_SECONDS, maximumCollectionAgeSeconds: STRUCTURE_MAX_COLLECTION_AGE_SECONDS, concurrentRefreshDeduplicated: true }, autonomousDiscoveryStructureSources: ["GATE_USDT_PERPETUAL", "OKX_USDT_PERPETUAL"], autonomousDiscoveryRequiresCoherentPerpetualSource: true, binanceRequested: false, bybitRequested: false, bytickRequested: false, bitgetRequested: false, actionCount: 4, scanner: scannerConfiguration(env), authentication: "market snapshot none; scanner endpoints bearer" });
@@ -5343,7 +5530,7 @@ export default {
     }
     if (path.startsWith("/scanner/")) {
       if (!scannerAuthorized(request, env)) return json({ error: "UNAUTHORIZED", message: "Configure SCANNER_TOKEN and send it as a Bearer token" }, 401);
-      if (request.method === "GET" && path === "/scanner/status") return json(await scannerStatus(env));
+      if (request.method === "GET" && path === "/scanner/status") return json(await scannerStatus(env),200,{"cache-control":"no-store"});
       if (request.method === "POST" && path === "/scanner/plan") {
         try { return json(await saveTradingPlan(env, await readJsonRequest(request))); }
         catch (error) { return json({ error: "INVALID_PLAN", message: error?.message || String(error) }, 400); }
