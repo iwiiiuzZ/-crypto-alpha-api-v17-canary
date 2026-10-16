@@ -1,12 +1,12 @@
-const BUILD = "crypto-alpha-worker-v26.0.0-actionable-signal-repair";
-const API_VERSION = "7.5.0";
+const BUILD = "crypto-alpha-worker-v26.1.0-data-access-hotfix";
+const API_VERSION = "7.5.1";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
 const OKX_BASE = "https://www.okx.com";
 const BINANCE_FUTURES_BASE = "https://fapi.binance.com";
 const GATE_BASE = "https://api.gateio.ws";
 const COINALYZE_BASE = "https://api.coinalyze.net/v1";
-const CACHE_NAMESPACE = "v26.0.0-actionable-signal-repair";
+const CACHE_NAMESPACE = "v26.1.0-data-access-hotfix";
 const SNAPSHOT_CACHE_SECONDS = 3;
 const CANDLE_LIMIT = 240;
 const RECENT_CANDLE_COUNT = 24;
@@ -5137,9 +5137,9 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Returns source-labelled market data and six-model diagnostics. Set view=scanner-status for a compact authenticated fallback if the scanner-status Action fails; no market fetch is performed in that mode.",
-          security: [{bearerAuth:[]}],
-          parameters:[{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","scanner-status"],default:"market"},description:"market returns prices; scanner-status returns a compact authenticated monitoring diagnostic without fetching markets."}],
+          description: "Public live market data, independent of scanner authentication. view=diagnostics checks Worker connectivity without market requests. Private scanner-status still requires a Bearer header; use the authenticated scanner status Action when that header is unavailable.",
+          security: [],
+          parameters:[{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","diagnostics","scanner-status"],default:"market"},description:"market: public prices; diagnostics: public connectivity only; scanner-status: private records, requires Bearer authentication even on this path."}],
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -5304,30 +5304,67 @@ function privacy(origin) {
   return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数与六组永续结构K线基线保存在 Cloudflare Durable Object 中；系统仅增量更新到期K线，并保存自动候选扫描的最近运行与提醒去重时间。Bark 设备密钥、扫描令牌和可选 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率；Gate USDT 永续作为持久结构K线主源，OKX永续仅在Gate持久基线不可用时完整恢复；OKX现货提供最新成交、订单簿和真实逐笔成交样本。现货样本不冒充持久CVD。Gate还提供主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用或持久数据过期时返回数据阻断，不使用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-10-14</p></body></html>`;
 }
 
+function publicConnectionDiagnostic(request, env) {
+  let stateBinding="MISSING";
+  try { stateBinding=scannerStateStub(env)?"BOUND":"MISSING"; }
+  catch { stateBinding="BINDING_INITIALIZATION_FAILED"; }
+  return {status:"ok",build:BUILD,apiVersion:API_VERSION,generatedAt:new Date().toISOString(),
+    responseType:"CONNECTIVITY_ONLY",workerReached:true,marketFetched:false,
+    scannerStateBinding:stateBinding,scannerTokenConfigured:Boolean(String(env?.SCANNER_TOKEN||"").trim()),
+    scannerAuthentication:scannerAuthorized(request,env)?"ACCEPTED":"NOT_AUTHENTICATED",
+    monitoringState:"NOT_CHECKED",privateRecordsIncluded:false,
+    instructions:"This only proves the Worker was reached. Read live market data separately; authenticated scanner/status is required for private records and heartbeat."};
+}
+
+function marketFailureResponse(code,stage) {
+  return json({status:"error",build:BUILD,apiVersion:API_VERSION,generatedAt:new Date().toISOString(),
+    decisionState:"DATA_BLOCKED",assets:{},coverage:{executionPriceReady:false,observationDataReady:false,executionDataReady:false,openNowDataReady:false},
+    error:{code,stage,retryable:true},workerReached:true,
+    nextAction:"Inspect the actual HTTP status and this error code; do not interpret a failed request as no trade setup or cancel existing observations."},503,{"cache-control":"no-store"});
+}
+
 async function handleSnapshot(request, env, ctx) {
   lastManualRequestAt = Date.now();
-  if (manualSnapshotWork) return (await manualSnapshotWork).clone();
-  const work = (async () => {
-    return buildManualResponse(request, env, ctx);
-  })();
-  manualSnapshotWork = work;
-  try { return (await work).clone(); }
-  finally { if (manualSnapshotWork === work) manualSnapshotWork = null; }
+  if (!manualSnapshotWork) {
+    // Keep one shared refresh even if an individual request reaches its response deadline.
+    const work=buildManualResponse(request,env,ctx);
+    manualSnapshotWork=work;
+    work.finally(()=>{if(manualSnapshotWork===work)manualSnapshotWork=null;}).catch(()=>{});
+    if(ctx?.waitUntil)ctx.waitUntil(work.then(()=>{},()=>{}));
+  }
+  let timer;
+  try {
+    const result=await Promise.race([manualSnapshotWork,new Promise(resolve=>{
+      timer=setTimeout(()=>resolve(marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD")),35000);
+    })]);
+    return result.clone();
+  }catch{return marketFailureResponse("MARKET_SNAPSHOT_FAILED","SNAPSHOT_BUILD");}
+  finally{clearTimeout(timer);}
 }
 
 async function buildManualResponse(request, env, ctx) {
   const cache = globalThis.caches?.default;
   const cacheKey = new Request(`https://crypto-alpha-cache.invalid/${CACHE_NAMESPACE}/realtime`);
+  let snapshotCacheWarning=null;
   if (cache) {
-    const cached = await cache.match(cacheKey);
-    if (cached) return json(refreshServedSnapshot(await cached.json()),200,{"cache-control":"no-store"});
+    try {
+      const cached=await cache.match(cacheKey);
+      if(cached){
+        const saved=await cached.json();
+        if(!saved||typeof saved!=="object"||!saved.assets?.ETHUSDT||!saved.assets?.BTCUSDT)throw new Error("INVALID_CACHED_SNAPSHOT");
+        return json(refreshServedSnapshot(saved),200,{"cache-control":"no-store"});
+      }
+    }catch{snapshotCacheWarning="SNAPSHOT_CACHE_READ_FAILED_LIVE_FETCH_USED";}
   }
   const snapshot = await buildSnapshot({ env, coinalyzeApiKey: env?.COINALYZE_API_KEY });
-  const response = json(snapshot, 200, { "cache-control": `public, max-age=1, s-maxage=${SNAPSHOT_CACHE_SECONDS}` });
+  if(snapshotCacheWarning)snapshot.transportDiagnostics={snapshotCacheWarning};
+  const response = json(snapshot, 200, { "cache-control":"no-store" });
   if (cache) {
-    const write = cache.put(cacheKey, response.clone()).catch(() => {});
-    if (ctx?.waitUntil) ctx.waitUntil(write);
-    else await write;
+    try {
+      const cachedResponse=json(snapshot,200,{"cache-control":`public, max-age=${SNAPSHOT_CACHE_SECONDS}`});
+      const write=Promise.resolve(cache.put(cacheKey,cachedResponse)).catch(()=>{});
+      if (ctx?.waitUntil) ctx.waitUntil(write); else await write;
+    }catch{} // Cache write failure must not discard a successful fresh snapshot.
   }
   return response;
 }
@@ -5516,8 +5553,10 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const origin = url.origin;
 
+    if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="diagnostics")
+      return json(publicConnectionDiagnostic(request,env),200,{"cache-control":"no-store"});
     if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="scanner-status") {
-      if(!scannerAuthorized(request,env))return json({error:"UNAUTHORIZED",code:"SCANNER_TOKEN_REQUIRED"},401);
+      if(!scannerAuthorized(request,env))return json({error:"UNAUTHORIZED",code:"SCANNER_TOKEN_REQUIRED",build:BUILD,workerReached:true},401,{"cache-control":"no-store"});
       return json(await scannerStatus(env),200,{"cache-control":"no-store"});
     }
     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
@@ -5529,7 +5568,7 @@ export default {
       return new Response(privacy(origin), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
     if (path.startsWith("/scanner/")) {
-      if (!scannerAuthorized(request, env)) return json({ error: "UNAUTHORIZED", message: "Configure SCANNER_TOKEN and send it as a Bearer token" }, 401);
+      if (!scannerAuthorized(request, env)) return json({ error: "UNAUTHORIZED", code:"SCANNER_TOKEN_REQUIRED", message: "Configure SCANNER_TOKEN and send it as a Bearer token",build:BUILD,workerReached:true }, 401,{"cache-control":"no-store"});
       if (request.method === "GET" && path === "/scanner/status") return json(await scannerStatus(env),200,{"cache-control":"no-store"});
       if (request.method === "POST" && path === "/scanner/plan") {
         try { return json(await saveTradingPlan(env, await readJsonRequest(request))); }
