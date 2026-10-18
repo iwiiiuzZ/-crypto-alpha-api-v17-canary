@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.1.1-response-parser-fix";
+const BUILD = "crypto-alpha-worker-v27.1.2-market-envelope-fix";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -392,6 +392,7 @@ function newsContextSummary(records,now=Date.now()) {
       httpStatus:v.httpStatus||null,reason:v.reason||null,failureStage:v.failureStage||null,elapsedMs:v.elapsedMs??null,
       failureCount:v.failureCount||0,nextAttemptAt:v.nextAttemptAt?new Date(v.nextAttemptAt).toISOString():null,
       handshakeAt:v.handshakeAt||null,transportRevision:v.transportRevision||null,
+      parserRevision:v.parseDiagnostics?.parserRevision||v.parserRevision||null,
       itemCount:v.items?.length||0,eventCount:v.events?.length||0,parseDiagnostics:v.parseDiagnostics||null,
       lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
   const all=Object.values(records).flatMap(v=>(v.items||[]).map(i=>({...i,ageSeconds:Math.max(0,(now-Date.parse(i.publishedAt))/1000),
@@ -402,7 +403,12 @@ function newsContextSummary(records,now=Date.now()) {
   const recent=headlines.filter(i=>i.transportFresh&&i.ageSeconds<=900);
   const events=Object.values(records).filter(v=>v.status==="ok"&&now-Date.parse(v.fetchedAt)<=7200000).flatMap(v=>v.events||[]);
   return {status:Object.values(sources).some(v=>v.status==="ok"&&v.transportAgeSeconds>=0&&v.transportAgeSeconds<=300)?"PARTIAL_VERIFIED_FEEDS":"UNAVAILABLE",
-    checkedAt:new Date(now).toISOString(),sources,headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
+    checkedAt:new Date(now).toISOString(),sources,
+    parserAudit:{expectedRevision:NEWS_PARSER_REVISION,
+      obsoleteSources:Object.entries(sources).filter(([,v])=>v.parserRevision!==NEWS_PARSER_REVISION).map(([k])=>k),
+      missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id)].filter(k=>!sources[k]),
+      cacheNeedsRefresh:Object.values(sources).some(v=>v.parserRevision!==NEWS_PARSER_REVISION)},
+    headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
     upcomingEvents:events.filter(e=>Date.parse(e.eventAt)>=now-600000).slice(0,12),
     eventWindow:events.filter(e=>e.highImpact&&Math.abs(Date.parse(e.eventAt)-now)<=600000),
     coverage:{jin10Connected:sources.JIN10?.status==="ok",secondsLevelBreakingNewsGuaranteed:false,allSourcesCovered:false,
@@ -1467,7 +1473,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const rejectionFunnel=due?await updateRejectionFunnel(env,opportunityAudit):old.rejectionFunnel||null;
   const detail = { ...old, opportunityAudit, dynamicAlert,forwardStudy,newsAlert,rejectionFunnel,newsStatus:full?.newsContext?{
     status:full.newsContext.status,checkedAt:full.newsContext.checkedAt,consumedAt:new Date().toISOString(),
-    cachePolicy:full.newsContext.cachePolicy||"FOREGROUND_REFRESH",reason:full.newsContext.reason||null,
+    cachePolicy:full.newsContext.cachePolicy||"FOREGROUND_REFRESH",reason:full.newsContext.reason||null,parserAudit:full.newsContext.parserAudit||null,
     coordinatorFailure:full.newsContext.coordinatorFailure||null,backgroundRefreshFailure:full.newsContext.backgroundRefreshFailure||null,sources:full.newsContext.sources||{},
     recentRiskHeadlineCount:full.newsContext.recentRiskHeadlines?.length||0,upcomingEventCount:full.newsContext.upcomingEvents?.length||0,
     jin10:full.newsContext.sources?.JIN10}:old.newsStatus||null, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
@@ -5406,7 +5412,7 @@ async function scannerStatus(env) {
         pendingDynamicPushes:state[DISCOVERY_STATE_KEY]?.dynamicAlert?.pending?1:0,
         pendingPlanPushes:state[SCANNER_RUNTIME_KEY]?.lastAttemptAt&&state[SCANNER_RUNTIME_KEY]?.notification?.sent===false?1:0,
         newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
-          coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
+          parserAudit:state[DISCOVERY_STATE_KEY]?.newsStatus?.parserAudit||null,coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
     result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes;
@@ -5764,41 +5770,91 @@ function jsonUtf8Size(text) {
   let bytes=0;for(const c of text){const n=c.codePointAt(0);bytes+=n<=0x7f?1:n<=0x7ff?2:n<=0xffff?3:4;}return bytes;
 }
 function boundedMarketSnapshot(snapshot) {
-  const original=JSON.stringify(snapshot),budget=80000;
-  const meta={responseMode:"BOUNDED_MARKET_V27_1_1",originalCharacters:original.length,originalUtf8Bytes:jsonUtf8Size(original),maximumUtf8Bytes:budget,
-    backgroundCalculation:"FULL_SNAPSHOT_UNCHANGED",compacted:false,omitted:[]};
+  const original=JSON.stringify(snapshot),budget=90000;
+  const meta={responseMode:"BOUNDED_MARKET_V27_1_2",originalCharacters:original.length,originalUtf8Bytes:jsonUtf8Size(original),maximumUtf8Bytes:budget,
+    backgroundCalculation:"FULL_SNAPSHOT_UNCHANGED",compacted:false,omitted:[],references:{},previewLimits:{},
+    referenceSemantics:"sameAs is a path to the exact equivalent value in this response",
+    decisionAnalysisTransferred:true,rawSnapshotTransferredInFull:true,modelAssessmentsTransferredInFull:true};
   const out=structuredClone(snapshot);out.transportDiagnostics={...out.transportDiagnostics,...meta};
-  const fits=()=>{const s=JSON.stringify(out);return s.length<=budget-400&&jsonUtf8Size(s)<=budget-400;};
+  const measure=()=>{const s=JSON.stringify(out);return {characters:s.length,bytes:jsonUtf8Size(s)};};
+  const fits=()=>{const n=measure();return n.characters<=budget-512&&n.bytes<=budget-512;};
+  const note=value=>{out.transportDiagnostics.compacted=true;out.transportDiagnostics.rawSnapshotTransferredInFull=false;out.transportDiagnostics.omitted.push(value);};
+  // Models and all candidate evidence are kept intact. Only documented redundant
+  // or raw-preview paths are reduced; arbitrary array/string truncation is unsafe.
   if(!fits()){
-    out.transportDiagnostics.compacted=true;
     if(out.analysisContract){const a=out.analysisContract;out.analysisContract={minimumNetRR:a.minimumNetRR,accountPolicy:a.accountPolicy,timeframeFramework:a.timeframeFramework,
       allowedModels:a.allowedModels,decisionAuditContract:a.decisionAuditContract,executionRealityContract:a.executionRealityContract};}
     delete out.requestBudget;delete out.reliability;
-    out.transportDiagnostics.omitted.push("REPEATED_STATIC_POLICY_TEXT_AVAILABLE_IN_CORE_KNOWLEDGE");
-  }
-  for(const limit of [12,8]){
-    if(fits())break;
-    const trim=(v,key="")=>{
-      if(typeof v==="string")return v.length>600?v.slice(0,600):v;
-      if(!v||typeof v!=="object")return v;
-      if(Array.isArray(v)){const cap=["models","submodels","manualReviewSubmodels","automaticDiscoverySubmodels"].includes(key)?Math.max(8,limit):limit;
-        const rows=key==="recentCandles"?v.slice(-cap):v.slice(0,cap);return rows.map(x=>trim(x));}
-      return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,trim(x,k)]));
-    };
-    for(const k of Object.keys(out))if(k!=="transportDiagnostics")out[k]=trim(out[k],k);
-    out.transportDiagnostics.compacted=true;out.transportDiagnostics.omitted.push("LONG_TEXT_AND_ARRAY_TAILS_LIMIT_"+limit);
+    note("REPEATED_STATIC_POLICY_TEXT_AVAILABLE_IN_CORE_KNOWLEDGE");
   }
   if(!fits()){
-    // Unknown oversized extensions cannot make the Action exceed its transport budget.
-    // Preserve explicit transport failure rather than pretending analysis was completed.
+    for(const [symbol,asset] of Object.entries(out.assets||{})){
+      const root="assets."+symbol;
+      const same=(parent,key,value,path)=>{
+        if(parent?.[key]&&value&&JSON.stringify(parent[key])===JSON.stringify(value)){
+          parent[key]={sameAs:path};out.transportDiagnostics.references[root+"."+(parent===asset.liquidityRisk?"liquidityRisk.":"opportunityEngine.")+key]=path;
+        }
+      };
+      same(asset.liquidityRisk,"realizedLiquidationRisk",asset.liquidationRiskProxy,root+".liquidationRiskProxy");
+      same(asset.opportunityEngine,"dynamicContext",asset.dynamicContext,root+".dynamicContext");
+    }
+    note("EXACT_DUPLICATES_REFERENCED_WITH_SAME_RESPONSE_PATHS");
+  }
+  // Static explanatory sentences already live in the retained knowledge file.
+  // Keep policy objects, permission booleans, gates, warnings and market evidence.
+  if(!fits()){
+    const compactStatic=v=>{
+      if(!v||typeof v!=="object")return;
+      for(const [k,x] of Object.entries(v)){
+        if(["limitation","identityWarning","policy"].includes(k)&&typeof x==="string")v[k]="SEE_CORE_KNOWLEDGE";
+        else compactStatic(x);
+      }
+    };
+    for(const asset of Object.values(out.assets||{})){
+      for(const [key,value] of Object.entries(asset))if(key!=="opportunityEngine")compactStatic(value);
+    }
+    note("REPEATED_EXPLANATORY_SENTENCES_AVAILABLE_IN_CORE_KNOWLEDGE");
+  }
+  for(const limit of [12,8,4,0]){
+    if(fits())break;
+    let reduced=false;
+    for(const [symbol,asset] of Object.entries(out.assets||{}))for(const [tf,t] of Object.entries(asset.timeframes||{})){
+      // Leave a recent ETH preview even under pressure. Full event/trigger,
+      // protective structures, quality and every model candidate remain exact.
+      const cap=symbol==="ETHUSDT"?Math.max(4,limit):limit;
+      if(Array.isArray(t.recentCandles)&&t.recentCandles.length>cap){
+        const path="assets."+symbol+".timeframes."+tf+".recentCandles";
+        const previous=out.transportDiagnostics.previewLimits[path];
+        out.transportDiagnostics.previewLimits[path]={available:previous?.available??t.recentCandles.length,returned:cap};
+        t.recentCandles=cap?t.recentCandles.slice(-cap):[];reduced=true;
+      }
+    }
+    if(reduced)note("RAW_CANDLE_PREVIEW_LIMIT_"+limit+"_ETH_MINIMUM_4");
+  }
+  if(!fits()){
+    // The standalone news view exposes the full title list; risk headlines,
+    // event windows and all seven source/parse audits stay in this market view.
+    const n=out.newsContext;
+    if(n&&Array.isArray(n.headlines)&&n.headlines.length>4){
+      n.headlinePreview={available:n.headlines.length,returned:4,completeView:"news"};n.headlines=n.headlines.slice(0,4);
+      note("NON_RISK_HEADLINE_PREVIEW_FULL_LIST_IN_NEWS_VIEW");
+    }
+  }
+  if(!fits()){
     return {status:"error",build:snapshot.build,apiVersion:snapshot.apiVersion,generatedAt:snapshot.generatedAt,
       decisionState:"TRANSPORT_ERROR",error:{code:"MARKET_RESPONSE_BUDGET_EXCEEDED",retryable:true},
       assets:Object.fromEntries(Object.keys(ASSETS).map(k=>{const a=snapshot.assets?.[k]||{},t=a.ticker||{},ticker={};for(const n of ["status","source","priceType","last","bid","ask","exchangeTimestamp","error"]){const v=t[n];if(typeof v==="string")ticker[n]=v.slice(0,200);else if(typeof v==="number")ticker[n]=v;}return [k,{symbol:k,ticker}];})),
       coverage:{executionPriceReady:snapshot.coverage?.executionPriceReady===true,fullAnalysisTransferred:false},
-      transportDiagnostics:{...meta,compacted:true,omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
+      transportDiagnostics:{...meta,compacted:true,rawSnapshotTransferredInFull:false,decisionAnalysisTransferred:false,modelAssessmentsTransferredInFull:false,
+        attemptedCompactedUtf8Bytes:measure().bytes,omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
+  }
+  // Include actual serialized size, not merely the size of the original snapshot.
+  for(let i=0;i<4;i++){
+    const n=measure();out.transportDiagnostics.transferredCharacters=n.characters;out.transportDiagnostics.transferredUtf8Bytes=n.bytes;
   }
   return out;
 }
+
 function marketSnapshotResponse(snapshot) {
   const out=boundedMarketSnapshot(snapshot);
   return json(out,out.error?.code==="MARKET_RESPONSE_BUDGET_EXCEEDED"?503:200,{"cache-control":"no-store"});
