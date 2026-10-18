@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.0.0-adaptive-news";
+const BUILD = "crypto-alpha-worker-v27.0.1-news-transport-fix";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -214,6 +214,7 @@ function refreshServedSnapshot(snapshot) {
 
 // V27: timestamped news transport, separate from execution quotes and signal authority.
 const NEWS_STATE_KEY = "news:context:v27";
+const NEWS_TRANSPORT_REVISION = "27.0.1";
 const NEWS_SOURCES = [
   {id:"COINDESK",url:"https://www.coindesk.com/arc/outboundfeeds/rss/",seconds:60},
   {id:"FED_PRESS",url:"https://www.federalreserve.gov/feeds/press_all.xml",seconds:180},
@@ -277,17 +278,39 @@ function parseNewsCalendar(text,fetchedAt) {
       highImpact:/consumer price|producer price|employment situation|CPI|PPI/i.test(title)}:null;
   }).filter(Boolean).filter(e=>Date.parse(e.eventAt)>=Date.now()-3600000&&Date.parse(e.eventAt)<=Date.now()+7*86400000).sort((a,b)=>Date.parse(a.eventAt)-Date.parse(b.eventAt)).slice(0,30);
 }
-async function boundedNewsFetch(url,options={},maxBytes=600000,timeout=3000,stopWhen=null) {
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
+function newsFailure(error,stage,httpStatus=null) {
+  const raw=String(error?.message||error||""),e=new Error(
+    /^[A-Z][A-Z0-9_]{2,100}$/.test(raw)?raw:
+    error?.name==="AbortError"||/abort|timed? ?out/i.test(raw)?"SOURCE_TIMEOUT":
+    /redirect/i.test(raw)?"SOURCE_REDIRECT_REJECTED":
+    /too many subrequests|subrequest limit/i.test(raw)?"SOURCE_SUBREQUEST_BUDGET_EXCEEDED":
+    /connection limit|too many connections/i.test(raw)?"SOURCE_CONNECTION_LIMIT":
+    /dns|resolve|enotfound/i.test(raw)?"SOURCE_DNS_FAILED":
+    /tls|certificate|ssl/i.test(raw)?"SOURCE_TLS_FAILED":
+    "SOURCE_NETWORK_OR_RUNTIME_ERROR");
+  // Do not publish arbitrary exception messages: they can contain URLs or credentials.
+  e.stage=error?.stage||stage;e.httpStatus=error?.httpStatus??httpStatus;
+  e.elapsedMs=error?.elapsedMs??null;e.retryAfterSeconds=error?.retryAfterSeconds??null;
+  return e;
+}
+async function boundedNewsFetch(url,options={},maxBytes=600000,timeout=6000,stopWhen=null) {
+  const started=Date.now(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
+  let stage="CONNECT",httpStatus=null;
   try{
     const r=await fetch(url,{...options,signal:controller.signal,redirect:"error"});
-    if(!r.ok){const e=new Error(r.status===401||r.status===403?"SOURCE_AUTH_OR_ACCESS_DENIED":r.status===429?"SOURCE_RATE_LIMITED":"SOURCE_HTTP_ERROR");e.httpStatus=r.status;throw e;}
+    httpStatus=r.status;stage="RESPONSE_HEADERS";
+    if(!r.ok){const e=new Error(r.status===401||r.status===403?"SOURCE_AUTH_OR_ACCESS_DENIED":r.status===429?"SOURCE_RATE_LIMITED":"SOURCE_HTTP_ERROR");e.httpStatus=r.status;
+      const retry=r.headers.get("retry-after"),seconds=/^\d+$/.test(retry||"")?Number(retry):Math.ceil((Date.parse(retry||"")-Date.now())/1000);
+      if(Number.isFinite(seconds)&&seconds>0)e.retryAfterSeconds=Math.min(seconds,86400);
+      await r.body?.cancel().catch(()=>{});throw e;}
+    stage="RESPONSE_BODY";
     const reader=r.body?.getReader();if(!reader)return {response:r,text:""};
     const decoder=new TextDecoder();let text="",size=0;
     try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>maxBytes)throw new Error("SOURCE_RESPONSE_TOO_LARGE");text+=decoder.decode(value,{stream:true});if(stopWhen?.(text))break;}text+=decoder.decode();}
     finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
     return {response:r,text};
-  }finally{clearTimeout(timer);}
+  }catch(error){const e=newsFailure(error,stage,httpStatus);e.elapsedMs=Date.now()-started;throw e;}
+  finally{clearTimeout(timer);}
 }
 async function jin10Rpc(owner,method,params,id=1) {
   const headers={"content-type":"application/json",accept:"application/json, text/event-stream",authorization:"Bearer "+owner.env.JIN10_MCP_TOKEN};
@@ -295,11 +318,18 @@ async function jin10Rpc(owner,method,params,id=1) {
   if(method!=="initialize")headers["MCP-Protocol-Version"]=owner.jinProtocol||"2025-03-26";
   const request={jsonrpc:"2.0",method};if(params)request.params=params;if(id!==null)request.id=id;
   const complete=text=>text.split(/\r?\n\r?\n/).some(b=>{try{return JSON.parse(b.split(/\r?\n/).filter(l=>l.startsWith("data:")).map(l=>l.slice(5).trim()).join("\n")).id===id;}catch{return false;}});
-  const {response,text}=await boundedNewsFetch("https://mcp.jin10.com/mcp",{method:"POST",headers,body:JSON.stringify(request)},650000,4000,id===null?null:complete);
+  owner.jinStage=method;
+  owner.jinLastHttpStatus=null;
+  const remaining=(owner.newsDeadlineAt||Infinity)-Date.now();
+  if(remaining<100)throw newsFailure(new Error("SOURCE_CYCLE_BUDGET_EXHAUSTED"),method);
+  let transport;try{transport=await boundedNewsFetch("https://mcp.jin10.com/mcp",{method:"POST",headers,body:JSON.stringify(request)},650000,Math.min(6000,remaining),id===null?null:complete);}
+  catch(error){const e=newsFailure(error,method);e.stage=method+":"+(error.stage||"CONNECT");throw e;}
+  const {response,text}=transport;owner.jinLastHttpStatus=response.status;
   if(response.headers.get("Mcp-Session-Id"))owner.jinSession=response.headers.get("Mcp-Session-Id");
   if(id===null)return null;
   let messages=[];try{messages=[JSON.parse(text)];}catch{messages=text.split(/\r?\n\r?\n/).map(b=>b.split(/\r?\n/).filter(l=>l.startsWith("data:")).map(l=>l.slice(5).trim()).join("\n")).filter(Boolean).map(x=>{try{return JSON.parse(x);}catch{return null;}}).filter(Boolean);}
-  const msg=messages.find(m=>m.id===id);if(!msg||msg.error||msg.result?.isError)throw new Error("JIN10_MCP_RESPONSE_ERROR");
+  const msg=messages.find(m=>m.id===id);if(!msg||msg.error||msg.result?.isError)throw newsFailure(new Error("JIN10_MCP_RESPONSE_ERROR"),method+":PARSE",response.status);
+  if(method==="initialize")owner.jinHandshakeAt=new Date().toISOString();
   return msg.result;
 }
 async function loadJin10(owner,fetchedAt) {
@@ -320,12 +350,17 @@ async function loadJin10(owner,fetchedAt) {
   if(!payload)for(const c of result?.content||[])if(c.type==="text"){try{payload=JSON.parse(c.text);break;}catch{}}
   const raw=payload?.data?.items||payload?.items;
   if(!Array.isArray(raw)||payload?.status&&payload.status!==200)throw new Error("JIN10_FLASH_PAYLOAD_INVALID");
-  return {status:"ok",fetchedAt,items:raw.slice(0,60).map(i=>newsItem(i,"JIN10",fetchedAt)).filter(Boolean),unparseableCount:raw.filter(i=>!newsItem(i,"JIN10",fetchedAt)).length};
+  const items=raw.slice(0,60).map(i=>newsItem(i,"JIN10",fetchedAt)).filter(Boolean);
+  if(raw.length&&!items.length)throw newsFailure(new Error("JIN10_NO_VALID_TIMESTAMPED_ITEMS"),"tools/call:PARSE",owner.jinLastHttpStatus||200);
+  return {status:"ok",fetchedAt,httpStatus:owner.jinLastHttpStatus||200,handshakeAt:owner.jinHandshakeAt||null,items,unparseableCount:raw.filter(i=>!newsItem(i,"JIN10",fetchedAt)).length};
 }
 function newsContextSummary(records,now=Date.now()) {
   const sources=Object.fromEntries(Object.entries(records).map(([k,v])=>{const age=v.fetchedAt?(now-Date.parse(v.fetchedAt))/1000:null;
     return [k,{status:v.status,fetchedAt:v.fetchedAt||null,transportAgeSeconds:age,latestPublishedAt:v.items?.[0]?.publishedAt||null,
-      httpStatus:v.httpStatus||null,reason:v.reason||null,itemCount:v.items?.length||0,lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
+      httpStatus:v.httpStatus||null,reason:v.reason||null,failureStage:v.failureStage||null,elapsedMs:v.elapsedMs??null,
+      failureCount:v.failureCount||0,nextAttemptAt:v.nextAttemptAt?new Date(v.nextAttemptAt).toISOString():null,
+      handshakeAt:v.handshakeAt||null,transportRevision:v.transportRevision||null,
+      itemCount:v.items?.length||0,lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
   const all=Object.values(records).flatMap(v=>(v.items||[]).map(i=>({...i,ageSeconds:Math.max(0,(now-Date.parse(i.publishedAt))/1000),
     transportFresh:v.status==="ok"&&now-Date.parse(v.fetchedAt)<=300000})));
   const byUrl=new Map();for(const i of all.sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt)))if(!byUrl.has(i.url))byUrl.set(i.url,i);
@@ -345,19 +380,28 @@ async function coordinatedNewsContext(owner) {
   if(owner.newsWork)return owner.newsWork;
   const task=(async()=>{
     const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{},now=Date.now(),fetchedAt=new Date(now).toISOString();
-    await Promise.all([...NEWS_SOURCES,{id:"JIN10",seconds:60,jin10:true}].map(async s=>{
-      const old=records[s.id];if(old&&(old.nextAttemptAt>now||now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000))return;
+    owner.newsDeadlineAt=now+24000;
+    const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES];let index=0;
+    const refresh=async s=>{
+      const old=records[s.id];if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&(old.nextAttemptAt>now||now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000))return;
+      const started=Date.now(),attemptAt=new Date(started).toISOString();let httpStatus=null;
       try{let data;
+        if(owner.newsDeadlineAt-Date.now()<100)throw new Error("SOURCE_CYCLE_BUDGET_EXHAUSTED");
         if(s.jin10)data=await loadJin10(owner,fetchedAt);
-        else{const r=await boundedNewsFetch(s.url,{headers:{accept:s.calendar?"text/calendar":"application/rss+xml, application/atom+xml, text/xml"}});
+        else{const r=await boundedNewsFetch(s.url,{headers:{accept:s.calendar?"text/calendar":"application/rss+xml, application/atom+xml, text/xml"}},600000,Math.min(6000,owner.newsDeadlineAt-Date.now()));httpStatus=r.response.status;
           data=s.calendar?{status:"ok",fetchedAt,events:parseNewsCalendar(r.text,fetchedAt),items:[]}:{status:"ok",fetchedAt,items:parseNewsXml(r.text,s.id,fetchedAt)};}
+        const completedAt=new Date().toISOString();
+        if(data.status==="ok"){data.fetchedAt=completedAt;data.items=(data.items||[]).map(i=>({...i,fetchedAt:completedAt,firstSeenAt:completedAt}));data.events=(data.events||[]).map(i=>({...i,fetchedAt:completedAt}));}
         const previous=new Map((old?.items||[]).map(i=>[i.id,i.firstSeenAt]));
         data.items=(data.items||[]).map(i=>({...i,firstSeenAt:previous.get(i.id)||i.firstSeenAt})).sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt));
-        records[s.id]={...data,lastAttemptAt:fetchedAt,failureCount:0,nextAttemptAt:0};
-      }catch(error){if(s.jin10){owner.jinTool=null;owner.jinSession=null;}
-        const failures=(old?.failureCount||0)+1,backoff=error.httpStatus===401||error.httpStatus===403?3600:error.httpStatus===429?600:Math.min(900,60*2**Math.min(failures,4));
-        records[s.id]={...old,status:"unavailable",lastAttemptAt:fetchedAt,failureCount:failures,nextAttemptAt:now+backoff*1000,reason:/^[A-Z0-9_]+$/.test(error.message)?error.message:"SOURCE_FETCH_FAILED",httpStatus:error.httpStatus||null,cacheState:old?.items?.length?"stale-on-error":"unavailable"};}
-    }));
+        records[s.id]={...data,httpStatus:data.httpStatus||httpStatus,lastAttemptAt:attemptAt,elapsedMs:Date.now()-started,failureCount:0,nextAttemptAt:0,transportRevision:NEWS_TRANSPORT_REVISION};
+      }catch(error){const e=newsFailure(error,s.jin10?owner.jinStage||"INITIALIZE":"PARSE",s.jin10?owner.jinLastHttpStatus||null:httpStatus);
+        if(s.jin10){owner.jinTool=null;owner.jinSession=null;owner.jinLastHttpStatus=null;}
+        const failures=(old?.failureCount||0)+1,backoff=e.httpStatus===401||e.httpStatus===403?3600:e.httpStatus===429?Math.max(600,e.retryAfterSeconds||0):Math.min(900,60*2**Math.min(failures,4));
+        records[s.id]={...old,status:"unavailable",lastAttemptAt:attemptAt,failureCount:failures,nextAttemptAt:Date.now()+backoff*1000,reason:e.message,failureStage:e.stage,httpStatus:e.httpStatus,elapsedMs:Date.now()-started,handshakeAt:s.jin10?owner.jinHandshakeAt||null:null,transportRevision:NEWS_TRANSPORT_REVISION,cacheState:old?.items?.length?"stale-on-error":"unavailable"};}
+    };
+    // Two independent workers; Jin10 is first, and one slow source cannot monopolize all sockets.
+    await Promise.all([0,1].map(async()=>{while(index<sources.length){const s=sources[index++];await refresh(s);}}));
     await owner.ctx.storage.put(NEWS_STATE_KEY,{records});return newsContextSummary(records);
   })();owner.newsWork=task;try{return await task;}finally{owner.newsWork=null;}
 }
