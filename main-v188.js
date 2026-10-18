@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.0.1-news-transport-fix";
+const BUILD = "crypto-alpha-worker-v27.0.2-worker-redirect-fix";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -214,7 +214,7 @@ function refreshServedSnapshot(snapshot) {
 
 // V27: timestamped news transport, separate from execution quotes and signal authority.
 const NEWS_STATE_KEY = "news:context:v27";
-const NEWS_TRANSPORT_REVISION = "27.0.1";
+const NEWS_TRANSPORT_REVISION = "27.0.2";
 const NEWS_SOURCES = [
   {id:"COINDESK",url:"https://www.coindesk.com/arc/outboundfeeds/rss/",seconds:60},
   {id:"FED_PRESS",url:"https://www.federalreserve.gov/feeds/press_all.xml",seconds:180},
@@ -282,7 +282,8 @@ function newsFailure(error,stage,httpStatus=null) {
   const raw=String(error?.message||error||""),e=new Error(
     /^[A-Z][A-Z0-9_]{2,100}$/.test(raw)?raw:
     error?.name==="AbortError"||/abort|timed? ?out/i.test(raw)?"SOURCE_TIMEOUT":
-    /redirect/i.test(raw)?"SOURCE_REDIRECT_REJECTED":
+    /Invalid redirect value|redirect.{0,30}(unsupported|not supported)|redirect.{0,30}won.t be implemented/i.test(raw)?"SOURCE_RUNTIME_REDIRECT_OPTION_UNSUPPORTED":
+    /redirect/i.test(raw)?"SOURCE_REDIRECT_FAILED":
     /too many subrequests|subrequest limit/i.test(raw)?"SOURCE_SUBREQUEST_BUDGET_EXCEEDED":
     /connection limit|too many connections/i.test(raw)?"SOURCE_CONNECTION_LIMIT":
     /dns|resolve|enotfound/i.test(raw)?"SOURCE_DNS_FAILED":
@@ -297,7 +298,21 @@ async function boundedNewsFetch(url,options={},maxBytes=600000,timeout=6000,stop
   const started=Date.now(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
   let stage="CONNECT",httpStatus=null;
   try{
-    const r=await fetch(url,{...options,signal:controller.signal,redirect:"error"});
+    const original=new URL(url);let current=original,r;
+    if(original.protocol!=="https:"||original.username||original.password)throw new Error("SOURCE_URL_NOT_ALLOWED");
+    for(let hop=0;;hop++){
+      // workerd supports manual/follow only. Inspect redirects explicitly so Bearer never crosses origins.
+      r=await fetch(current.href,{...options,signal:controller.signal,redirect:"manual"});
+      httpStatus=r.status;stage="RESPONSE_HEADERS";
+      if(![301,302,303,307,308].includes(r.status))break;
+      const location=r.headers.get("location");await r.body?.cancel().catch(()=>{});
+      if(!location)throw new Error("SOURCE_REDIRECT_LOCATION_MISSING");
+      if(hop>=2)throw new Error("SOURCE_REDIRECT_LIMIT_EXCEEDED");
+      let next;try{next=new URL(location,current);}catch{throw new Error("SOURCE_REDIRECT_LOCATION_INVALID");}
+      if(next.protocol!=="https:"||next.origin!==original.origin||next.username||next.password)throw new Error("SOURCE_REDIRECT_TARGET_NOT_ALLOWED");
+      if(!["GET","HEAD"].includes(String(options.method||"GET").toUpperCase())&&![307,308].includes(r.status))throw new Error("SOURCE_REDIRECT_METHOD_CHANGE_NOT_ALLOWED");
+      current=next;stage="CONNECT";httpStatus=null;
+    }
     httpStatus=r.status;stage="RESPONSE_HEADERS";
     if(!r.ok){const e=new Error(r.status===401||r.status===403?"SOURCE_AUTH_OR_ACCESS_DENIED":r.status===429?"SOURCE_RATE_LIMITED":"SOURCE_HTTP_ERROR");e.httpStatus=r.status;
       const retry=r.headers.get("retry-after"),seconds=/^\d+$/.test(retry||"")?Number(retry):Math.ceil((Date.parse(retry||"")-Date.now())/1000);
