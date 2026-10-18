@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.0.2-worker-redirect-fix";
+const BUILD = "crypto-alpha-worker-v27.1.0-consolidated";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -180,11 +180,19 @@ function snapshotReadiness(assets) {
   const required=Object.keys(ASSETS).map(k=>assets[k]);
   const executionPriceReady=genuineExecutionQuote(assets.ETHUSDT?.ticker);
   const semanticQualityReady=required.every(a=>["15m","1h","4h"].every(tf=>a?.timeframes?.[tf]?.status==="ok"&&a.timeframes[tf].quality?.passed===true));
-  const perpetualStructureReady=required.every(a=>["15m","1h","4h"].every(tf=>isExecutionStructureTimeframe(a?.timeframes?.[tf])));
+  const perpetualStructureReady=required.every(a=>["15m","1h","4h"].every(tf=>isExecutionStructureTimeframe(a?.timeframes?.[tf])&&structureCurrentAtRead(a?.timeframes?.[tf],tf)));
   const derivativesReady=required.every(a=>a?.derivatives?.openInterest?.status==="ok"&&a?.derivatives?.funding?.status==="ok");
   return {executionPriceReady,semanticQualityReady,perpetualStructureReady,derivativesReady,
     observationDataReady:semanticQualityReady&&perpetualStructureReady,
     criticalReady:executionPriceReady&&semanticQualityReady&&perpetualStructureReady&&derivativesReady};
+}
+function structureCurrentAtRead(timeframe,tf,now=Date.now()) {
+  if(!timeframe)return false;
+  const collected=timeframe.coordinator?.lastRefreshAt||timeframe.dataFreshness?.storedAt;
+  if(collected){const age=(now-Date.parse(collected))/1000;if(!Number.isFinite(age)||age< -2||age>STRUCTURE_MAX_COLLECTION_AGE_SECONDS[tf])return false;}
+  const newest=timeframe.quality?.newestClosedCandleAt;
+  if(newest&&Date.parse(newest)<expectedLastClosedStart(tf,now))return false;
+  return true;
 }
 function scannerStatusRecord(r) {
   return {observationId:r.observationId,revision:r.revision,state:r.state,origin:r.origin,symbol:r.symbol,direction:r.direction,
@@ -236,7 +244,9 @@ function newsTimestamp(value) {
 }
 function newsItem(item,source,fetchedAt) {
   const title=newsText(item.title||item.content,220),publishedAt=newsTimestamp(item.publishedAt||item.time||item.pubDate);
-  let url=null;try{const u=new URL(item.url);if(u.protocol==="https:"&&!u.username&&!u.password)url=u.href;}catch{}
+  let url=null;try{const u=new URL(item.url);
+    if(u.protocol==="http:"&&["FED_PRESS","FED_SPEECH"].includes(source)&&u.hostname==="www.federalreserve.gov")u.protocol="https:";
+    if(u.protocol==="https:"&&!u.username&&!u.password)url=u.href;}catch{}
   if(!title||!publishedAt||!url)return null;
   const text=title+" "+newsText(item.content,200);
   const relevant=/ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|treasury|interest rate|bank of japan|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
@@ -253,9 +263,12 @@ function parseNewsXml(text,source,fetchedAt) {
   if(!/<(?:rss|feed)\b/i.test(text))throw new Error("NOT_A_NEWS_FEED");
   const tag=(block,name)=>block.match(new RegExp("<"+name+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+name+">","i"))?.[1];
   const blocks=[...text.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)].slice(0,60);
-  return blocks.map(([,kind,b])=>newsItem({title:tag(b,"title"),content:tag(b,"description")||tag(b,"summary"),
+  const items=blocks.map(([,kind,b])=>newsItem({title:tag(b,"title"),content:tag(b,"description")||tag(b,"summary"),
     url:newsText(tag(b,"link"),1200)||b.match(/<link\b[^>]*href=["']([^"']+)/i)?.[1],
-    publishedAt:tag(b,"pubDate")||tag(b,"published")||tag(b,"updated"),id:newsText(tag(b,"guid")||tag(b,"id"),240)},source,fetchedAt)).filter(Boolean);
+    publishedAt:tag(b,"pubDate")||tag(b,"published")||tag(b,"updated")||tag(b,"dc:date"),id:newsText(tag(b,"guid")||tag(b,"id"),240)},source,fetchedAt)).filter(Boolean);
+  Object.defineProperty(items,"parseDiagnostics",{value:{rawItemCount:blocks.length,acceptedItemCount:items.length,rejectedItemCount:blocks.length-items.length,
+    contentStatus:blocks.length===0?"EMPTY_FEED":items.length===0?"ALL_ITEMS_REJECTED":items.length<blocks.length?"PARTIALLY_PARSED":"PARSED"}});
+  return items;
 }
 function calendarTime(line) {
   const m=line.match(/^DTSTART(?:;TZID=([^:;]+))?:(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)(Z?)$/);
@@ -375,7 +388,8 @@ function newsContextSummary(records,now=Date.now()) {
       httpStatus:v.httpStatus||null,reason:v.reason||null,failureStage:v.failureStage||null,elapsedMs:v.elapsedMs??null,
       failureCount:v.failureCount||0,nextAttemptAt:v.nextAttemptAt?new Date(v.nextAttemptAt).toISOString():null,
       handshakeAt:v.handshakeAt||null,transportRevision:v.transportRevision||null,
-      itemCount:v.items?.length||0,lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
+      itemCount:v.items?.length||0,eventCount:v.events?.length||0,parseDiagnostics:v.parseDiagnostics||null,
+      lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
   const all=Object.values(records).flatMap(v=>(v.items||[]).map(i=>({...i,ageSeconds:Math.max(0,(now-Date.parse(i.publishedAt))/1000),
     transportFresh:v.status==="ok"&&now-Date.parse(v.fetchedAt)<=300000})));
   const byUrl=new Map();for(const i of all.sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt)))if(!byUrl.has(i.url))byUrl.set(i.url,i);
@@ -404,7 +418,8 @@ async function coordinatedNewsContext(owner) {
         if(owner.newsDeadlineAt-Date.now()<100)throw new Error("SOURCE_CYCLE_BUDGET_EXHAUSTED");
         if(s.jin10)data=await loadJin10(owner,fetchedAt);
         else{const r=await boundedNewsFetch(s.url,{headers:{accept:s.calendar?"text/calendar":"application/rss+xml, application/atom+xml, text/xml"}},600000,Math.min(6000,owner.newsDeadlineAt-Date.now()));httpStatus=r.response.status;
-          data=s.calendar?{status:"ok",fetchedAt,events:parseNewsCalendar(r.text,fetchedAt),items:[]}:{status:"ok",fetchedAt,items:parseNewsXml(r.text,s.id,fetchedAt)};}
+          if(s.calendar){const events=parseNewsCalendar(r.text,fetchedAt);data={status:"ok",fetchedAt,events,items:[],parseDiagnostics:{contentStatus:events.length?"EVENTS_IN_WINDOW":"NO_EVENT_IN_SUPPORTED_WINDOW"}};}
+          else{const items=parseNewsXml(r.text,s.id,fetchedAt);data={status:"ok",fetchedAt,items,parseDiagnostics:items.parseDiagnostics};}}
         const completedAt=new Date().toISOString();
         if(data.status==="ok"){data.fetchedAt=completedAt;data.items=(data.items||[]).map(i=>({...i,fetchedAt:completedAt,firstSeenAt:completedAt}));data.events=(data.events||[]).map(i=>({...i,fetchedAt:completedAt}));}
         const previous=new Map((old?.items||[]).map(i=>[i.id,i.firstSeenAt]));
@@ -420,9 +435,24 @@ async function coordinatedNewsContext(owner) {
     await owner.ctx.storage.put(NEWS_STATE_KEY,{records});return newsContextSummary(records);
   })();owner.newsWork=task;try{return await task;}finally{owner.newsWork=null;}
 }
-async function loadNewsContext(env) {
+async function cachedNewsContext(owner) {
+  const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{};
+  const summary=newsContextSummary(records);
+  const refresh=coordinatedNewsContext(owner);
+  if(typeof owner.ctx.waitUntil==="function"){
+    owner.ctx.waitUntil(refresh.then(()=>{owner.newsRefreshFailure=null;},()=>{owner.newsRefreshFailure={at:new Date().toISOString(),reason:"NEWS_BACKGROUND_REFRESH_FAILED"};}));
+    return {...summary,cachePolicy:"CACHE_FIRST_BACKGROUND_REFRESH",refreshScheduled:true,
+      cacheReadAt:new Date().toISOString(),backgroundRefreshFailure:owner.newsRefreshFailure||null,reason:Object.keys(records).length?null:"NEWS_CACHE_WARMING"};
+  }
+  // Alternative test hosts may lack a lifecycle hook. Never leave unowned work behind.
+  return {...await refresh,cachePolicy:"FOREGROUND_NO_LIFECYCLE_HOOK",refreshScheduled:false};
+}
+async function loadNewsContext(env,options={}) {
   if(!scannerStateStub(env))return newsContextSummary({JIN10:{status:"unavailable",reason:"DURABLE_COORDINATOR_REQUIRED"}});
-  return durableStateCall(env,{op:"newsContext"}).catch(()=>newsContextSummary({JIN10:{status:"unavailable",reason:"NEWS_COORDINATOR_FAILED"}}));
+  return durableStateCall(env,{op:options.cacheFirst?"newsSnapshot":"newsContext"}).catch(error=>({
+    ...newsContextSummary({JIN10:{status:"unavailable",reason:"NEWS_COORDINATOR_FAILED"}}),
+    coordinatorFailure:/^STATE_(TIMEOUT|HTTP_\d{3})$/.test(String(error?.message||""))?error.message:"NEWS_STATE_CALL_FAILED",
+    cachePolicy:options.cacheFirst?"CACHE_READ_FAILED":"FOREGROUND_REFRESH_FAILED"}));
 }
 async function processNewsReassessment(env,context,asset,old={},deadlineAt=Infinity) {
   const recent=context?.recentRiskHeadlines||[],seen=(old.seen||[]).slice(-100),now=Date.now();
@@ -430,11 +460,12 @@ async function processNewsReassessment(env,context,asset,old={},deadlineAt=Infin
   const next={seen,lastCheckedAt:new Date(now).toISOString(),lastSentAt:old.lastSentAt||null,sent:false};
   const move=dynamicMarketContext(asset);
   if(!fresh.length||!move.alertEligible||now-Date.parse(old.lastSentAt||0)<1800000)return {...next,reason:"NO_NEW_MATERIAL_NEWS_PRICE_EVENT"};
-  const pending=old.pending?.id===fresh[0].id?old.pending:{id:fresh[0].id,attempts:0,nextAttemptAt:0};
+  const selected=fresh.find(i=>i.id===old.pending?.id)||fresh[0];
+  const pending=old.pending?.id===selected.id?old.pending:{id:selected.id,attempts:0,nextAttemptAt:0};
   if(pending.nextAttemptAt>now||now+6500>deadlineAt)return {...next,pending,reason:"NEWS_PUSH_RETRY_PENDING"};
-  try{const result=await sendBark(env,{title:"ETH（以太坊）重要消息与价格变化｜复核",body:newsText(fresh[0].title,150)+"；价格位移"+formatPrice(move.observedMoveUsd)+"美元。消息与波动同期出现，因果未确认；重新检查八模型及旧方案。",level:"timeSensitive"});
+  try{const result=await sendBark(env,{title:"ETH（以太坊）重要消息与价格变化｜复核",body:newsText(selected.title,150)+"；价格位移"+formatPrice(move.observedMoveUsd)+"美元。消息与波动同期出现，因果未确认；重新检查八模型及旧方案。",level:"timeSensitive"});
     if(result.sent!==true)throw new Error("PUSH_NOT_ACCEPTED");
-    return {...next,pending:null,seen:[...new Set([...seen,...fresh.map(i=>i.id)])].slice(-100),sent:true,lastSentAt:new Date(now).toISOString(),reason:"NEWS_PLUS_MATERIAL_PRICE_RESPONSE",deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"};}
+    return {...next,pending:null,seen:[...new Set([...seen,selected.id])].slice(-100),sent:true,lastSentAt:new Date(now).toISOString(),reason:"NEWS_PLUS_MATERIAL_PRICE_RESPONSE",deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"};}
   catch{return {...next,seen:old.seen||[],pending:{...pending,attempts:pending.attempts+1,nextAttemptAt:now+Math.min(15,2**Math.min(pending.attempts+1,4))*60000},reason:"NEWS_PUSH_FAILED_WILL_RETRY"};}
 }
 
@@ -851,7 +882,7 @@ function observationStructureReady(asset) {
   const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
   return ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"].includes(sources[0])
     && sources.every(source => source === sources[0])
-    && ["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed === true && tfs[tf].dataFreshness?.state !== "stale-on-error");
+    && ["15m", "1h", "4h"].every(tf => tfs?.[tf]?.status === "ok" && tfs[tf].quality?.passed === true && tfs[tf].dataFreshness?.state !== "stale-on-error"&&structureCurrentAtRead(tfs[tf],tf));
 }
 
 function observationCandles(asset) {
@@ -1429,7 +1460,12 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const dynamicAlert = enabled && opportunityAudit ? await processDynamicAlert(env, opportunityAudit.dynamicContext, old.dynamicAlert, cycle.deadlineAt) : old.dynamicAlert || null;
   const newsAlert=full?.newsContext&&!(dynamicAlert?.lastAcceptedAt&&Date.now()-Date.parse(dynamicAlert.lastAcceptedAt)<1800000)?await processNewsReassessment(env,full.newsContext,full.assets?.ETHUSDT,old.newsAlert||{},cycle.deadlineAt):old.newsAlert||null;
   const rejectionFunnel=due?await updateRejectionFunnel(env,opportunityAudit):old.rejectionFunnel||null;
-  const detail = { ...old, opportunityAudit, dynamicAlert,forwardStudy,newsAlert,rejectionFunnel,newsStatus:full?.newsContext?{status:full.newsContext.status,checkedAt:full.newsContext.checkedAt,jin10:full.newsContext.sources?.JIN10}:null, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
+  const detail = { ...old, opportunityAudit, dynamicAlert,forwardStudy,newsAlert,rejectionFunnel,newsStatus:full?.newsContext?{
+    status:full.newsContext.status,checkedAt:full.newsContext.checkedAt,consumedAt:new Date().toISOString(),
+    cachePolicy:full.newsContext.cachePolicy||"FOREGROUND_REFRESH",reason:full.newsContext.reason||null,
+    coordinatorFailure:full.newsContext.coordinatorFailure||null,backgroundRefreshFailure:full.newsContext.backgroundRefreshFailure||null,sources:full.newsContext.sources||{},
+    recentRiskHeadlineCount:full.newsContext.recentRiskHeadlines?.length||0,upcomingEventCount:full.newsContext.upcomingEvents?.length||0,
+    jin10:full.newsContext.sources?.JIN10}:old.newsStatus||null, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
     lastSuccessAt: due && !discoveryError && observationStructureReady(full?.assets?.ETHUSDT) ? new Date(now).toISOString() : old.lastSuccessAt || null,
     nextDiscoveryAt: new Date((due ? now : finite(old.lastRunAt, now)) + DISCOVERY_INTERVAL_MS).toISOString(),
     reason: enabled ? reason : "AUTONOMOUS_DISCOVERY_DISABLED_REGISTERED_OBSERVATIONS_CONTINUE",
@@ -3828,7 +3864,7 @@ function parseFuturesFunding(row) {
 }
 
 async function buildSnapshot(options = {}) {
-  const newsPromise=loadNewsContext(options.env);
+  const newsPromise=loadNewsContext(options.env,{cacheFirst:options.scannerMode===true});
   const assets = {};
   const errors = [];
   const supplementalErrors = [];
@@ -4285,7 +4321,7 @@ function scannerStateStub(env) {
 
 async function durableStateCall(env, payload) {
   const stub=scannerStateStub(env);if(!stub?.fetch)return null;
-  const attempts=payload.op==="get"?2:1, timeoutMs=["publicMarket","directQuote"].includes(payload.op)?28000:4000;
+  const attempts=payload.op==="get"?2:1, timeoutMs=["publicMarket","directQuote","newsContext"].includes(payload.op)?28000:4000;
   for(let attempt=0;attempt<attempts;attempt++){
     let timer;
     try {
@@ -5361,8 +5397,14 @@ async function scannerStatus(env) {
       diagnostics:{stateReadSucceeded:true,stateFormatIssue:malformed?"OBSERVATION_RECORDS_NOT_ARRAY":null,completedCycleAgeSeconds:age,
         heartbeatHealthy:!malformed&&age!==null&&age>=0&&age<=180&&heartbeat.status==="completed",
         pendingObservationPushes:records.reduce((n,r)=>n+Object.values(r.alerts||{}).filter(a=>a?.status==="PENDING").length,0),
+        pendingNewsPushes:state[DISCOVERY_STATE_KEY]?.newsAlert?.pending?1:0,
+        pendingDynamicPushes:state[DISCOVERY_STATE_KEY]?.dynamicAlert?.pending?1:0,
+        pendingPlanPushes:state[SCANNER_RUNTIME_KEY]?.lastAttemptAt&&state[SCANNER_RUNTIME_KEY]?.notification?.sent===false?1:0,
+        newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
+          coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
+    result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes;
     if(JSON.stringify(result).length>65000){result.observationHistory=[];result.failureHistory=[];result.diagnostics.historyOmittedForResponseBudget=true;}
     return boundedScannerStatus(result);
   }catch(error){return {status:"degraded",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
@@ -5815,6 +5857,7 @@ export class ScannerState {
     if (request.method !== "POST") return Response.json({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
     let input;
     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
+    if(input?.op==="newsSnapshot"){try{return Response.json(await cachedNewsContext(this));}catch{return Response.json({error:"NEWS_CACHE_READ_FAILED"},{status:503});}}
     if(input?.op==="newsContext"){try{return Response.json(await coordinatedNewsContext(this));}catch{return Response.json(newsContextSummary({JIN10:{status:"unavailable",reason:"NEWS_COORDINATOR_FAILED"}}));}}
     if (["publicMarket","directQuote"].includes(input?.op)) {
       try {return Response.json(input.op==="publicMarket"?await coordinatedMarketBundle(this):await coordinatedDirectQuote(this,input.symbol));}
