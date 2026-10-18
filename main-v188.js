@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.1.0-consolidated";
+const BUILD = "crypto-alpha-worker-v27.1.1-response-parser-fix";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -223,6 +223,7 @@ function refreshServedSnapshot(snapshot) {
 // V27: timestamped news transport, separate from execution quotes and signal authority.
 const NEWS_STATE_KEY = "news:context:v27";
 const NEWS_TRANSPORT_REVISION = "27.0.2";
+const NEWS_PARSER_REVISION = "27.1.1";
 const NEWS_SOURCES = [
   {id:"COINDESK",url:"https://www.coindesk.com/arc/outboundfeeds/rss/",seconds:60},
   {id:"FED_PRESS",url:"https://www.federalreserve.gov/feeds/press_all.xml",seconds:180},
@@ -237,7 +238,7 @@ function newsText(value,max=240) {
     .replace(/&#(\d+);/g,(_,n)=>Number(n)<=0x10ffff?String.fromCodePoint(Number(n)):"").replace(/\s+/g," ").trim().slice(0,max);
 }
 function newsTimestamp(value) {
-  const s=String(value??"").trim();
+  const s=newsText(value,200);
   // A timezone-less provider string is ambiguous. Do not silently treat it as UTC.
   if(!s||(/^\d{4}-\d\d-\d\d[ T]/.test(s)&&!/(Z|[+-]\d\d:?\d\d)$/.test(s)))return null;
   const n=Date.parse(s);return Number.isFinite(n)&&n<=Date.now()+120000?new Date(n).toISOString():null;
@@ -263,11 +264,13 @@ function parseNewsXml(text,source,fetchedAt) {
   if(!/<(?:rss|feed)\b/i.test(text))throw new Error("NOT_A_NEWS_FEED");
   const tag=(block,name)=>block.match(new RegExp("<"+name+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+name+">","i"))?.[1];
   const blocks=[...text.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)].slice(0,60);
-  const items=blocks.map(([,kind,b])=>newsItem({title:tag(b,"title"),content:tag(b,"description")||tag(b,"summary"),
+  const rejectedReasons={missingTitle:0,invalidPublicationTime:0,invalidLink:0};
+  const items=blocks.map(([,kind,b])=>{const raw={title:tag(b,"title"),content:tag(b,"description")||tag(b,"summary"),
     url:newsText(tag(b,"link"),1200)||b.match(/<link\b[^>]*href=["']([^"']+)/i)?.[1],
-    publishedAt:tag(b,"pubDate")||tag(b,"published")||tag(b,"updated")||tag(b,"dc:date"),id:newsText(tag(b,"guid")||tag(b,"id"),240)},source,fetchedAt)).filter(Boolean);
+    publishedAt:tag(b,"pubDate")||tag(b,"published")||tag(b,"updated")||tag(b,"dc:date"),id:newsText(tag(b,"guid")||tag(b,"id"),240)};
+    const item=newsItem(raw,source,fetchedAt);if(!item){const titleOK=Boolean(newsText(raw.title||raw.content)),timeOK=Boolean(newsTimestamp(raw.publishedAt));if(!titleOK)rejectedReasons.missingTitle++;if(!timeOK)rejectedReasons.invalidPublicationTime++;if(titleOK&&timeOK)rejectedReasons.invalidLink++;}return item;}).filter(Boolean);
   Object.defineProperty(items,"parseDiagnostics",{value:{rawItemCount:blocks.length,acceptedItemCount:items.length,rejectedItemCount:blocks.length-items.length,
-    contentStatus:blocks.length===0?"EMPTY_FEED":items.length===0?"ALL_ITEMS_REJECTED":items.length<blocks.length?"PARTIALLY_PARSED":"PARSED"}});
+    contentStatus:blocks.length===0?"EMPTY_FEED":items.length===0?"ALL_ITEMS_REJECTED":items.length<blocks.length?"PARTIALLY_PARSED":"PARSED",rejectedReasons,parserRevision:NEWS_PARSER_REVISION}});
   return items;
 }
 function calendarTime(line) {
@@ -380,7 +383,8 @@ async function loadJin10(owner,fetchedAt) {
   if(!Array.isArray(raw)||payload?.status&&payload.status!==200)throw new Error("JIN10_FLASH_PAYLOAD_INVALID");
   const items=raw.slice(0,60).map(i=>newsItem(i,"JIN10",fetchedAt)).filter(Boolean);
   if(raw.length&&!items.length)throw newsFailure(new Error("JIN10_NO_VALID_TIMESTAMPED_ITEMS"),"tools/call:PARSE",owner.jinLastHttpStatus||200);
-  return {status:"ok",fetchedAt,httpStatus:owner.jinLastHttpStatus||200,handshakeAt:owner.jinHandshakeAt||null,items,unparseableCount:raw.filter(i=>!newsItem(i,"JIN10",fetchedAt)).length};
+  return {status:"ok",fetchedAt,httpStatus:owner.jinLastHttpStatus||200,handshakeAt:owner.jinHandshakeAt||null,items,unparseableCount:raw.filter(i=>!newsItem(i,"JIN10",fetchedAt)).length,
+    parseDiagnostics:{rawItemCount:raw.length,acceptedItemCount:items.length,rejectedItemCount:Math.max(0,Math.min(raw.length,60)-items.length),contentStatus:raw.length===0?"EMPTY_FEED":items.length<Math.min(raw.length,60)?"PARTIALLY_PARSED":"PARSED",parserRevision:NEWS_PARSER_REVISION}};
 }
 function newsContextSummary(records,now=Date.now()) {
   const sources=Object.fromEntries(Object.entries(records).map(([k,v])=>{const age=v.fetchedAt?(now-Date.parse(v.fetchedAt))/1000:null;
@@ -412,7 +416,8 @@ async function coordinatedNewsContext(owner) {
     owner.newsDeadlineAt=now+24000;
     const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES];let index=0;
     const refresh=async s=>{
-      const old=records[s.id];if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&(old.nextAttemptAt>now||now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000))return;
+      const old=records[s.id];if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.nextAttemptAt>now)return;
+      if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.parserRevision===NEWS_PARSER_REVISION&&now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000)return;
       const started=Date.now(),attemptAt=new Date(started).toISOString();let httpStatus=null;
       try{let data;
         if(owner.newsDeadlineAt-Date.now()<100)throw new Error("SOURCE_CYCLE_BUDGET_EXHAUSTED");
@@ -424,11 +429,11 @@ async function coordinatedNewsContext(owner) {
         if(data.status==="ok"){data.fetchedAt=completedAt;data.items=(data.items||[]).map(i=>({...i,fetchedAt:completedAt,firstSeenAt:completedAt}));data.events=(data.events||[]).map(i=>({...i,fetchedAt:completedAt}));}
         const previous=new Map((old?.items||[]).map(i=>[i.id,i.firstSeenAt]));
         data.items=(data.items||[]).map(i=>({...i,firstSeenAt:previous.get(i.id)||i.firstSeenAt})).sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt));
-        records[s.id]={...data,httpStatus:data.httpStatus||httpStatus,lastAttemptAt:attemptAt,elapsedMs:Date.now()-started,failureCount:0,nextAttemptAt:0,transportRevision:NEWS_TRANSPORT_REVISION};
+        records[s.id]={...data,httpStatus:data.httpStatus||httpStatus,lastAttemptAt:attemptAt,elapsedMs:Date.now()-started,failureCount:0,nextAttemptAt:0,transportRevision:NEWS_TRANSPORT_REVISION,parserRevision:NEWS_PARSER_REVISION};
       }catch(error){const e=newsFailure(error,s.jin10?owner.jinStage||"INITIALIZE":"PARSE",s.jin10?owner.jinLastHttpStatus||null:httpStatus);
         if(s.jin10){owner.jinTool=null;owner.jinSession=null;owner.jinLastHttpStatus=null;}
         const failures=(old?.failureCount||0)+1,backoff=e.httpStatus===401||e.httpStatus===403?3600:e.httpStatus===429?Math.max(600,e.retryAfterSeconds||0):Math.min(900,60*2**Math.min(failures,4));
-        records[s.id]={...old,status:"unavailable",lastAttemptAt:attemptAt,failureCount:failures,nextAttemptAt:Date.now()+backoff*1000,reason:e.message,failureStage:e.stage,httpStatus:e.httpStatus,elapsedMs:Date.now()-started,handshakeAt:s.jin10?owner.jinHandshakeAt||null:null,transportRevision:NEWS_TRANSPORT_REVISION,cacheState:old?.items?.length?"stale-on-error":"unavailable"};}
+        records[s.id]={...old,status:"unavailable",lastAttemptAt:attemptAt,failureCount:failures,nextAttemptAt:Date.now()+backoff*1000,reason:e.message,failureStage:e.stage,httpStatus:e.httpStatus,elapsedMs:Date.now()-started,handshakeAt:s.jin10?owner.jinHandshakeAt||null:null,transportRevision:NEWS_TRANSPORT_REVISION,parserRevision:NEWS_PARSER_REVISION,cacheState:old?.items?.length?"stale-on-error":"unavailable"};}
     };
     // Two independent workers; Jin10 is first, and one slow source cannot monopolize all sockets.
     await Promise.all([0,1].map(async()=>{while(index<sources.length){const s=sources[index++];await refresh(s);}}));
@@ -5755,6 +5760,50 @@ function marketFailureResponse(code,stage) {
     nextAction:"Inspect the actual HTTP status and this error code; do not interpret a failed request as no trade setup or cancel existing observations."},503,{"cache-control":"no-store"});
 }
 
+function jsonUtf8Size(text) {
+  let bytes=0;for(const c of text){const n=c.codePointAt(0);bytes+=n<=0x7f?1:n<=0x7ff?2:n<=0xffff?3:4;}return bytes;
+}
+function boundedMarketSnapshot(snapshot) {
+  const original=JSON.stringify(snapshot),budget=80000;
+  const meta={responseMode:"BOUNDED_MARKET_V27_1_1",originalCharacters:original.length,originalUtf8Bytes:jsonUtf8Size(original),maximumUtf8Bytes:budget,
+    backgroundCalculation:"FULL_SNAPSHOT_UNCHANGED",compacted:false,omitted:[]};
+  const out=structuredClone(snapshot);out.transportDiagnostics={...out.transportDiagnostics,...meta};
+  const fits=()=>{const s=JSON.stringify(out);return s.length<=budget-400&&jsonUtf8Size(s)<=budget-400;};
+  if(!fits()){
+    out.transportDiagnostics.compacted=true;
+    if(out.analysisContract){const a=out.analysisContract;out.analysisContract={minimumNetRR:a.minimumNetRR,accountPolicy:a.accountPolicy,timeframeFramework:a.timeframeFramework,
+      allowedModels:a.allowedModels,decisionAuditContract:a.decisionAuditContract,executionRealityContract:a.executionRealityContract};}
+    delete out.requestBudget;delete out.reliability;
+    out.transportDiagnostics.omitted.push("REPEATED_STATIC_POLICY_TEXT_AVAILABLE_IN_CORE_KNOWLEDGE");
+  }
+  for(const limit of [12,8]){
+    if(fits())break;
+    const trim=(v,key="")=>{
+      if(typeof v==="string")return v.length>600?v.slice(0,600):v;
+      if(!v||typeof v!=="object")return v;
+      if(Array.isArray(v)){const cap=["models","submodels","manualReviewSubmodels","automaticDiscoverySubmodels"].includes(key)?Math.max(8,limit):limit;
+        const rows=key==="recentCandles"?v.slice(-cap):v.slice(0,cap);return rows.map(x=>trim(x));}
+      return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,trim(x,k)]));
+    };
+    for(const k of Object.keys(out))if(k!=="transportDiagnostics")out[k]=trim(out[k],k);
+    out.transportDiagnostics.compacted=true;out.transportDiagnostics.omitted.push("LONG_TEXT_AND_ARRAY_TAILS_LIMIT_"+limit);
+  }
+  if(!fits()){
+    // Unknown oversized extensions cannot make the Action exceed its transport budget.
+    // Preserve explicit transport failure rather than pretending analysis was completed.
+    return {status:"error",build:snapshot.build,apiVersion:snapshot.apiVersion,generatedAt:snapshot.generatedAt,
+      decisionState:"TRANSPORT_ERROR",error:{code:"MARKET_RESPONSE_BUDGET_EXCEEDED",retryable:true},
+      assets:Object.fromEntries(Object.keys(ASSETS).map(k=>{const a=snapshot.assets?.[k]||{},t=a.ticker||{},ticker={};for(const n of ["status","source","priceType","last","bid","ask","exchangeTimestamp","error"]){const v=t[n];if(typeof v==="string")ticker[n]=v.slice(0,200);else if(typeof v==="number")ticker[n]=v;}return [k,{symbol:k,ticker}];})),
+      coverage:{executionPriceReady:snapshot.coverage?.executionPriceReady===true,fullAnalysisTransferred:false},
+      transportDiagnostics:{...meta,compacted:true,omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
+  }
+  return out;
+}
+function marketSnapshotResponse(snapshot) {
+  const out=boundedMarketSnapshot(snapshot);
+  return json(out,out.error?.code==="MARKET_RESPONSE_BUDGET_EXCEEDED"?503:200,{"cache-control":"no-store"});
+}
+
 async function handleSnapshot(request, env, ctx) {
   lastManualRequestAt = Date.now();
   if (!manualSnapshotWork) {
@@ -5784,13 +5833,13 @@ async function buildManualResponse(request, env, ctx) {
       if(cached){
         const saved=await cached.json();
         if(!saved||typeof saved!=="object"||!saved.assets?.ETHUSDT||!saved.assets?.BTCUSDT)throw new Error("INVALID_CACHED_SNAPSHOT");
-        return json(refreshServedSnapshot(saved),200,{"cache-control":"no-store"});
+        return marketSnapshotResponse(refreshServedSnapshot(saved));
       }
     }catch{snapshotCacheWarning="SNAPSHOT_CACHE_READ_FAILED_LIVE_FETCH_USED";}
   }
   const snapshot = await buildSnapshot({ env, coinalyzeApiKey: env?.COINALYZE_API_KEY });
   if(snapshotCacheWarning)snapshot.transportDiagnostics={snapshotCacheWarning};
-  const response = json(snapshot, 200, { "cache-control":"no-store" });
+  const response = marketSnapshotResponse(snapshot);
   if (cache) {
     try {
       const cachedResponse=json(snapshot,200,{"cache-control":`public, max-age=${SNAPSHOT_CACHE_SECONDS}`});
