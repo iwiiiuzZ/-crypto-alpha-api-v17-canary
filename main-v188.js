@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.4.0-multivenue-risk-linkage";
+const BUILD = "crypto-alpha-worker-v27.5.0-swing-liquidity-review";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -270,21 +270,27 @@ function liquidityFeedDefinitions(){return {
  BYBIT:{meta:"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=ETHUSDT",book:"https://api.bybit.com/v5/market/orderbook?category=linear&symbol=ETHUSDT&limit=1000",trades:"https://api.bybit.com/v5/market/recent-trade?category=linear&symbol=ETHUSDT&limit=1000"},
  GATE:{meta:"https://api.gateio.ws/api/v4/futures/usdt/contracts/ETH_USDT",book:"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=ETH_USDT&limit=100&with_id=true",trades:"https://api.gateio.ws/api/v4/futures/usdt/trades?contract=ETH_USDT&limit=500"}
 };}
+
 async function liquidityFeed(owner,url,metadata=false,force=false){
  owner.liquidityCache ||= new Map();owner.liquidityInflight ||= new Map();
+ const persistent=owner.liquidityPersistent;persistent.failures ||= {};persistent.lastSuccess ||= {};
  const cached=owner.liquidityCache.get(url),age=cached?(Date.now()-cached.fetchedAt)/1000:Infinity;
  if(!force&&cached&&age>=0&&age<=(metadata?86400:2))return cached;
  if(owner.liquidityInflight.has(url))return owner.liquidityInflight.get(url);
  const work=(async()=>{
-  const until=owner.liquidityPersistent.cooldowns[url]||0;if(until>Date.now())return {error:"RATE_LIMIT_COOLDOWN",retryAt:new Date(until).toISOString(),fetchedAt:null};
-  try{const body=await fetchJson(url,"Public ETH liquidity",1,false,b=>{if((b?.retCode!==undefined&&b.retCode!==0)||(b?.code!==undefined&&!['0',0].includes(b.code)))throw new Error("UPSTREAM_BODY_ERROR");return b;},2500);
-   const cleanBody=metadata&&url.includes("exchangeInfo")?{symbols:(body?.symbols||[]).filter(x=>x.symbol==="ETHUSDT")}:body;
-   const item={body:cleanBody,fetchedAt:Date.now()};if(metadata){owner.liquidityPersistent.metadata[url]=item;}owner.liquidityCache.set(url,item);return item;
-  }catch(e){if([403,418,429,451].includes(e?.status))owner.liquidityPersistent.cooldowns[url]=Date.now()+Math.max([403,451].includes(e?.status)?300:60,Number(e.retryAfterSeconds)||0)*1000;return {error:String(e?.message||e).slice(0,120),httpStatus:e?.status||null,fetchedAt:null};}
+  const until=persistent.cooldowns[url]||0,last=persistent.failures[url];
+  if(until>Date.now())return {error:'SOURCE_COOLDOWN',httpStatus:last?.httpStatus||null,failedAt:last?.failedAt||null,retryAt:new Date(until).toISOString(),lastSuccessAt:persistent.lastSuccess[url]||null,fetchedAt:null};
+  try{const body=await fetchJson(url,'Public ETH liquidity',1,false,b=>{if((b?.retCode!==undefined&&b.retCode!==0)||(b?.code!==undefined&&!['0',0].includes(b.code)))throw new Error('UPSTREAM_BODY_ERROR');return b;},2500);
+   const cleanBody=metadata&&url.includes('exchangeInfo')?{symbols:(body?.symbols||[]).filter(x=>x.symbol==='ETHUSDT')}:body;
+   const item={body:cleanBody,fetchedAt:Date.now()};if(metadata)persistent.metadata[url]=item;
+   persistent.lastSuccess[url]=new Date(item.fetchedAt).toISOString();delete persistent.failures[url];delete persistent.cooldowns[url];owner.liquidityCache.set(url,item);return item;
+  }catch(e){if([403,418,429,451].includes(e?.status))persistent.cooldowns[url]=Date.now()+Math.max([403,451].includes(e.status)?300:60,Number(e.retryAfterSeconds)||0)*1000;
+   const failure={error:String(e?.message||e).slice(0,120),httpStatus:e?.status||null,failedAt:new Date().toISOString()};persistent.failures[url]=failure;
+   return {...failure,retryAt:persistent.cooldowns[url]?new Date(persistent.cooldowns[url]).toISOString():null,lastSuccessAt:persistent.lastSuccess[url]||null,fetchedAt:null};}
  })();owner.liquidityInflight.set(url,work);try{return await work;}finally{owner.liquidityInflight.delete(url);}
 }
 function normalizeLiquidityVenue(venue,input,now=Date.now()){
- const fail=reason=>({venue,status:"unavailable",reason});
+ const fail=reason=>({venue,status:"unavailable",reason,diagnostics:Object.fromEntries(["meta","book","trades"].map(k=>{const x=input?.[k];return [k,{httpStatus:x?.httpStatus??null,failedAt:x?.failedAt||null,retryAt:x?.retryAt||null,lastSuccessAt:x?.lastSuccessAt||(Number.isFinite(x?.fetchedAt)?new Date(x.fetchedAt).toISOString():null)}];}))});
  if(!input||[input.meta,input.book,input.trades].some(x=>!x||x.error))return fail([input?.meta,input?.book,input?.trades].map(x=>x?.error).filter(Boolean).join(';')||"MISSING_PUBLIC_FEED");
  let unit=1,bids,asks,bookAt,bookId,rawTrades;
  const b=input.book.body,m=input.meta.body,t=input.trades.body;
@@ -315,7 +321,7 @@ function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(
  for(const originalVenue of venues){
   const v={...originalVenue};
   if(v.status==="ok") {v.bookAge=(now-v.bookAt)/1000;v.tradeAge=v.trades?.length?(now-v.trades.at(-1).ts)/1000:null;v.tradeFresh=Number.isFinite(v.tradeAge)&&v.tradeAge>=-2&&v.tradeAge<=10;if(v.bookAge< -2||v.bookAge>10){v.status="unavailable";v.reason="BOOK_EXPIRED_BEFORE_AGGREGATION";}}
-  if(v.status!=="ok"){report.venues.push({venue:v.venue,status:"unavailable",reason:v.reason});continue;}
+  if(v.status!=="ok"){report.venues.push({venue:v.venue,status:"unavailable",reason:v.reason,diagnostics:v.diagnostics||null});continue;}
   const basisBps=10000*(v.mid/reference-1),spreadBps=10000*(v.asks[0].price-v.bids[0].price)/v.mid,basisOK=Math.abs(basisBps)<=50&&spreadBps<=20;
   const first=firstWave?.find(x=>x.venue===v.venue),independent=first?.status==="ok"&&now-first.bookAt<=10000&&now-first.bookAt>=-2000&&v.bookAt>first.bookAt&&v.bookId!==first.bookId;
   report.venues.push({venue:v.venue,status:basisOK?"ok":"excluded",bookAt:new Date(v.bookAt).toISOString(),bookAgeSeconds:round(v.bookAge,3),tradeAgeSeconds:round(v.tradeAge,3),basisBps:round(basisBps,2),independentRecheck:!!independent,levels:[v.bids.length,v.asks.length],visibleNativeRange:[v.bids.at(-1).price,v.asks.at(-1).price],tradeRecords:v.trades.length,rejectedRecords:v.rejected,flow:{sampleSeconds:v.trades.length?round((v.trades.at(-1).ts-v.trades[0].ts)/1000,3):0,buyUsdt:round(v.trades.filter(t=>t.side==="buy").reduce((n,t)=>n+t.notional,0),2),sellUsdt:round(v.trades.filter(t=>t.side==="sell").reduce((n,t)=>n+t.notional,0),2),priceChangePct:v.trades.length?round((v.trades.at(-1).price/v.trades[0].price-1)*100,5):null},reason:basisOK?null:Math.abs(basisBps)>50?"CROSS_VENUE_BASIS_TOO_LARGE":"VENUE_SPREAD_ABNORMAL"});
@@ -325,12 +331,15 @@ function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(
   const track={observedAt:now,bookAt:v.bookAt,tradeIds:v.trades.slice(-500).map(t=>t.id),lastTradeAt:v.trades.at(-1)?.ts||null,walls:{}};
   for(const level of [...v.bids,...v.asks]){
    const mapped=level.price*ratio,index=Math.round(mapped/binWidth),key=level.side+":"+index;
-   let bin=bins.get(key);if(!bin){bin={id:key,side:level.side,low:Infinity,high:0,notionalUsdt:0,venues:new Set(),persistentVenues:new Set()};bins.set(key,bin);}bin.low=Math.min(bin.low,mapped);bin.high=Math.max(bin.high,mapped);bin.notionalUsdt+=level.notional;bin.venues.add(v.venue);
+   let bin=bins.get(key);if(!bin){bin={id:key,side:level.side,low:Infinity,high:0,notionalUsdt:0,venues:new Set(),persistentVenues:new Set(),members:[]};bins.set(key,bin);}bin.low=Math.min(bin.low,mapped);bin.high=Math.max(bin.high,mapped);bin.notionalUsdt+=level.notional;bin.venues.add(v.venue);
    if(level.notional<100000)continue;
    const nativeKey=level.side+":"+level.price,prior=usableOld?old.walls[nativeKey]:null,oldAny=old?.bookAt===v.bookAt?old.walls[nativeKey]:null;
    const last=prior||oldAny,observations=prior?prior.observations+1:oldAny?oldAny.observations:1;
-   const wall={price:level.price,side:level.side,notional:level.notional,firstAt:last?.firstAt||v.bookAt,observations};track.walls[nativeKey]=wall;
-   if(observations>=2&&v.bookAt-wall.firstAt>=5000)bin.persistentVenues.add(v.venue);
+   const continuing=last&&v.bookAt-(last.lastBookAt||old?.bookAt||0)<=75000&&level.notional>=Math.max(100000,(last.firstNotional||last.notional)*0.5);
+   const wall={price:level.price,side:level.side,notional:level.notional,firstAt:continuing?last.firstAt:v.bookAt,firstNotional:continuing?(last.firstNotional||last.notional):level.notional,observations:continuing?observations:1,lastBookAt:v.bookAt};track.walls[nativeKey]=wall;
+   const span=(v.bookAt-wall.firstAt)/1000,persistent=wall.observations>=3&&span>=30;
+   if(persistent)bin.persistentVenues.add(v.venue);
+   if(bin.members.length<8)bin.members.push({venue:v.venue,nativePrice:level.price,mappedPrice:round(mapped,4),notionalUsdt:round(level.notional,2),observations:wall.observations,observedSpanSeconds:round(span,2),persistencePassed:persistent});
    if(prior&&level.notional<prior.notional*0.7){const traded=newTrades.filter(t=>t.side===(level.side==="BID"?"sell":"buy")&&Math.abs(t.price-level.price)<=Math.max(.01,level.price*.00005)).reduce((n,t)=>n+t.notional,0);report.changes.push({venue:v.venue,side:level.side,nativePrice:level.price,mappedPrice:round(mapped,3),sizeDecreaseUsdt:round(prior.notional-level.notional,2),observedMatchingTradesUsdt:round(traded,2),classification:traded>0?"SIZE_REDUCED_WITH_MATCHING_TRADES":"SIZE_REDUCED_WITHOUT_OBSERVED_MATCHING_TRADES",sampleOverlap:!!overlap,exactCauseKnown:false});}
   }
   // Levels below tracking threshold or absent from visible book still need lifecycle evidence.
@@ -342,10 +351,10 @@ function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(
   track.walls=Object.fromEntries(Object.entries(track.walls).sort((a,b)=>b[1].notional-a[1].notional).slice(0,24));state.venues[v.venue]=track;
  }
  const sideThreshold=Object.fromEntries(["BID","ASK"].map(side=>[side,Math.max(500000,percentile([...bins.values()].filter(x=>x.side===side).map(x=>x.notionalUsdt),.9)||0)]));
- const walls=[...bins.values()].filter(x=>x.notionalUsdt>=sideThreshold[x.side]).map(x=>({id:x.id,side:x.side,low:round(x.low,3),high:round(x.high,3),notionalUsdt:round(x.notionalUsdt,2),venueCount:x.venues.size,venues:[...x.venues],persistentVenueCount:x.persistentVenues.size,grade:x.venues.size>=2&&x.persistentVenues.size>=2?"MULTI_VENUE_PERSISTENT":x.venues.size>=2?"MULTI_VENUE_PROVISIONAL":"SINGLE_VENUE_PROVISIONAL"}));
+ const walls=[...bins.values()].filter(x=>x.notionalUsdt>=sideThreshold[x.side]).map(x=>({id:x.id,side:x.side,low:round(x.low,3),high:round(x.high,3),notionalUsdt:round(x.notionalUsdt,2),venueCount:x.venues.size,venues:[...x.venues],persistentVenueCount:x.persistentVenues.size,members:x.members,grade:x.venues.size>=2&&x.persistentVenues.size>=2?"MULTI_VENUE_PERSISTENT":x.persistentVenues.size>=1?"SINGLE_VENUE_PERSISTENT":x.venues.size>=2?"MULTI_VENUE_PROVISIONAL":"SINGLE_VENUE_PROVISIONAL"}));
  // Nearest walls are needed for first-obstacle RR, not just the largest remote wall.
  report.clusters=[...walls.filter(x=>x.side==="BID").sort((a,b)=>b.high-a.high).slice(0,3),...walls.filter(x=>x.side==="ASK").sort((a,b)=>a.low-b.low).slice(0,3)];
- report.status=report.connectedVenues.length>=2?"ok":"partial";report.minimumThresholdUsdt=500000;report.sideThresholdsUsdt=sideThreshold;report.binWidthUsdt=binWidth;
+ report.status=report.connectedVenues.length>=2?"ok":"partial";report.minimumThresholdUsdt=500000;report.sideThresholdsUsdt=sideThreshold;report.binWidthUsdt=binWidth;report.persistencePolicy={minimumIndependentSamples:3,minimumObservedSpanSeconds:30,maximumSampleGapSeconds:75,minimumRetainedFraction:0.5,continuousCoverageVerified:false,engineeringDefaultsNotProfitabilityValidated:true};
  report.changes=report.changes.sort((a,b)=>b.sizeDecreaseUsdt-a.sizeDecreaseUsdt).slice(0,6);
  report.arrivalRecheck={passed:report.venues.filter(x=>x.status==="ok"&&x.independentRecheck&&Number.isFinite(x.tradeAgeSeconds)&&x.tradeAgeSeconds<=10).length>=2,independentVenueCount:report.venues.filter(x=>x.status==="ok"&&x.independentRecheck).length,at:new Date(now).toISOString(),rule:"TWO_NEW_BOOK_SNAPSHOTS_AND_FRESH_TRADES_AT_TWO_OR_MORE_VENUES"};
  report.limitations=["SAMPLED_L2_NOT_IDENTIFIABLE_ORDERS","MISSING_TRADE_OVERLAP_PREVENTS_CANCEL_FILL_ATTRIBUTION","NO_WALL_IS_A_GUARANTEED_SUPPORT","VISIBLE_DEPTH_AND_CONNECTED_VENUES_ONLY"];
@@ -380,32 +389,47 @@ function liquidityDepthReference(venue){
 function liquidityContextCurrent(context,now=Date.now()){
  const age=(now-Date.parse(context?.checkedAt))/1000;return context?.status==="ok"&&Number.isFinite(age)&&age>=-2&&age<=10&&context.arrivalRecheck?.passed===true;
 }
+
+function liquidityProtectionLevel(plan){
+ const values=[plan.modelInvalidationPrice,plan.protectivePrice,plan.trigger?.protectiveStructure?.price,plan.progress?.protectivePrice,
+  plan.entryTriggerProtectionPrice,plan.progress?.retest?(plan.direction==='LONG'?plan.progress.retest.l:plan.progress.retest.h):undefined,plan.invalidationPrice,plan.stopLoss];
+ const present=values.filter(v=>v!==undefined&&v!==null);if(!present.length||!present.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>0))return NaN;return plan.direction==='LONG'?Math.max(...present):Math.min(...present);
+}
 function liquidityTradePricing(asset,plan){
  const context=asset?.crossVenueLiquidity;if(!context)return null;
+ if(plan.expiresAt&&!Number.isFinite(Date.parse(plan.expiresAt)))return {status:'MODEL_EVENT_TIME_UNVERIFIABLE',entryReviewPassed:false,freshRecheckPassed:false};
  if(plan.expiresAt&&Date.parse(plan.expiresAt)<=Date.now())return {status:'MODEL_EVENT_EXPIRED',entryReviewPassed:false,freshRecheckPassed:liquidityContextCurrent(context)};
- const long=plan.direction==="LONG",entry=Number(plan.entry??(long?asset.ticker?.ask:asset.ticker?.bid)),stop=Number(plan.stopLoss),structural=Number(plan.target??plan.takeProfits?.[0]?.price),cost=Number(plan.estimatedRoundTripCostPct??.15),zone=plan.entryZone||{min:entry,max:entry};
- const fresh=liquidityContextCurrent(context),contextAge=Date.now()-Date.parse(context.checkedAt),displayFresh=context?.status==="ok"&&contextAge>=-2000&&contextAge<=10000;
- if(![entry,stop,structural,zone.min,zone.max].every(Number.isFinite))return {status:"NO_COMPLETE_STRUCTURAL_PLAN",freshRecheckPassed:fresh};
- const costAt=p=>p*cost/100,rrAt=(p,target)=>planNetRR({direction:plan.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},p);
- const opposing=(displayFresh?context.clusters||[]:[]).filter(x=>x.side===(long?"ASK":"BID")&&(long?x.high>Math.min(entry,zone.min):x.low<Math.max(entry,zone.max))).sort((a,b)=>long?a.low-b.low:b.high-a.high);
- const wall=opposing[0]||null,atr=Number(asset.timeframes?.['15m']?.indicators?.atr14)||entry*.002,buffer=Math.max(entry*.0001,Math.min(atr*.05,entry*.0005));
- const wallTarget=wall?(long?wall.low-buffer:wall.high+buffer):null;
- const target=Number.isFinite(wallTarget)?(long?Math.min(structural,wallTarget):Math.max(structural,wallTarget)):structural;
- const validTarget=long?target>stop:target<stop,cap=validTarget?(target+2*stop)/(3*(long?1+cost/100:1-cost/100)):null;
- const qualified=Number.isFinite(cap)?long?{min:Math.max(zone.min,stop+1e-8),max:Math.min(zone.max,cap)}:{min:Math.max(zone.min,cap),max:Math.min(zone.max,stop-1e-8)}:null;
- const qualifiedZone=qualified&&qualified.min<=qualified.max?qualified:null;
- const currentRR=rrAt(entry,target),supports=(displayFresh?context.clusters||[]:[]).filter(x=>x.side===(long?'BID':'ASK')&&(long?x.low<entry:x.high>entry)).sort((a,b)=>long?b.high-a.high:a.low-b.low);
- const support=supports[0]||null,changedSupport=(displayFresh?context.changes||[]:[]).some(x=>x.side===(long?'BID':'ASK')&&x.sizeDecreaseUsdt>=500000&&Math.abs(x.mappedPrice-entry)<=atr*.5&&x.classification!=='OUTSIDE_VISIBLE_DEPTH_UNKNOWN');
- const currentInside=priceInsideEntryZone(entry,zone),scenarios=[{route:'CURRENT',entry,netRR:round(currentRR,3),inModelZone:currentInside}];
- if(qualifiedZone){const better=long?qualifiedZone.min:qualifiedZone.max;scenarios.push({route:'MODEL_ZONE_BETTER_PRICE',entry:round(better,4),netRR:round(rrAt(better,target),3),requires:'FRESH_MODEL_TRIGGER_AND_ARRIVAL_RECHECK'});}
+ const long=plan.direction==='LONG',entry=plan.entry??(long?asset.ticker?.ask:asset.ticker?.bid),stop=plan.stopLoss,structural=plan.target??plan.takeProfits?.[0]?.price,cost=plan.estimatedRoundTripCostPct??.15,zone=plan.entryZone||{min:entry,max:entry},protection=liquidityProtectionLevel(plan);
+ const fresh=liquidityContextCurrent(context),contextAge=Date.now()-Date.parse(context.checkedAt),displayFresh=context?.status==='ok'&&contextAge>=-2000&&contextAge<=10000;
+ if(!['LONG','SHORT'].includes(plan.direction)||![entry,stop,structural,zone.min,zone.max,protection].every(x=>typeof x==='number'&&Number.isFinite(x)&&x>0)||zone.min>zone.max||!Number.isFinite(cost)||cost<0||cost>=100)
+  return {status:'NO_COMPLETE_STRUCTURAL_PLAN',entryReviewPassed:false,freshRecheckPassed:fresh};
+ const rrAt=(p,target,multiplier=1)=>planNetRR({direction:plan.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},p,multiplier);
+ const atr=Number(asset.timeframes?.['15m']?.indicators?.atr14)||entry*.002,buffer=Math.max(entry*.0001,Math.min(atr*.05,entry*.0005));
+ const opposing=(displayFresh?context.clusters||[]:[]).filter(x=>x.side===(long?'ASK':'BID')&&[x.low,x.high].every(Number.isFinite)&&(long?x.high>Math.min(entry,zone.min):x.low<Math.max(entry,zone.max))).sort((a,b)=>long?a.low-b.low:b.high-a.high);
+ // A new/single-venue wall is a stress scenario, not an established structural target.
+ const wall=opposing[0]||null,strongWall=opposing.find(x=>x.grade==='MULTI_VENUE_PERSISTENT')||null;
+ const beforeWall=w=>w?(long?Math.min(structural,w.low-buffer):Math.max(structural,w.high+buffer)):structural;
+ const target=beforeWall(strongWall),conservativeTarget=beforeWall(wall),currentRR=rrAt(entry,target),conservativeRR=rrAt(entry,conservativeTarget);
+ const temporaryObstacle=!!wall&&wall!==strongWall&&wall.grade!=='MULTI_VENUE_PERSISTENT'&&conservativeRR<2&&currentRR>=2;
+ const epsilon=Math.max(.000001,entry*.00000001),protectedFloor=Math.max(stop,protection)+epsilon,protectedCeiling=Math.min(stop,protection)-epsilon;
+ const capFor=t=>(t+2*stop)/(3*(long?1+cost/100:1-cost/100));
+ const zoneFor=t=>{const cap=capFor(t);if(!Number.isFinite(cap))return null;const z=long?{min:Math.max(zone.min,protectedFloor),max:Math.min(zone.max,cap,t-epsilon)}:{min:Math.max(zone.min,cap,t+epsilon),max:Math.min(zone.max,protectedCeiling)};return z.min<=z.max?z:null;};
+ const qualifiedZone=zoneFor(target),conservativeZone=zoneFor(conservativeTarget),currentInside=priceInsideEntryZone(entry,zone),protectionIntact=long?entry>Math.max(stop,protection):entry<Math.min(stop,protection);
+ const supports=(displayFresh?context.clusters||[]:[]).filter(x=>x.side===(long?'BID':'ASK')&&(long?x.low<entry:x.high>entry)).sort((a,b)=>long?b.high-a.high:a.low-b.low),support=supports[0]||null;
+ const changedSupport=(displayFresh?context.changes||[]:[]).some(x=>x.side===(long?'BID':'ASK')&&x.sizeDecreaseUsdt>=500000&&Math.abs(x.mappedPrice-entry)<=atr*.5&&x.classification!=='OUTSIDE_VISIBLE_DEPTH_UNKNOWN');
+ const scenarios=[{route:'CURRENT',entry,netRR:round(currentRR,3),conservativeNetRR:round(conservativeRR,3),inModelZone:currentInside,protectionPassed:protectionIntact}];
+ if(qualifiedZone){const better=long?qualifiedZone.min:qualifiedZone.max;if((long?better>Math.max(stop,protection)&&better<target:better<Math.min(stop,protection)&&better>target)&&rrAt(better,target)>=2-1e-8)
+  scenarios.push({route:'MODEL_ZONE_BETTER_PRICE',entry:round(better,6),netRR:round(rrAt(better,target),3),conservativeNetRR:round(rrAt(better,conservativeTarget),3),protectionPassed:true,modelProtectionPrice:protection,requires:'FRESH_MODEL_TRIGGER_AND_ARRIVAL_RECHECK'});}
  if(wall)scenarios.push({route:'BREAKOUT_RETEST',boundary:long?wall.high:wall.low,netRR:null,requires:'OBSERVED_CONSUMPTION_OR_WITHDRAWAL_THEN_PRICE_ACCEPTANCE_AND_NEW_STRUCTURAL_STOP_TARGET'});
- const bid=Number(asset.ticker?.bid),ask=Number(asset.ticker?.ask),mid=(bid+ask)/2;
- const executionOK=genuineExecutionQuote(asset.ticker)&&bid<=ask&&(ask-bid)/mid*10000<=20&&Math.abs(Number(asset.ticker?.last)/mid-1)*10000<=25;
- const invalidation=Number(plan.modelInvalidationPrice??plan.invalidationPrice??stop),protectionIntact=Number.isFinite(invalidation)&&(long?entry>invalidation:entry<invalidation);
- const reasons=[];if(!protectionIntact)reasons.push('MODEL_PROTECTION_LOST_AT_CURRENT_PRICE');if(!executionOK)reasons.push('EXECUTION_QUOTE_OR_SPREAD_ABNORMAL');if(!fresh)reasons.push('FRESH_MULTI_VENUE_RECHECK_PENDING');if(!(currentRR>=2))reasons.push('NEAREST_OBSTACLE_NET_RR_BELOW_2');if(!currentInside)reasons.push('CURRENT_PRICE_OUTSIDE_MODEL_ZONE');if(changedSupport)reasons.push('SUPPORTING_LIQUIDITY_THINNED_REVIEW_REQUIRED');
- return {status:'REFERENCE_PRICED',checkedAt:context.checkedAt,freshRecheckPassed:fresh,structuralTarget:structural,liquidityAdjustedFirstTarget:round(target,5),currentNetRR:round(currentRR,5),structuralNetRR:round(rrAt(entry,structural),5),netRRAtCostStress:round(planNetRR({direction:plan.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry,1.5),5),rrQualifiedEntryZone:qualifiedZone,
-  nearestOpposingCluster:wall?.id||null,supportingCluster:support?.id||null,supportGrade:support?.grade||null,stopLossUnchanged:stop,roundTripCostPerEth:round(costAt(entry),5),
-  relativeRisk:reasons.length?'REVIEW_OR_WAIT':'LOWER_RELATIVE_EXECUTION_RISK_NOT_SAFE_GUARANTEE',reasons,scenarios,entryReviewPassed:protectionIntact&&executionOK&&fresh&&currentInside&&currentRR>=2&&!changedSupport};
+ const bid=Number(asset.ticker?.bid),ask=Number(asset.ticker?.ask),mid=(bid+ask)/2,executionOK=genuineExecutionQuote(asset.ticker)&&bid<=ask&&(ask-bid)/mid*10000<=20&&Math.abs(Number(asset.ticker?.last)/mid-1)*10000<=25;
+ const reasons=[];if(!protectionIntact)reasons.push('MODEL_PROTECTION_LOST_AT_CURRENT_PRICE');if(!executionOK)reasons.push('EXECUTION_QUOTE_OR_SPREAD_ABNORMAL');if(!fresh)reasons.push('FRESH_MULTI_VENUE_RECHECK_PENDING');if(!(currentRR>=2))reasons.push('CONFIRMED_FIRST_OBSTACLE_NET_RR_BELOW_2');if(temporaryObstacle)reasons.push('TEMPORARY_OBSTACLE_RECHECK_REQUIRED');if(!currentInside)reasons.push('CURRENT_PRICE_OUTSIDE_MODEL_ZONE');if(changedSupport)reasons.push('SUPPORTING_LIQUIDITY_THINNED_REVIEW_REQUIRED');
+ return {status:'REFERENCE_PRICED',checkedAt:context.checkedAt,validUntil:Number.isFinite(Date.parse(context.checkedAt))?new Date(Date.parse(context.checkedAt)+10000).toISOString():null,freshRecheckPassed:fresh,
+  structuralTarget:structural,liquidityAdjustedFirstTarget:round(target,5),conservativeFirstTarget:round(conservativeTarget,5),currentNetRR:round(currentRR,5),conservativeNetRR:round(conservativeRR,5),structuralNetRR:round(rrAt(entry,structural),5),netRRAtCostStress:round(rrAt(entry,target,1.5),5),conservativeNetRRAtCostStress:round(rrAt(entry,conservativeTarget,1.5),5),
+  rrQualifiedEntryZone:qualifiedZone,conservativeQualifiedEntryZone:conservativeZone,temporaryObstacleReviewRequired:temporaryObstacle,
+  nearestOpposingCluster:wall?.id||null,confirmedOpposingCluster:strongWall?.id||null,obstacleEvidenceGrade:wall?.grade||null,supportingCluster:support?.id||null,supportGrade:support?.grade||null,
+  modelProtectionPrice:protection,stopLossUnchanged:stop,roundTripCostPerEth:round(entry*cost/100,5),costAssumptionPct:cost,
+  relativeRisk:reasons.length?'REVIEW_OR_WAIT':'LOWER_RELATIVE_EXECUTION_RISK_NOT_SAFE_GUARANTEE',reasons,scenarios,
+  entryReviewPassed:protectionIntact&&executionOK&&fresh&&currentInside&&currentRR>=2&&!temporaryObstacle&&!changedSupport};
 }
 function withLiquidityPricing(result,asset,seed){
  if(!asset?.crossVenueLiquidity||!Number.isFinite(result?.stopLoss)||!Number.isFinite(result?.target))return result;
@@ -413,13 +437,13 @@ function withLiquidityPricing(result,asset,seed){
  const output={...result,entryZone:seed.entryZone,liquidityPricing:p};if(p?.status==='MODEL_EVENT_EXPIRED')return {...output,candidate:null,state:'EXPIRED',failedGate:'MODEL_EVENT_EXPIRED'};if(!p||p.status!=='REFERENCE_PRICED')return output;
  if(!p.freshRecheckPassed){if(candidate)output.candidate={...candidate,liquidityReview:{passed:false,pending:true}};return output;}
  output.netRR=p.currentNetRR;output.target=p.liquidityAdjustedFirstTarget;output.rrQualifiedEntryZone=p.rrQualifiedEntryZone;
- if(candidate&&!p.entryReviewPassed){output.candidate=null;output.state='WAIT_PRICE';output.failedGate=p.reasons[0]||'LIQUIDITY_RECHECK_PENDING';}
+ if(candidate&&!p.entryReviewPassed){output.candidate=null;output.state=p.temporaryObstacleReviewRequired?'WAIT_LIQUIDITY':'WAIT_PRICE';output.failedGate=p.reasons[0]||'LIQUIDITY_RECHECK_PENDING';}
  else if(candidate)output.candidate={...candidate,target:p.liquidityAdjustedFirstTarget,netRR:p.currentNetRR,rrQualifiedEntryZone:p.rrQualifiedEntryZone,liquidityReview:{checkedAt:p.checkedAt,passed:true,cluster:p.nearestOpposingCluster}};
  return output;
 }
 
-function adaptiveAssessment(seed,asset,btc){return withLiquidityPricing(adaptiveAssessmentBase(seed,asset,btc),asset,seed);}
-function opportunityAssessment(seed,asset,btc){return withLiquidityPricing(opportunityAssessmentBase(seed,asset,btc),asset,seed);}
+function adaptiveAssessment(seed,asset,btc){const r=adaptiveAssessmentBase(seed,asset,btc);return {...withLiquidityPricing(r,asset,seed),eventEvidence:modelEventEvidence(seed,r.progress)};}
+function opportunityAssessment(seed,asset,btc){const r=opportunityAssessmentBase(seed,asset,btc);return {...withLiquidityPricing(r,asset,seed),eventEvidence:modelEventEvidence(seed,r.progress)};}
 function discoverRangeReversal(asset,btc){const r=discoverRangeReversalBase(asset,btc);if(!r)return null;const reviewed=withLiquidityPricing({...r,candidate:r},asset,r);return reviewed.candidate;}
 async function coordinatedLiquidityRecheck(owner){
  if(owner.crossLiquidityWork)return owner.crossLiquidityWork;
@@ -432,7 +456,7 @@ async function coordinatedLiquidityRecheck(owner){
     && Number(base.structureValidUntil)>=Date.now();
   const ticker=context.executionQuote;
   const asset={ticker,timeframes:{'15m':{indicators:{atr14:base?.atr15}}},crossVenueLiquidity:context};
-  const proposals=modelContextFresh&&genuineExecutionQuote(ticker)?(base.proposals||[]).map(p=>({submodel:p.submodel,direction:p.direction,modelState:p.modelState,
+  const proposals=modelContextFresh&&genuineExecutionQuote(ticker)?(base.proposals||[]).map(p=>({submodel:p.submodel,direction:p.direction,modelState:p.modelState,tradeHorizon:p.tradeHorizon||"INTRADAY",
    pricing:liquidityTradePricing(asset,{...p,entry:p.direction==='LONG'?ticker.ask:ticker.bid})})):[];
   return {build:BUILD,apiVersion:API_VERSION,generatedAt:new Date().toISOString(),executionQuote:ticker||null,crossVenueLiquidity:context,
    modelContext:{fresh:modelContextFresh,ageSeconds:Number.isFinite(age)?round(age,3):null,generatedAt:base?.generatedAt||null,reason:modelContextFresh?null:'REFRESH_MARKET_VIEW_BEFORE_ENTRY_RECHECK'},proposals,
@@ -444,6 +468,72 @@ async function attachArrivalLiquidity(env,snapshot){
  try{const checked=await durableStateCall(env,{op:'liquidityRecheck'});snapshot.assets.ETHUSDT.crossVenueLiquidity=checked.crossVenueLiquidity||{status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
  catch(e){snapshot.assets.ETHUSDT.crossVenueLiquidity={status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
  return snapshot;
+}
+
+
+function modelEventEvidence(seed,progress={}){
+ const long=seed.direction==='LONG',eventAt=seed.breakoutAt||seed.eventAt,atr=seed.atr;
+ const retest=progress?.retest;
+ return {eventKey:[seed.submodel,seed.direction,eventAt,seed.boundary].join(':'),direction:seed.direction,eventAt,boundary:seed.boundary,expiresAt:seed.expiresAt,
+  frozenEntryZone:seed.entryZone,progress:progress?.state||null,
+  retestBand:Number.isFinite(atr)&&Number.isFinite(seed.boundary)?{min:seed.boundary-.2*atr,max:seed.boundary+.2*atr}:null,
+  retestCloseRule:seed.model==='B'?{operator:long?'>':'<',level:seed.boundary}:null,
+  retestAt:retest?.ts||null,triggerCloseRule:retest?{operator:long?'>':'<',level:long?retest.h+.05*atr:retest.l-.05*atr}:null,
+  protectivePrice:progress?.protectivePrice??(retest?(long?retest.l:retest.h):seed.protectivePrice)??null,
+  triggerAt:progress?.triggerAt||seed.triggerAt||null,stopLoss:progress?.stopLoss??null,
+  twoCloseInvalidation:seed.model==='B'?{operator:long?'<':'>',level:long?seed.boundary-.1*atr:seed.boundary+.1*atr,count:2}:null};
+}
+const HOLDING_PROFILE={mode:'SWING_FIRST',preferredHoldingDays:[2,14],contextTimeframes:['4h','1h'],entryTimeframe:'15m',minimumFirstTargetMoveUsd:40,minimumFirstTargetMovePct:1.5,minimumFirstTargetAtr4h:1,
+ leveragePreference:[30,50],leverageIsSizingGate:false,shortTermDefault:'SECONDARY_NO_AUTOMATIC_PREPARED_ALERT',winRateVerified:false};
+function holdingFundingScenarios(asset,direction,entry,stop,target){
+ const f=asset.derivatives?.funding,interval=(Date.parse(f?.nextFundingAt)-Date.parse(f?.fundingAt))/3600000,rate=f?.ratePct;
+ if(f?.status!=='ok'||!Number.isFinite(rate)||!(interval>=1&&interval<=24))return {status:'UNKNOWN_INTERVAL_OR_RATE',futureRatesKnown:false,scenarios:[]};
+ // Scenario only: do not credit hypothetical future receipts and do not assert constant future rates.
+ const perSettlement=Math.max(0,direction==='LONG'?rate:-rate),baseCost=Math.max(.15,estimatedCandidateCost(asset)-Math.max(0,rate));
+ return {status:'CURRENT_RATE_SCENARIO_NOT_FORECAST',intervalHours:interval,currentRatePct:rate,futureRatesKnown:false,scenarios:[2,7,14].map(days=>{const settlements=Math.ceil(days*24/interval),fundingPct=perSettlement*settlements,cost=baseCost+fundingPct;
+  return {days,settlements,assumedFundingCostPct:round(fundingPct,6),totalCostPct:round(cost,6),netRR:round(planNetRR({direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry),5),stressNetRR:round(planNetRR({direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry,1.5),5)};})};
+}
+function assessSwingOpportunity(asset,model){
+ const c=model.candidate,profile=asset.holdingProfile||HOLDING_PROFILE;
+ if(!c)return {state:'WAIT_ENTRY_MODEL',reason:model.failedGate||model.state};
+ const long=c.direction==='LONG',t=asset.timeframes?.['4h'],h1=asset.timeframes?.['1h'],entry=long?asset.ticker?.ask:asset.ticker?.bid,atr=t?.indicators?.atr14;
+ const pivot=long?t?.structureDetail?.protectiveLowCandidate:t?.structureDetail?.protectiveHighCandidate;
+ const state={state:'SECONDARY_INTRADAY_ONLY',reason:'H4_SWING_STRUCTURE_NOT_VERIFIED',direction:c.direction,entry,holdingDays:profile.preferredHoldingDays};
+ const rangeEdge=asset.rangeContext?.confirmed&&asset.rangeContext.locationZone===(long?'LOWER_EDGE':'UPPER_EDGE')&&c.model==='C';
+ const directionOK=rangeEdge||(t?.structure===(long?'HH_HL':'LH_LL')&&!trendAgainst(c.direction,t)&&!trendAgainst(c.direction,h1));
+ if(!directionOK||!(atr>0)||!Number.isFinite(entry)||!Number.isFinite(pivot?.price)||!Number.isFinite(Date.parse(pivot.ts)))return state;
+ const rows=(t.recentCandles||[]).filter(x=>x.confirmed&&Date.parse(x.ts)>Date.parse(pivot.ts));
+ if(rows.length<2||rows.some(x=>long?x.l<=pivot.price:x.h>=pivot.price))return {...state,reason:'H4_PROTECTION_NOT_CONFIRMED_OR_ALREADY_BROKEN'};
+ const stop=long?pivot.price-.1*atr:pivot.price+.1*atr;
+ if(!(long?stop<entry:stop>entry))return {...state,reason:'H4_STOP_WRONG_SIDE'};
+ const possible=[c.liquidityPricing?.structuralTarget??c.target,...['1h','4h'].flatMap(tf=>{const q=asset.timeframes[tf];return long?[q.levels?.resistance20,q.levels?.resistance50,q.structureDetail?.controlHigh?.price]:[q.levels?.support20,q.levels?.support50,q.structureDetail?.controlLow?.price];})];
+ const target=possible.filter(p=>Number.isFinite(p)&&(long?p>entry:p<entry)).sort((a,b)=>long?a-b:b-a)[0];
+ if(!Number.isFinite(target))return {...state,reason:'NO_REAL_FIRST_SWING_TARGET'};
+ const move=Math.abs(target-entry),minimumMove=Math.max(profile.minimumFirstTargetMoveUsd,entry*profile.minimumFirstTargetMovePct/100,atr*profile.minimumFirstTargetAtr4h);
+ const costs=holdingFundingScenarios(asset,c.direction,entry,stop,target),qualifiedHorizon=[...costs.scenarios].reverse().find(x=>x.netRR>=2),baseCost=qualifiedHorizon?.totalCostPct??costs.scenarios.at(-1)?.totalCostPct??estimatedCandidateCost(asset);
+ const netRR=planNetRR({direction:c.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:baseCost},entry);
+ const projected={...state,structuralStop:stop,modelProtectionPrice:pivot.price,protectionAt:pivot.ts,stopTimeframe:'4h',firstTarget:target,firstTargetMoveUsd:round(move,3),minimumPreferredMoveUsd:round(minimumMove,3),netRR:round(netRR,5),funding:costs};
+ if(move<minimumMove)return {...projected,reason:'FIRST_REAL_TARGET_SPACE_BELOW_SWING_PREFERENCE'};
+ if(!costs.scenarios.length)return {...projected,reason:'MULTIDAY_FUNDING_SCENARIO_UNAVAILABLE'};
+ if(!(netRR>=2))return {...projected,reason:'H4_STOP_FIRST_REAL_TARGET_NET_RR_BELOW_2'};
+ const epsilon=Math.max(.000001,entry*.00000001),cap=(target+2*stop)/(3*(long?1+baseCost/100:1-baseCost/100));
+ const zone=long?{min:Math.max(c.entryZone.min,pivot.price+epsilon),max:Math.min(c.entryZone.max,cap)}:{min:Math.max(c.entryZone.min,cap),max:Math.min(c.entryZone.max,pivot.price-epsilon)};
+ if(zone.min>zone.max||!priceInsideEntryZone(entry,zone))return {...projected,reason:'CURRENT_PRICE_OUTSIDE_SWING_RR_ZONE'};
+ const candidate={...c,tradeHorizon:'SWING',holdingDays:[2,qualifiedHorizon?.days||2],entryTriggerProtectionPrice:liquidityProtectionLevel(c),entryPlanVariant:'NEW_UNEXECUTED_SWING_PLAN_NOT_STOP_ADJUSTMENT',stopTimeframe:'4h',stopDistancePct:round(Math.abs(entry-stop)/entry*100,4),initialMarginStress:[30,50].map(leverage=>({leverage,stopMoveAsInitialMarginPct:round(Math.abs(entry-stop)/entry*100*leverage,2),liquidationPriceVerified:false,notAnAccountPermissionGate:true})),entry,stopLoss:stop,protectivePrice:pivot.price,modelInvalidationPrice:pivot.price,target,netRR,estimatedRoundTripCostPct:baseCost,rrQualifiedEntryZone:zone,holdingFunding:costs};
+ const linked=liquidityTradePricing(asset,candidate);
+ if(asset.crossVenueLiquidity&&linked?.entryReviewPassed!==true)return {...projected,reason:linked?.reasons?.[0]||'FRESH_LIQUIDITY_REVIEW_PENDING',pendingCandidate:candidate,liquidityPricing:linked};
+ if(linked?.status==='REFERENCE_PRICED'){candidate.target=linked.liquidityAdjustedFirstTarget;candidate.netRR=linked.currentNetRR;candidate.rrQualifiedEntryZone=linked.rrQualifiedEntryZone;candidate.liquidityPricing=linked;}
+ if(Math.abs(candidate.target-entry)<minimumMove)return {...projected,reason:'CONFIRMED_LIQUIDITY_OBSTACLE_COMPRESSES_SWING_SPACE',liquidityPricing:linked};
+ candidate.holdingFunding=holdingFundingScenarios(asset,c.direction,entry,stop,candidate.target);
+ const finalHorizon=[...candidate.holdingFunding.scenarios].reverse().find(x=>x.netRR>=2);if(!finalHorizon)return {...projected,reason:'MULTIDAY_COST_RECHECK_NET_RR_BELOW_2'};
+ candidate.holdingDays=[2,finalHorizon.days];candidate.estimatedRoundTripCostPct=finalHorizon.totalCostPct;candidate.netRR=finalHorizon.netRR;
+ if(linked?.status==='REFERENCE_PRICED'){const finalLinked=liquidityTradePricing(asset,candidate);if(finalLinked?.entryReviewPassed!==true)return {...projected,reason:'SWING_FINAL_PRICE_RECHECK_REQUIRED'};candidate.liquidityPricing=finalLinked;candidate.rrQualifiedEntryZone=finalLinked.rrQualifiedEntryZone;candidate.netRR=finalLinked.currentNetRR;}
+ return {...projected,structuralFirstTarget:target,firstTarget:candidate.target,firstTargetMoveUsd:round(Math.abs(candidate.target-entry),3),netRR:candidate.netRR,funding:candidate.holdingFunding,state:'SWING_TECHNICAL_READY',reason:null,candidate};
+}
+
+function compactSwingAssessment(review){
+ const compact=c=>{if(!c)return undefined;const out={};for(const key of ['model','submodel','direction','tradeHorizon','holdingDays','entry','entryZone','stopLoss','target','netRR','estimatedRoundTripCostPct','rrQualifiedEntryZone','protectivePrice','modelInvalidationPrice','entryTriggerProtectionPrice','expiresAt','stopTimeframe','stopDistancePct','initialMarginStress','entryPlanVariant'])if(c[key]!==undefined)out[key]=c[key];return out;};
+ return {...review,candidate:compact(review.candidate),pendingCandidate:compact(review.pendingCandidate)};
 }
 
 function snapshotReadiness(assets) {
@@ -913,8 +1003,16 @@ async function updateRejectionFunnel(env,audit) {
   const newBar=Boolean(audit.closedBarAt)&&!day.seenClosedBars.includes(audit.closedBarAt);
   if(newBar)day.seenClosedBars=[...day.seenClosedBars,audit.closedBarAt].slice(-100);
   for(const m of audit.models||[]){const x=day.models[m.submodel]||{scanned:0,prepared:0,gates:{}};x.scanned++;if(newBar)x.distinctClosedBars=(x.distinctClosedBars||0)+1;if(m.candidate&&audit.closedBarAt){x.preparedBarIds ||= [];if(!x.preparedBarIds.includes(audit.closedBarAt))x.preparedBarIds=[...x.preparedBarIds,audit.closedBarAt].slice(-100);x.preparedClosedBars=x.preparedBarIds.length;}if(m.candidate)x.prepared++;else{const gate=m.failedGate||m.state;x.gates[gate]=(x.gates[gate]||0)+1;}day.models[m.submodel]=x;}
-  const days=[...old.days.filter(d=>d.date!==today),day].slice(-7);await scannerStatePut(env,key,{days},10*86400);
-  return {date:today,scans:day.scans,distinctClosed15mBars:day.seenClosedBars.length,distinctBarTrackingSince:day.distinctBarTrackingSince,legacyScansHaveNoReconstructedDistinctBars:true,models:Object.fromEntries(Object.entries(day.models).map(([k,v])=>[k,{scanned:v.scanned,prepared:v.prepared,distinctClosedBars:v.distinctClosedBars||0,preparedClosedBars:v.preparedClosedBars||0,topGates:Object.entries(v.gates).sort((a,b)=>b[1]-a[1]).slice(0,3)}])),
+  const eventLedger=old.eventLedger||{trackingSince:new Date().toISOString(),records:[]};
+  for(const m of audit.models||[]){const e=m.eventEvidence;if(!e?.eventKey)continue;
+   let r=eventLedger.records.find(x=>x.id===e.eventKey);if(!r){r={id:e.eventKey,submodel:m.submodel,direction:e.direction,eventAt:e.eventAt,boundary:e.boundary,firstSeenAt:new Date().toISOString(),transitions:[]};eventLedger.records.push(r);}
+   const quote=audit.currentQuote,price=e.direction==='LONG'?quote?.ask:quote?.bid,gate=m.failedGate||m.state,last=r.transitions.at(-1);
+   if(!last||last.state!==m.state||last.gate!==gate)r.transitions.push({at:new Date().toISOString(),closedBarAt:audit.closedBarAt,state:m.state,gate,price:Number.isFinite(price)?price:null});
+   r.transitions=r.transitions.slice(-6);r.lastSeenAt=new Date().toISOString();if(Number.isFinite(price)){r.lastObservedPrice=price;r.minimumObservedPrice=Math.min(r.minimumObservedPrice??price,price);r.maximumObservedPrice=Math.max(r.maximumObservedPrice??price,price);}r.outcome='NOT_A_MEASURED_TRADE';
+  }
+  eventLedger.records=eventLedger.records.slice(-100);while(eventLedger.records.length&&jsonUtf8Size(JSON.stringify(eventLedger))>80000)eventLedger.records.shift();
+  const days=[...old.days.filter(d=>d.date!==today),day].slice(-7);await scannerStatePut(env,key,{days,eventLedger},10*86400);
+  return {eventAudit:{trackingSince:eventLedger.trackingSince,uniqueEventsRetained:eventLedger.records.length,recent:eventLedger.records.slice(-5),observedPricesOnlyNotFullMarketExcursions:true,rejectedTradeProfitabilityNotKnown:true},date:today,scans:day.scans,distinctClosed15mBars:day.seenClosedBars.length,distinctBarTrackingSince:day.distinctBarTrackingSince,legacyScansHaveNoReconstructedDistinctBars:true,models:Object.fromEntries(Object.entries(day.models).map(([k,v])=>[k,{scanned:v.scanned,prepared:v.prepared,distinctClosedBars:v.distinctClosedBars||0,preparedClosedBars:v.preparedClosedBars||0,topGates:Object.entries(v.gates).sort((a,b)=>b[1]-a[1]).slice(0,3)}])),
     statement:"Counts are measured scanner decisions, not missed profitable trades, backtest wins or exhaustive opportunity coverage."};
 }
 
@@ -1174,7 +1272,7 @@ function buildOpportunityScan(asset,btc) {
   const assessments=raw.map(s=>opportunityAssessment(s,asset,btc));
   const range=discoverRangeReversal(asset,btc);
   if(range)assessments.push({submodel:range.submodel,direction:range.direction,state:"CANDIDATE_FOR_REVIEW",minNetRR:MIN_NET_RR,netRR:range.netRR,candidate:range,failedGate:null});
-  const rank={CANDIDATE_FOR_REVIEW:5,STRUCTURE_READY:4,WAIT_PRICE:4,RETEST_ACCEPTED:3,WAIT_PULLBACK_SHIFT:2,WAIT_RETEST:2};
+  const rank={CANDIDATE_FOR_REVIEW:5,STRUCTURE_READY:4,WAIT_PRICE:4,WAIT_LIQUIDITY:4,RETEST_ACCEPTED:3,WAIT_PULLBACK_SHIFT:2,WAIT_RETEST:2};
   assessments.push(...adaptiveSeeds(asset).map(seed=>adaptiveAssessment(seed,asset,btc)));
   const models=Object.keys(SUBMODEL_DEFINITIONS).map(submodel=>{
     const found=assessments.filter(x=>x.submodel===submodel).sort((x,y)=>(rank[y.state]||0)-(rank[x.state]||0)||finite(y.netRR,0)-finite(x.netRR,0))[0];
@@ -1182,7 +1280,8 @@ function buildOpportunityScan(asset,btc) {
     return found||{submodel,audit,state:observationStructureReady(asset)?"NO_SETUP":"DATA_BLOCKED",candidate:null,
       failedGate:audit?.failedGate||(submodel[0]==="D"?"NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP":submodel[0]==="A"?"NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL":submodel==="B2"?"NO_COMPRESSION_BREAKOUT":submodel[0]==="C"?"NO_COMPLETE_RANGE_EDGE_REVERSAL":"NO_BREAKOUT"),minNetRR:MIN_NET_RR};
   });
-  return {checkedAt:new Date(Date.now()).toISOString(),closedBarAt:observationCandles(asset).at(-1)?.ts||null,models,refusalFunnel:refusalFunnel(asset,models),dynamicContext:dynamicMarketContext(asset),
+  if(asset.holdingProfile)for(const model of models)model.swingAssessment=compactSwingAssessment(assessSwingOpportunity(asset,model));
+  return {checkedAt:new Date(Date.now()).toISOString(),currentQuote:{last:asset.ticker?.last,bid:asset.ticker?.bid,ask:asset.ticker?.ask},holdingProfile:asset.holdingProfile||null,swingPreparedCount:models.filter(m=>m.swingAssessment?.candidate).length,secondaryTechnicalCount:models.filter(m=>m.candidate&&!m.swingAssessment?.candidate).length,closedBarAt:observationCandles(asset).at(-1)?.ts||null,models,refusalFunnel:refusalFunnel(asset,models),dynamicContext:dynamicMarketContext(asset),
     preparedCount:models.filter(m=>m.candidate).length, executionQuoteReady:genuineExecutionQuote(asset?.ticker),
     minimumNetRR:MIN_NET_RR,coverage:"ORIGINAL_SIX_PLUS_D1_D2_SPECIFIED_DETECTORS_NOT_ALL_MARKET_OPPORTUNITIES",
     measuredWinRate:null,validationStatus:"NO_EMPIRICAL_WIN_RATE_CLAIM",openNowAllowed:false};
@@ -1539,12 +1638,17 @@ function evaluateObservation(record, snapshot, verified) {
   if (structureOK && t && Date.parse(candle.ts) + 900_000 >= Date.parse(record.sourceAnalysisAt)
     && (long ? candle.c > t.level : candle.c < t.level)) triggerAt = candle.ts;
   if (inZone && structureOK && triggerAt) { state = "TRIGGER_MET"; reason = "REGISTERED_PRICE_CONDITION_ONLY_FULL_REVIEW_REQUIRED"; }
+  let swingReview=null;
   if (inZone && structureOK) {
     candidate = record.seed?.kind==="ADAPTIVE"?adaptiveAssessment(record.seed,asset,snapshot.assets.BTCUSDT).candidate:["BREAKOUT", "PULLBACK"].includes(record.seed?.kind) ? opportunityAssessment(record.seed, asset, snapshot.assets.BTCUSDT).candidate
       : record.seed?.kind==="RANGE"?discoverRangeReversal(asset,snapshot.assets.BTCUSDT)
       : buildOpportunityScan(asset,snapshot.assets.BTCUSDT).models.find(m=>m.submodel===record.submodel&&m.candidate?.direction===record.direction)?.candidate||null;
     if(candidate&&!priceInsideEntryZone(verified.current.last,candidate.rrQualifiedEntryZone||candidate.entryZone))candidate=null;
     if (candidate && candidate.direction !== record.direction) candidate = null;
+    if(candidate&&asset.holdingProfile?.mode==='SWING_FIRST'){
+      swingReview=assessSwingOpportunity(asset,{candidate});candidate=swingReview.candidate||null;
+      if(!candidate)reason='SWING_PREFERENCE_'+swingReview.reason;
+    }
     if (candidate) {
       const liq = planLiquidityRisk({ ...candidate, symbol: record.symbol, liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, asset);
       const linked=liquidityTradePricing(asset,{...candidate,entryZone:candidate.entryZone||record.observationZone});
@@ -1558,7 +1662,7 @@ function evaluateObservation(record, snapshot, verified) {
   if (!inZone && (triggerAt || record.lastCandidateAt)) reason = "CONDITION_SEEN_BUT_CURRENT_PRICE_OUTSIDE_ZONE_NO_CHASING";
   if (!structureOK && inZone) reason = "ZONE_REACHED_STRUCTURE_DATA_PENDING";
   return { ...base, state, reason, price, currentInZone: inZone, distanceToZone: distance,
-    structureReady: Boolean(structureOK), triggerAt, progress, candidate,
+    structureReady: Boolean(structureOK), triggerAt, progress, candidate,swingReview:swingReview?{...swingReview,candidate:undefined,pendingCandidate:undefined}:null,
     missing: state === "MARKET_CANDIDATE" ? ["NEWS_MACRO_REVIEW"]
       : ["FULL_MODEL_REVIEW", "STRUCTURAL_STOP_AND_FIRST_TARGET_NET_RR", "NEWS_MACRO_REVIEW"] };
 }
@@ -1574,7 +1678,7 @@ function candidateCard(candidate,record,checkedAt) {
   return {direction:candidate.direction,submodel:candidate.submodel,entry:candidate.entry,
     entryZone:candidate.rrQualifiedEntryZone||candidate.entryZone,stopLoss:candidate.stopLoss,firstTarget:candidate.target,
     netRR:candidate.netRR,costPct:candidate.estimatedRoundTripCostPct??0.15,
-    checkedAt,validUntil:record.expiresAt,remainingReview:["CURRENT_QUOTE","NEWS_MACRO","ACTUAL_COSTS"],
+    checkedAt,validUntil:record.expiresAt,tradeHorizon:candidate.tradeHorizon||"INTRADAY",holdingDays:candidate.holdingDays||null,readinessStage:"TECHNICAL_READY_PENDING_FINAL_REVIEW",remainingReview:["CURRENT_QUOTE","NEWS_MACRO","ACTUAL_COSTS"],
     technicalConditionsPassed:true,executionPermission:"FINAL_REVIEW_REQUIRED",automaticOrderPlacement:false};
 }
 
@@ -1583,12 +1687,12 @@ function observationAlert(record, evaluation) {
   const detailed=record.notificationMode==="ALL_STAGES";
   const card=candidateCard(evaluation.candidate,record,evaluation.checkedAt);
   if(evaluation.state==="MARKET_CANDIDATE"&&card)return {
-    title:"ETH（以太坊）"+record.submodel+" 交易预案已就绪｜待最后复核",
+    title:"ETH（以太坊）"+record.submodel+" 技术预案已就绪｜消息与成本待复核",
     body:"方向："+(record.direction==="LONG"?"做多":"做空")+"；核验价 "+formatPrice(card.entry)
       +"\n准备入场范围 "+formatPrice(card.entryZone.min)+"—"+formatPrice(card.entryZone.max)
       +"；结构止损 "+formatPrice(card.stopLoss)+"；第一现实目标 "+formatPrice(card.firstTarget)
-      +"\n净盈亏比 "+round(card.netRR,2)+"；预计往返成本 "+card.costPct+"%；核验时间 "+chinaTime(card.checkedAt)
-      +"。技术条件已通过；打开GPT复核当前价格、最新消息及实际成本。复核通过即可按方案自行执行，无需重复等待新触发。离区、失效或过期不得追单。",level:"timeSensitive"};
+      +"\n"+(card.tradeHorizon==="SWING"?"波段主方案｜计划观察持仓"+(card.holdingDays?.[0]||2)+"—"+(card.holdingDays?.[1]||14)+"天，结构失效或目标到达可提前退出":"日内次级方案，非多日波段")+"\n净盈亏比 "+round(card.netRR,2)+"；预计往返成本 "+card.costPct+"%；核验时间 "+chinaTime(card.checkedAt)
+      +"。技术条件已通过，消息与实际成本尚未终审；打开GPT复核当前价格、挂单成交、最新消息及实际成本。复核通过即可按方案自行执行，无需重复等待新触发。离区、失效或过期不得追单。",level:"timeSensitive"};
   const terminal=OBSERVATION_TERMINAL.includes(evaluation.state);
   const previouslyNotified=Object.values(record.alerts||{}).some(a=>a?.status==="SENT")||record.alerts?.MARKET_CANDIDATE?.status==="PENDING";
   if(!detailed&&(!terminal||!previouslyNotified))return null;
@@ -1672,7 +1776,7 @@ function forwardStudySummary(book) {
     active:rows.filter(r=>r.outcome==="OPEN").length,resolved:closed.length,unknown:rows.filter(r=>r.outcome==="UNRESOLVED").length,
     sampleWinRate:closed.length?wins.length/closed.length:null,meanNetR:closed.length?equity/closed.length:null,
     profitFactor:negative>0?positive/negative:null,maxDrawdownR:closed.length?maxDrawdownR:null,
-    bySubmodel:forwardGroups(rows,"submodel"),byRegime:forwardGroups(rows,"marketRegime"),
+    bySubmodel:forwardGroups(rows,"submodel"),byRegime:forwardGroups(rows,"marketRegime"),byHoldingHorizon:forwardGroups(rows,"tradeHorizon"),
     sufficientForPerformanceClaim:false,minimumReviewSample:100,
     limitation:"Rolling 200 signal samples; no news review, no actual fills, no account leverage. Estimated costs; ambiguous/missing intervals excluded and disclosed. Never equate this to real win rate."};
 }
@@ -1706,7 +1810,7 @@ function advanceForwardRecord(record,asset,now) {
   if(long?price<=record.stopLoss:price>=record.stopLoss)return finish("STOP",price,"VERIFIED_ADVERSE_QUOTE");
   if(now>=Date.parse(record.expiresAt)) {
     if(record.pendingTargetAt)return finish("UNRESOLVED",null,"EXPIRY_BEFORE_TARGET_BAR_CLOSED");
-    return finish("TIME_EXIT",price,"MAXIMUM_FOUR_HOUR_STUDY_HORIZON");
+    return finish("TIME_EXIT",price,record.tradeHorizon==="SWING"?"PLANNED_SWING_STUDY_HORIZON":"MAXIMUM_FOUR_HOUR_STUDY_HORIZON");
   }
   return {...record,lastCheckedAt:new Date(now).toISOString(),pendingTargetAt:(long?price>=record.firstTarget:price<=record.firstTarget)?new Date(now).toISOString():record.pendingTargetAt||null};
 }
@@ -1722,7 +1826,7 @@ async function updateForwardStudy(env,snapshot,selected) {
     const rr=planNetRR({direction:c.direction,stopLoss:c.stopLoss,takeProfits:[{price:c.target}],estimatedRoundTripCostPct:costPct},entry);
     if(rr>=MIN_NET_RR)book.records.push({key,submodel:c.submodel,marketRegime:asset.marketRegimeRouter?.regime||"UNKNOWN",variant:c.locationVariant||c.submodel||null,direction:c.direction,
       entry,stopLoss:c.stopLoss,firstTarget:c.target,costPct,initialNetRR:rr,enteredAt:new Date(now).toISOString(),lastCheckedAt:new Date(now).toISOString(),
-      expiresAt:new Date(now+4*3600000).toISOString(),observationId:record.observationId,outcome:"OPEN"});
+      tradeHorizon:c.tradeHorizon||"INTRADAY",entryEventExpiresAt:c.expiresAt||record.expiresAt||null,costModel:c.tradeHorizon==="SWING"?"FULL_PLANNED_HORIZON_SCENARIO_NOT_REALIZED_FUNDING":"ENTRY_COST_ESTIMATE",expiresAt:new Date(now+(c.tradeHorizon==="SWING"?Math.max(2,Math.min(14,Number(c.holdingDays?.[1])||7))*86400000:4*3600000)).toISOString(),observationId:record.observationId,outcome:"OPEN"});
   }
   book.records=book.records.slice(-200);book.updatedAt=new Date(now).toISOString();
   await scannerStatePut(env,FORWARD_STUDY_KEY,book,90*86400);
@@ -4189,12 +4293,14 @@ function parseOkxFunding(rows) {
   const row = rows[0];
   if (!row) throw new Error("OKX funding rate is empty");
   const rate = finite(row.fundingRate);
+  const intervalHours=(Number(row.nextFundingTime)-Number(row.fundingTime))/3600000;
   return {
     status: "ok",
     source: "OKX",
     rate: round(rate, 10),
     ratePct: pct(rate),
-    annualizedPctEstimate: Number.isFinite(rate) ? round(rate * 3 * 365 * 100, 4) : null,
+    annualizedPctEstimate: Number.isFinite(rate)&&intervalHours>=1&&intervalHours<=24 ? round(rate * (24/intervalHours) * 365 * 100, 4) : null,
+    intervalHours:intervalHours>=1&&intervalHours<=24?intervalHours:null,
     dataFreshness: freshness(rows),
     fundingAt: row.fundingTime ? new Date(Number(row.fundingTime)).toISOString() : null,
     nextFundingAt: row.nextFundingTime ? new Date(Number(row.nextFundingTime)).toISOString() : null,
@@ -4516,10 +4622,11 @@ async function buildSnapshot(options = {}) {
 
   const newsContext=await newsPromise;
   for(const a of Object.values(assets))a.newsEvidenceAvailable=Object.values(newsContext.sources||{}).some(source=>source.status==="ok"&&source.transportAgeSeconds>=0&&source.transportAgeSeconds<=300);
+  assets.ETHUSDT.holdingProfile = HOLDING_PROFILE;
   assets.ETHUSDT.opportunityEngine = buildOpportunityScan(assets.ETHUSDT, assets.BTCUSDT);
   if(scannerStateStub(options.env))try{await scannerStatePut(options.env,"market:liquidity-proposals:v1",{generatedAt:new Date().toISOString(),dataReady:snapshotReadiness(assets).criticalReady,closedBarAt:assets.ETHUSDT.opportunityEngine.closedBarAt,
     structureValidUntil:Math.min(...Object.entries(assets.ETHUSDT.timeframes).map(([tf,t])=>Date.parse(t.coordinator?.lastRefreshAt||t.dataFreshness?.storedAt||new Date().toISOString())+STRUCTURE_MAX_COLLECTION_AGE_SECONDS[tf]*1000)),atr15:assets.ETHUSDT.timeframes?.['15m']?.indicators?.atr14,
-    proposals:assets.ETHUSDT.opportunityEngine.models.filter(m=>Number.isFinite(m.stopLoss)&&Number.isFinite(m.target)||m.candidate).map(m=>{const c=m.candidate||m;return {submodel:m.submodel,direction:m.direction||c.direction,modelState:m.state,entryZone:c.entryZone||m.progress?.entryZone||c.rrQualifiedEntryZone,stopLoss:c.stopLoss,modelInvalidationPrice:c.protectivePrice||m.progress?.protectivePrice||c.stopLoss,expiresAt:c.expiresAt||m.expiresAt||null,target:c.liquidityPricing?.structuralTarget||m.liquidityPricing?.structuralTarget||c.target,estimatedRoundTripCostPct:c.estimatedRoundTripCostPct};}).filter(p=>p.entryZone)},120);}catch{}
+    proposals:assets.ETHUSDT.opportunityEngine.models.flatMap(m=>[m.swingAssessment?.candidate||m.swingAssessment?.pendingCandidate,m.candidate||(Number.isFinite(m.stopLoss)&&Number.isFinite(m.target)?m:null)].filter(Boolean).map(c=>({submodel:m.submodel,direction:c.direction||m.direction,modelState:m.state,tradeHorizon:c.tradeHorizon||"INTRADAY",entryZone:c.rrQualifiedEntryZone||c.entryZone||m.eventEvidence?.frozenEntryZone,stopLoss:c.stopLoss,modelInvalidationPrice:liquidityProtectionLevel(c),expiresAt:c.expiresAt||m.eventEvidence?.expiresAt||null,target:(c.tradeHorizon==="SWING"?m.swingAssessment?.structuralFirstTarget:null)||c.liquidityPricing?.structuralTarget||c.target,estimatedRoundTripCostPct:c.estimatedRoundTripCostPct}))).filter(p=>p.entryZone)},120);}catch{}
   const modules = [];
   for (const asset of Object.values(assets)) modules.push(asset.ticker, ...Object.values(asset.timeframes), asset.derivatives.openInterest, asset.derivatives.funding);
   const available = modules.filter((module) => module.status === "ok").length;
@@ -5420,9 +5527,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
 function scannerNotification(plan, evaluation) {
   const direction = plan.direction === "LONG" ? "做多" : "做空";
   const price = Number.isFinite(evaluation.price) ? evaluation.price : "未知";
+  const currentZone=evaluation.multiVenuePricing?.rrQualifiedEntryZone||plan.entryZone;
+  const currentTarget=evaluation.multiVenuePricing?.liquidityAdjustedFirstTarget??plan.takeProfits[0]?.price;
   if (evaluation.state === "MARKET_CONFIRMED") return {
-    title: `✅ ETH（以太坊）交易预案已就绪｜待最后复核`,
-    body: `${direction}｜核验价 ${formatPrice(evaluation.price)}\n准备入场区 ${formatPrice(plan.entryZone.min)}—${formatPrice(plan.entryZone.max)}｜结构止损 ${formatPrice(plan.stopLoss)}｜第一现实目标 ${formatPrice(plan.takeProfits[0]?.price)}\n净盈亏比 ${round(evaluation.netRR,2)}｜15分钟关键收盘 ${formatPrice(evaluation.confirmed15mClose)}\n核验时间 ${chinaTime(evaluation.checkedAt)}。技术条件已通过；复核当前报价、消息及实际成本通过后即可自行执行，无需重新等待同一触发。有效期 ${chinaTime(plan.expiresAt)}；离区或失效不追单。`,
+    title: `✅ ETH（以太坊）技术预案已就绪｜消息与成本待复核`,
+    body: `${direction}｜核验价 ${formatPrice(evaluation.price)}\n准备入场区 ${formatPrice(currentZone.min)}—${formatPrice(currentZone.max)}｜结构止损 ${formatPrice(plan.stopLoss)}｜第一现实目标 ${formatPrice(currentTarget)}\n净盈亏比 ${round(evaluation.netRR,2)}｜15分钟关键收盘 ${formatPrice(evaluation.confirmed15mClose)}\n核验时间 ${chinaTime(evaluation.checkedAt)}。技术条件已通过；复核当前报价、消息及实际成本通过后即可自行执行，无需重新等待同一触发。有效期 ${chinaTime(plan.expiresAt)}；离区或失效不追单。`,
     level: "timeSensitive",
   };
   if (evaluation.state === "ZONE_REACHED") return {
@@ -5941,7 +6050,7 @@ function openApi(origin) {
     openapi: "3.1.0",
     info: {
       title: "Crypto Alpha BTC ETH Realtime",
-      description: "Realtime BTC/ETH data and plan scanner governed by the 32-lesson A/B/C model hierarchy. Hard blockers veto entry; confirmation data cannot create a setup.",
+      description: "ETH/BTC perpetual data, eight entry models, swing-first holding assessments and fresh multi-venue liquidity pricing. The full 32-lesson knowledge remains; signals do not place orders or guarantee profits.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -5950,7 +6059,7 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Public live market data, independent of scanner authentication. view=news returns timestamped news context; view=diagnostics checks Worker connectivity. Private scanner-status still requires a Bearer header; use the authenticated scanner status Action when that header is unavailable.",
+          description: "Live ETH/BTC perpetual data and eight entry models. market supports recheck=true; liquidity performs fresh multi-venue pre-entry pricing. Swing assessments are separate from intraday research. News is timestamped. Private scanner records require Bearer authentication.",
           security: [],
           parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","news","diagnostics","scanner-status"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; news: feeds/calendar; diagnostics: connectivity; scanner-status: private Bearer."}],
           responses: {
