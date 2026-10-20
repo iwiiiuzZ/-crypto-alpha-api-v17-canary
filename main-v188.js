@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.1.2-market-envelope-fix";
+const BUILD = "crypto-alpha-worker-v27.4.0-multivenue-risk-linkage";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -65,8 +65,12 @@ function genuineExecutionQuote(ticker, maximumSeconds = 35) {
     && (!ticker.lastTradeTimestamp || usableTimestamp(Date.parse(ticker.lastTradeTimestamp),maximumSeconds))
     && (!ticker.bookTimestamp || usableTimestamp(Date.parse(ticker.bookTimestamp),maximumSeconds));
 }
+function orderflowPaths() {
+  return ["/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP", "/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500", "/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400"];
+}
 function publicMarketDefinitions() {
   return [
+    ...orderflowPaths().map((path,i)=>({path,policy:i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0}})),
     {path:"/api/v5/market/tickers?instType=SWAP",policy:CACHE_POLICY.ticker},
     {path:"/api/v5/public/mark-price?instType=SWAP",policy:CACHE_POLICY.markPrice},
     {path:"/api/v5/market/index-tickers?quoteCcy=USDT",policy:{freshSeconds:8,staleSeconds:30}},
@@ -114,6 +118,10 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   owner.publicInflight.set(path,work);
   try{return await work;}finally{owner.publicInflight.delete(path);}
 }
+function publicMarketPersistable(records) {
+  const ephemeral=new Set(orderflowPaths().slice(1));
+  return {...records,entries:Object.fromEntries(Object.entries(records.entries).filter(([path])=>!ephemeral.has(path)))};
+}
 function restorePublicRows(item) {
   if(!Array.isArray(item?.rows))throw new Error(item?.error||"Public market module unavailable");
   const rows=structuredClone(item.rows);
@@ -156,14 +164,24 @@ async function coordinatedMarketBundle(owner) {
     const defs=publicMarketDefinitions();
     const values=await Promise.all(defs.map(d=>coordinatedPublicEndpoint(owner,d.path,d.policy)));
     const modules=Object.fromEntries(defs.map((d,i)=>[d.path,values[i]]));
-    const key=defs[0].path, original=modules[key], recovered=[];
+    const key="/api/v5/market/tickers?instType=SWAP", original=modules[key], recovered=[];
     for(const a of Object.values(ASSETS)){
       const row=await recoverOkxTicker(owner,a.instrumentId,original.rows?.find(r=>r.instId===a.instrumentId));
       if(row)recovered.push(row);
     }
     modules[key]={...original,rows:recovered,storedAt:Date.now(),state:original.state==="live"?"live":"shared-or-fallback",error:original.error};
-    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,owner.publicRecords);
-    return {modules,coordinator:"DURABLE_OBJECT_PUBLIC_MARKET",fetchedAt:new Date().toISOString()};
+    let orderflow;
+    try {
+      const previous=await owner.ctx.storage.get("market:orderflow:eth:v1");
+      orderflow=analyzePublicOrderflow(modules,previous);
+      if(orderflow.nextState)await owner.ctx.storage.put("market:orderflow:eth:v1",orderflow.nextState);
+    } catch(error) {
+      orderflow={report:{status:"unavailable",reason:"ORDERFLOW_STATE_OR_ANALYSIS_FAILED",error:String(error?.message||error),standaloneEntryPermission:false}};
+    }
+    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
+    let crossVenueLiquidity;
+    try{const saved=await owner.ctx.storage.get(LIQUIDITY_STATE_KEY);crossVenueLiquidity=saved?.report||{status:"unavailable",reason:"EXPLICIT_LIQUIDITY_RECHECK_REQUIRED",arrivalRecheck:{passed:false}};}catch(e){crossVenueLiquidity={status:"unavailable",reason:"LIQUIDITY_CACHE_READ_FAILED",arrivalRecheck:{passed:false}};}
+    return {crossVenueLiquidity,orderflow:orderflow.report,modules,coordinator:"DURABLE_OBJECT_PUBLIC_MARKET",fetchedAt:new Date().toISOString()};
   })();
   owner.marketBundleWork=work;
   try{return await work;}finally{owner.marketBundleWork=null;}
@@ -172,10 +190,262 @@ async function coordinatedDirectQuote(owner,symbol) {
   const a=ASSETS[symbol];if(!a)throw new Error("Unsupported quote symbol");
   const row=await recoverOkxTicker(owner,a.instrumentId,null,true);
   const mark=await coordinatedPublicEndpoint(owner,"/api/v5/public/mark-price?instType=SWAP",CACHE_POLICY.markPrice);
-  await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,owner.publicRecords);
+  await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
   if(!row)throw new Error("OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE");
   return {ticker:row,marks:mark.rows||[]};
 }
+
+// Sampled public level-2 evidence, not whale identities or a full exchange tape.
+function analyzePublicOrderflow(modules,previous=null,now=Date.now()) {
+  const paths=orderflowPaths(),items=paths.map(p=>modules?.[p]);
+  const report={status:"unavailable",source:"OKX_ETH_USDT_PERPETUAL_PUBLIC",instrumentId:"ETH-USDT-SWAP",asOf:new Date(now).toISOString(),
+    cost:"NO_MARKET_DATA_API_KEY",standaloneEntryPermission:false,autoOrderPermission:false,
+    limitations:["AGGREGATED_PRICE_LEVELS_NOT_INDIVIDUAL_WHALE_ORDERS","REST_SAMPLES_NOT_CONTINUOUS_TAPE","WALL_DECREASE_IS_NOT_PROVEN_FILL_OR_CANCEL","ABSORPTION_IS_UNCALIBRATED_EVIDENCE_NOT_A_TRADE_SIGNAL"],
+    freshness:{maximumTradeAndBookAgeSeconds:10},endpoints:items.map((x,i)=>({path:paths[i],state:x?.state||"missing",refreshError:x?.error||null})),reason:null};
+  const fail=reason=>({report:{...report,reason},nextState:null});
+  if(items.some(x=>!Array.isArray(x?.rows)||x.error||!["live","shared-fresh-cache"].includes(x.state)))return fail("PUBLIC_ENDPOINT_UNAVAILABLE_OR_REFRESH_FAILED");
+  const meta=items[0].rows.find(x=>x.instId==="ETH-USDT-SWAP");
+  // OKX linear notional formula is contracts * ctVal * price; ctMult is disclosed, not multiplied twice.
+  if(meta?.ctType!=="linear"||meta.ctValCcy!=="ETH"||meta.settleCcy!=="USDT"||!(Number(meta.ctVal)>0))return fail("CONTRACT_UNITS_NOT_VERIFIED");
+  if(!Number.isFinite(items[0].storedAt)||items[0].storedAt>now+2000||now-items[0].storedAt>86400000)return fail("CONTRACT_METADATA_EXPIRED");
+  const unit=Number(meta.ctVal),book=items[2].rows[0],stamp=Number(book?.ts);
+  const validTime=t=>Number.isFinite(t)&&t<=now+2000&&now-t<=10000;
+  if(previous?.bookTimestamp>stamp)return fail("BOOK_OUT_OF_ORDER");
+  if(!validTime(stamp)||!book?.bids?.length||!book?.asks?.length)return fail("BOOK_EXPIRED_OR_MISSING");
+  const parseLevels=(rows,side)=>rows.map(r=>({price:Number(r[0]),contracts:Number(r[1]),orderCount:Number(r[3])||null,side})).filter(x=>x.price>0&&x.contracts>0&&Number.isFinite(x.price*x.contracts)).map(x=>({...x,notionalUsdt:x.price*x.contracts*unit}));
+  const bids=parseLevels(book.bids,"BID").sort((a,b)=>b.price-a.price),asks=parseLevels(book.asks,"ASK").sort((a,b)=>a.price-b.price);
+  if(!bids.length||!asks.length||bids[0].price>asks[0].price)return fail("BOOK_INVALID_OR_CROSSED");
+  const seen=new Map();let invalid=0;
+  for(const r of items[1].rows){const t=Number(r.ts),price=Number(r.px),contracts=Number(r.sz);if(r.instId!=="ETH-USDT-SWAP"||!r.tradeId||!["buy","sell"].includes(r.side)||!(price>0&&contracts>0)||!Number.isFinite(price*contracts)||!Number.isFinite(t)||t>now+2000||t<now-300000){invalid++;continue;}seen.set(String(r.tradeId),{id:String(r.tradeId),ts:t,price,notionalUsdt:price*contracts*unit,side:r.side});}
+  const trades=[...seen.values()].sort((a,b)=>a.ts-b.ts||a.id.localeCompare(b.id)),last=trades.at(-1);
+  if(!last||!validTime(last.ts))return fail("TRADE_WINDOW_EXPIRED_OR_MISSING");
+  const duration=(last.ts-trades[0].ts)/1000,buy=trades.filter(t=>t.side==="buy").reduce((n,t)=>n+t.notionalUsdt,0),sell=trades.filter(t=>t.side==="sell").reduce((n,t)=>n+t.notionalUsdt,0),total=buy+sell;
+  const large=trades.filter(t=>t.notionalUsdt>=50000),largeBuy=large.filter(t=>t.side==="buy").reduce((n,t)=>n+t.notionalUsdt,0),largeSell=large.filter(t=>t.side==="sell").reduce((n,t)=>n+t.notionalUsdt,0);
+  const mid=(bids[0].price+asks[0].price)/2,change=last.price-trades[0].price,changePct=100*change/trades[0].price;
+  const prior=previous&&now-previous.observedAt>=0&&now-previous.observedAt<=90000?previous:null;
+  const previousIds=new Set(prior?.tradeIds||[]),overlap=trades.some(t=>previousIds.has(t.id));
+  // Re-reading one cached book must never increase independent observation counts.
+  const newBook=prior?stamp>prior.bookTimestamp:true,newTrades=!!prior&&last.ts>prior.latestTradeTimestamp,delta=prior?(now-prior.observedAt)/1000:null;
+  const levels=[...bids,...asks],visible=new Set(levels.map(x=>x.side+":"+x.price));
+  const wallRows=levels.filter(x=>x.notionalUsdt>=500000).map(x=>{
+    const key=x.side+":"+x.price,old=prior?.walls?.[key],continued=old&&newBook&&stamp>old.lastBookTimestamp;
+    return {...x,key,observations:old?(continued?old.observations+1:old.observations):1,firstObservedAt:old?old.firstObservedAt:stamp,lastBookTimestamp:stamp,
+      sizeChangeUsdt:old?round(x.notionalUsdt-old.notionalUsdt,2):null,distanceBps:round(10000*(x.price-mid)/mid,2)};
+  }).sort((a,b)=>b.notionalUsdt-a.notionalUsdt).slice(0,20);
+  const walls=Object.fromEntries(wallRows.map(x=>[x.key,x]));
+  const priorMissing=Object.values(prior?.walls||{}).filter(x=>!visible.has(x.key));
+  const evidenceReady=trades.length>=20&&duration>=30&&total>=500000&&!!prior&&newBook&&newTrades&&overlap&&invalid===0;
+  let classification="INSUFFICIENT_PERSISTENT_EVIDENCE";
+  if(evidenceReady){
+    if(sell/total>=0.65&&changePct>=-0.05&&changePct<=0.10)classification="BID_ABSORPTION_CANDIDATE";
+    else if(buy/total>=0.65&&changePct<=0.05&&changePct>=-0.10)classification="ASK_ABSORPTION_CANDIDATE";
+    else if(buy/total>=0.65&&changePct>0.05)classification="AGGRESSIVE_BUY_WITH_UPWARD_RESPONSE";
+    else if(sell/total>=0.65&&changePct< -0.05)classification="AGGRESSIVE_SELL_WITH_DOWNWARD_RESPONSE";
+    else classification="MIXED_FLOW_AND_RESPONSE";
+  }
+  Object.assign(report,{status:"ok",contractUnits:{ctVal:unit,ctValCcy:meta.ctValCcy,ctMult:meta.ctMult,formula:"sz*ctVal*trade_or_level_price",metadataFetchedAt:new Date(items[0].storedAt).toISOString()},
+    freshness:{maximumTradeAndBookAgeSeconds:10,tradeAgeSeconds:round((now-last.ts)/1000,3),bookAgeSeconds:round((now-stamp)/1000,3),bookAt:new Date(stamp).toISOString(),tradeAt:new Date(last.ts).toISOString()},
+    coverage:{venueCount:1,bookLevelsEachSide:[bids.length,asks.length],visiblePriceRange:[bids.at(-1).price,asks.at(-1).price],sampleSeconds:round(duration,3),tradeRecords:trades.length,rejectedRecords:invalid,
+      priorObservationGapSeconds:delta,overlapsPriorTradeSample:!!prior&&overlap,continuousCoverageVerified:false,independentBookSample:!!prior&&newBook,newTradeSincePriorObservation:newTrades},
+    executed:{activeBuyUsdt:round(buy,2),activeSellUsdt:round(sell,2),netUsdt:round(buy-sell,2),largeRecordThresholdUsdt:50000,largeRecordCount:large.length,largeBuyUsdt:round(largeBuy,2),largeSellUsdt:round(largeSell,2),largeNetUsdt:round(largeBuy-largeSell,2),
+      largestRecords:large.sort((a,b)=>b.notionalUsdt-a.notionalUsdt).slice(0,3).map(x=>({side:x.side,price:x.price,notionalUsdt:round(x.notionalUsdt,2),at:new Date(x.ts).toISOString()}))},
+    restingLiquidity:{thresholdUsdt:500000,allVisibleLargeLevelCount:levels.filter(x=>x.notionalUsdt>=500000).length,previewLimitEachSide:3,
+      bids:wallRows.filter(x=>x.side==="BID").slice(0,3).map(wallPublic),asks:wallRows.filter(x=>x.side==="ASK").slice(0,3).map(wallPublic),
+      previousTrackedLevelsNotVisible:priorMissing.length,missingLevelMeaning:"OUTSIDE_VISIBLE_BOOK_OR_REMOVED_UNKNOWN_CAUSE"},
+    priceResponse:{from:trades[0].price,to:last.price,change:round(change,4),changePct:round(changePct,5)},
+    assessment:{classification,evidenceReady,validatedWinRate:null,minimumSampleSeconds:30,minimumNotionalUsdt:500000,minimumAggressorShare:0.65,
+      role:"REASSESS_AND_CORROBORATE_EXISTING_MODELS_ONLY",requiresLocationAndStructure:true}});
+  return {report,nextState:{observedAt:newBook?now:(prior?.observedAt||now),bookTimestamp:stamp,latestTradeTimestamp:last.ts,tradeIds:trades.map(t=>t.id),walls}};
+}
+function wallPublic(x) {
+  return {price:x.price,notionalUsdt:round(x.notionalUsdt,2),aggregatedOrderCount:x.orderCount,distanceBps:x.distanceBps,
+    independentObservations:x.observations,observedSpanSeconds:round((x.lastBookTimestamp-x.firstObservedAt)/1000,3),sizeChangeUsdt:x.sizeChangeUsdt};
+}
+
+// V27.4: free public perpetual liquidity, explicitly limited to connected venues.
+const LIQUIDITY_STATE_KEY="market:multi-venue-eth:v1";
+const LIQUIDITY_VENUES=["OKX","BINANCE","BYBIT","GATE"];
+function liquidityFeedDefinitions(){return {
+ BINANCE:{meta:"https://fapi.binance.com/fapi/v1/exchangeInfo",book:"https://fapi.binance.com/fapi/v1/depth?symbol=ETHUSDT&limit=500",trades:"https://fapi.binance.com/fapi/v1/trades?symbol=ETHUSDT&limit=500"},
+ BYBIT:{meta:"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=ETHUSDT",book:"https://api.bybit.com/v5/market/orderbook?category=linear&symbol=ETHUSDT&limit=1000",trades:"https://api.bybit.com/v5/market/recent-trade?category=linear&symbol=ETHUSDT&limit=1000"},
+ GATE:{meta:"https://api.gateio.ws/api/v4/futures/usdt/contracts/ETH_USDT",book:"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=ETH_USDT&limit=100&with_id=true",trades:"https://api.gateio.ws/api/v4/futures/usdt/trades?contract=ETH_USDT&limit=500"}
+};}
+async function liquidityFeed(owner,url,metadata=false,force=false){
+ owner.liquidityCache ||= new Map();owner.liquidityInflight ||= new Map();
+ const cached=owner.liquidityCache.get(url),age=cached?(Date.now()-cached.fetchedAt)/1000:Infinity;
+ if(!force&&cached&&age>=0&&age<=(metadata?86400:2))return cached;
+ if(owner.liquidityInflight.has(url))return owner.liquidityInflight.get(url);
+ const work=(async()=>{
+  const until=owner.liquidityPersistent.cooldowns[url]||0;if(until>Date.now())return {error:"RATE_LIMIT_COOLDOWN",retryAt:new Date(until).toISOString(),fetchedAt:null};
+  try{const body=await fetchJson(url,"Public ETH liquidity",1,false,b=>{if((b?.retCode!==undefined&&b.retCode!==0)||(b?.code!==undefined&&!['0',0].includes(b.code)))throw new Error("UPSTREAM_BODY_ERROR");return b;},2500);
+   const cleanBody=metadata&&url.includes("exchangeInfo")?{symbols:(body?.symbols||[]).filter(x=>x.symbol==="ETHUSDT")}:body;
+   const item={body:cleanBody,fetchedAt:Date.now()};if(metadata){owner.liquidityPersistent.metadata[url]=item;}owner.liquidityCache.set(url,item);return item;
+  }catch(e){if([403,418,429,451].includes(e?.status))owner.liquidityPersistent.cooldowns[url]=Date.now()+Math.max([403,451].includes(e?.status)?300:60,Number(e.retryAfterSeconds)||0)*1000;return {error:String(e?.message||e).slice(0,120),httpStatus:e?.status||null,fetchedAt:null};}
+ })();owner.liquidityInflight.set(url,work);try{return await work;}finally{owner.liquidityInflight.delete(url);}
+}
+function normalizeLiquidityVenue(venue,input,now=Date.now()){
+ const fail=reason=>({venue,status:"unavailable",reason});
+ if(!input||[input.meta,input.book,input.trades].some(x=>!x||x.error))return fail([input?.meta,input?.book,input?.trades].map(x=>x?.error).filter(Boolean).join(';')||"MISSING_PUBLIC_FEED");
+ let unit=1,bids,asks,bookAt,bookId,rawTrades;
+ const b=input.book.body,m=input.meta.body,t=input.trades.body;
+ if(!Number.isFinite(input.meta.fetchedAt)||now-input.meta.fetchedAt>86400000||input.meta.fetchedAt>now+2000)return fail("CONTRACT_METADATA_EXPIRED");
+ if(venue==="OKX"){
+  const meta=m?.find(x=>x.instId==="ETH-USDT-SWAP");if(meta?.ctType!=="linear"||meta.ctValCcy!=="ETH"||meta.settleCcy!=="USDT"||!(Number(meta.ctVal)>0))return fail("CONTRACT_UNITS_NOT_VERIFIED");unit=Number(meta.ctVal);const row=b?.[0];bids=row?.bids;asks=row?.asks;bookAt=Number(row?.ts);bookId=String(row?.seqId||row?.ts);rawTrades=(t||[]).map(x=>({id:x.tradeId,ts:Number(x.ts),price:Number(x.px),quantity:Number(x.sz)*unit,side:x.side,valid:x.instId==="ETH-USDT-SWAP"}));
+ }else if(venue==="BINANCE"){
+  const meta=m?.symbols?.find(x=>x.symbol==="ETHUSDT");if(meta?.baseAsset!=="ETH"||meta.quoteAsset!=="USDT"||meta.contractType!=="PERPETUAL")return fail("CONTRACT_UNITS_NOT_VERIFIED");bids=b?.bids;asks=b?.asks;bookAt=Number(b?.T||b?.E);bookId=String(b?.lastUpdateId);rawTrades=Array.isArray(t)?t.filter(x=>!x.isRPITrade).map(x=>({id:x.id,ts:Number(x.time),price:Number(x.price),quantity:Number(x.qty),side:x.isBuyerMaker===true?"sell":x.isBuyerMaker===false?"buy":null,valid:typeof x.isBuyerMaker==="boolean"})):[];
+ }else if(venue==="BYBIT"){
+  const meta=m?.result?.list?.find(x=>x.symbol==="ETHUSDT");if(meta?.baseCoin!=="ETH"||meta.quoteCoin!=="USDT"||meta.settleCoin!=="USDT"||meta.contractType!=="LinearPerpetual"||b?.result?.s!=="ETHUSDT"||t?.result?.category!=="linear")return fail("CONTRACT_UNITS_NOT_VERIFIED");bids=b.result.b;asks=b.result.a;bookAt=Number(b.result.cts||b.result.ts);bookId=String(b.result.u);rawTrades=(t.result.list||[]).filter(x=>!x.isBlockTrade&&!x.isRPITrade).map(x=>({id:x.execId,ts:Number(x.time),price:Number(x.price),quantity:Number(x.size),side:x.side==="Buy"?"buy":x.side==="Sell"?"sell":null,valid:x.symbol==="ETHUSDT"}));
+ }else if(venue==="GATE"){
+  if(m?.name!=="ETH_USDT"||!(Number(m.quanto_multiplier)>0)||m.type&&m.type!=="direct")return fail("CONTRACT_UNITS_NOT_VERIFIED");unit=Number(m.quanto_multiplier);bids=(b?.bids||[]).map(x=>[x.p,x.s]);asks=(b?.asks||[]).map(x=>[x.p,x.s]);bookAt=Number(b?.update||b?.current);if(bookAt<1e12)bookAt*=1000;bookId=String(b?.id||bookAt);rawTrades=Array.isArray(t)?t.map(x=>({id:x.id,ts:epochMilliseconds(x.create_time_ms||x.create_time),price:Number(x.price),quantity:Math.abs(Number(x.size))*unit,side:Number(x.size)>0?"buy":Number(x.size)<0?"sell":null,valid:true})):[];
+ }else return fail("UNSUPPORTED_VENUE");
+ const age=(now-bookAt)/1000;if(!Number.isFinite(age)||age< -2||age>10)return fail("BOOK_EXPIRED_OR_TIME_INVALID");
+ const levels=(rows,side)=>(Array.isArray(rows)?rows:[]).map(r=>({price:Number(r[0]),quantity:Math.abs(Number(r[1]))*unit,side})).filter(x=>x.price>0&&x.quantity>0&&Number.isFinite(x.price*x.quantity)).map(x=>({...x,notional:x.price*x.quantity}));
+ bids=levels(bids,"BID").sort((a,b)=>b.price-a.price);asks=levels(asks,"ASK").sort((a,b)=>a.price-b.price);
+ if(!bids.length||!asks.length||bids[0].price>asks[0].price)return fail("EMPTY_OR_CROSSED_BOOK");
+ const unique=new Map();let rejected=0;for(const x of rawTrades){if(!x.valid||x.id===null||x.id===undefined||!["buy","sell"].includes(x.side)||!Number.isFinite(x.ts)||x.ts>now+2000||x.ts<now-300000||!(x.price>0&&x.quantity>0)||!Number.isFinite(x.price*x.quantity)){rejected++;continue;}unique.set(String(x.id),{...x,id:String(x.id),notional:x.price*x.quantity});}
+ const trades=[...unique.values()].sort((a,b)=>a.ts-b.ts),latest=trades.at(-1),tradeAge=latest?(now-latest.ts)/1000:null;
+ return {status:"ok",venue,mid:(bids[0].price+asks[0].price)/2,bids,asks,bookAt,bookId,bookAge:age,tradeAge,trades,rejected,tradeFresh:Number.isFinite(tradeAge)&&tradeAge>=-2&&tradeAge<=10,unit};
+}
+function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now()){
+ const okx=venues.find(v=>v.venue==="OKX"&&v.status==="ok"),reference=okx?.mid;
+ const report={status:"unavailable",source:"PUBLIC_MULTI_VENUE_ETH_USDT_PERPETUAL",checkedAt:new Date(now).toISOString(),referencePrice:reference||null,
+  requestedVenues:LIQUIDITY_VENUES,connectedVenues:[],allMarketCoverage:false,exactOrderFillOrCancelKnown:false,continuousCoverageVerified:false,priceMapping:"OKX_MID_DIVIDED_BY_VENUE_MID",maximumAgeSeconds:10,venues:[],clusters:[],changes:[],arrivalRecheck:{passed:false}};
+ const state={observedAt:now,venues:{}};if(!reference)return {report:{...report,reason:"FRESH_OKX_REFERENCE_REQUIRED"},state};
+ const bins=new Map(),binWidth=1;let priorMissing=0;
+ for(const originalVenue of venues){
+  const v={...originalVenue};
+  if(v.status==="ok") {v.bookAge=(now-v.bookAt)/1000;v.tradeAge=v.trades?.length?(now-v.trades.at(-1).ts)/1000:null;v.tradeFresh=Number.isFinite(v.tradeAge)&&v.tradeAge>=-2&&v.tradeAge<=10;if(v.bookAge< -2||v.bookAge>10){v.status="unavailable";v.reason="BOOK_EXPIRED_BEFORE_AGGREGATION";}}
+  if(v.status!=="ok"){report.venues.push({venue:v.venue,status:"unavailable",reason:v.reason});continue;}
+  const basisBps=10000*(v.mid/reference-1),spreadBps=10000*(v.asks[0].price-v.bids[0].price)/v.mid,basisOK=Math.abs(basisBps)<=50&&spreadBps<=20;
+  const first=firstWave?.find(x=>x.venue===v.venue),independent=first?.status==="ok"&&now-first.bookAt<=10000&&now-first.bookAt>=-2000&&v.bookAt>first.bookAt&&v.bookId!==first.bookId;
+  report.venues.push({venue:v.venue,status:basisOK?"ok":"excluded",bookAt:new Date(v.bookAt).toISOString(),bookAgeSeconds:round(v.bookAge,3),tradeAgeSeconds:round(v.tradeAge,3),basisBps:round(basisBps,2),independentRecheck:!!independent,levels:[v.bids.length,v.asks.length],visibleNativeRange:[v.bids.at(-1).price,v.asks.at(-1).price],tradeRecords:v.trades.length,rejectedRecords:v.rejected,flow:{sampleSeconds:v.trades.length?round((v.trades.at(-1).ts-v.trades[0].ts)/1000,3):0,buyUsdt:round(v.trades.filter(t=>t.side==="buy").reduce((n,t)=>n+t.notional,0),2),sellUsdt:round(v.trades.filter(t=>t.side==="sell").reduce((n,t)=>n+t.notional,0),2),priceChangePct:v.trades.length?round((v.trades.at(-1).price/v.trades[0].price-1)*100,5):null},reason:basisOK?null:Math.abs(basisBps)>50?"CROSS_VENUE_BASIS_TOO_LARGE":"VENUE_SPREAD_ABNORMAL"});
+  if(!basisOK)continue;report.connectedVenues.push(v.venue);
+  const ratio=reference/v.mid,old=previous.venues?.[v.venue],usableOld=old&&now-old.observedAt>=0&&now-old.observedAt<=90000&&v.bookAt>old.bookAt;
+  const overlap=usableOld&&v.trades.some(t=>old.tradeIds.includes(t.id)),newIds=new Set(usableOld?old.tradeIds:[]),newTrades=v.trades.filter(t=>!newIds.has(t.id)&&(!Number.isFinite(old?.lastTradeAt)||t.ts>old.lastTradeAt));
+  const track={observedAt:now,bookAt:v.bookAt,tradeIds:v.trades.slice(-500).map(t=>t.id),lastTradeAt:v.trades.at(-1)?.ts||null,walls:{}};
+  for(const level of [...v.bids,...v.asks]){
+   const mapped=level.price*ratio,index=Math.round(mapped/binWidth),key=level.side+":"+index;
+   let bin=bins.get(key);if(!bin){bin={id:key,side:level.side,low:Infinity,high:0,notionalUsdt:0,venues:new Set(),persistentVenues:new Set()};bins.set(key,bin);}bin.low=Math.min(bin.low,mapped);bin.high=Math.max(bin.high,mapped);bin.notionalUsdt+=level.notional;bin.venues.add(v.venue);
+   if(level.notional<100000)continue;
+   const nativeKey=level.side+":"+level.price,prior=usableOld?old.walls[nativeKey]:null,oldAny=old?.bookAt===v.bookAt?old.walls[nativeKey]:null;
+   const last=prior||oldAny,observations=prior?prior.observations+1:oldAny?oldAny.observations:1;
+   const wall={price:level.price,side:level.side,notional:level.notional,firstAt:last?.firstAt||v.bookAt,observations};track.walls[nativeKey]=wall;
+   if(observations>=2&&v.bookAt-wall.firstAt>=5000)bin.persistentVenues.add(v.venue);
+   if(prior&&level.notional<prior.notional*0.7){const traded=newTrades.filter(t=>t.side===(level.side==="BID"?"sell":"buy")&&Math.abs(t.price-level.price)<=Math.max(.01,level.price*.00005)).reduce((n,t)=>n+t.notional,0);report.changes.push({venue:v.venue,side:level.side,nativePrice:level.price,mappedPrice:round(mapped,3),sizeDecreaseUsdt:round(prior.notional-level.notional,2),observedMatchingTradesUsdt:round(traded,2),classification:traded>0?"SIZE_REDUCED_WITH_MATCHING_TRADES":"SIZE_REDUCED_WITHOUT_OBSERVED_MATCHING_TRADES",sampleOverlap:!!overlap,exactCauseKnown:false});}
+  }
+  // Levels below tracking threshold or absent from visible book still need lifecycle evidence.
+  if(usableOld)for(const [key,wall]of Object.entries(old.walls))if(!track.walls[key]){
+   const sideRows=wall.side==="BID"?v.bids:v.asks,current=sideRows.find(x=>x.price===wall.price),inRange=wall.price>=Math.min(...sideRows.map(x=>x.price))&&wall.price<=Math.max(...sideRows.map(x=>x.price));
+   const traded=newTrades.filter(t=>t.side===(wall.side==="BID"?"sell":"buy")&&Math.abs(t.price-wall.price)<=Math.max(.01,wall.price*.00005)).reduce((n,t)=>n+t.notional,0);
+   report.changes.push({venue:v.venue,side:wall.side,nativePrice:wall.price,mappedPrice:round(wall.price*ratio,3),sizeDecreaseUsdt:round(Math.max(0,wall.notional-(current?.notional||0)),2),observedMatchingTradesUsdt:round(traded,2),classification:!inRange?"OUTSIDE_VISIBLE_DEPTH_UNKNOWN":traded>0?"LEVEL_THINNED_WITH_MATCHING_TRADES":"LEVEL_THINNED_CANCEL_OR_UNOBSERVED_FILL_POSSIBLE",sampleOverlap:!!overlap,exactCauseKnown:false});priorMissing++;
+  }
+  track.walls=Object.fromEntries(Object.entries(track.walls).sort((a,b)=>b[1].notional-a[1].notional).slice(0,24));state.venues[v.venue]=track;
+ }
+ const sideThreshold=Object.fromEntries(["BID","ASK"].map(side=>[side,Math.max(500000,percentile([...bins.values()].filter(x=>x.side===side).map(x=>x.notionalUsdt),.9)||0)]));
+ const walls=[...bins.values()].filter(x=>x.notionalUsdt>=sideThreshold[x.side]).map(x=>({id:x.id,side:x.side,low:round(x.low,3),high:round(x.high,3),notionalUsdt:round(x.notionalUsdt,2),venueCount:x.venues.size,venues:[...x.venues],persistentVenueCount:x.persistentVenues.size,grade:x.venues.size>=2&&x.persistentVenues.size>=2?"MULTI_VENUE_PERSISTENT":x.venues.size>=2?"MULTI_VENUE_PROVISIONAL":"SINGLE_VENUE_PROVISIONAL"}));
+ // Nearest walls are needed for first-obstacle RR, not just the largest remote wall.
+ report.clusters=[...walls.filter(x=>x.side==="BID").sort((a,b)=>b.high-a.high).slice(0,3),...walls.filter(x=>x.side==="ASK").sort((a,b)=>a.low-b.low).slice(0,3)];
+ report.status=report.connectedVenues.length>=2?"ok":"partial";report.minimumThresholdUsdt=500000;report.sideThresholdsUsdt=sideThreshold;report.binWidthUsdt=binWidth;
+ report.changes=report.changes.sort((a,b)=>b.sizeDecreaseUsdt-a.sizeDecreaseUsdt).slice(0,6);
+ report.arrivalRecheck={passed:report.venues.filter(x=>x.status==="ok"&&x.independentRecheck&&Number.isFinite(x.tradeAgeSeconds)&&x.tradeAgeSeconds<=10).length>=2,independentVenueCount:report.venues.filter(x=>x.status==="ok"&&x.independentRecheck).length,at:new Date(now).toISOString(),rule:"TWO_NEW_BOOK_SNAPSHOTS_AND_FRESH_TRADES_AT_TWO_OR_MORE_VENUES"};
+ report.limitations=["SAMPLED_L2_NOT_IDENTIFIABLE_ORDERS","MISSING_TRADE_OVERLAP_PREVENTS_CANCEL_FILL_ATTRIBUTION","NO_WALL_IS_A_GUARANTEED_SUPPORT","VISIBLE_DEPTH_AND_CONNECTED_VENUES_ONLY"];
+ return {report,state};
+}
+async function collectCrossVenueLiquidity(owner,modules){
+ owner.liquidityReady ||= (async()=>{owner.liquidityPersistent=await owner.ctx.storage.get(LIQUIDITY_STATE_KEY)||{metadata:{},cooldowns:{},tracking:{}};owner.liquidityPersistent.metadata ||= {};owner.liquidityPersistent.cooldowns ||= {};owner.liquidityCache=new Map(Object.entries(owner.liquidityPersistent.metadata));})();await owner.liquidityReady;
+ const defs=liquidityFeedDefinitions();
+ const wave=async force=>{
+  const paths=orderflowPaths();let okxItems=paths.map(p=>modules[p]);
+  if(force){const d=publicMarketDefinitions();okxItems=await Promise.all(paths.map(p=>coordinatedPublicEndpoint(owner,p,d.find(x=>x.path===p).policy,p!==paths[0])));}
+  const okxInput=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:okxItems[i]?.rows,error:okxItems[i]?.error||(!okxItems[i]?.rows?'OKX_PUBLIC_FEED_MISSING':null),fetchedAt:okxItems[i]?.storedAt}]));
+  const peers=await Promise.all(Object.entries(defs).map(async([venue,d])=>{const[meta,book,trades]=await Promise.all([liquidityFeed(owner,d.meta,true),liquidityFeed(owner,d.book,false,force),liquidityFeed(owner,d.trades,false,force)]);return normalizeLiquidityVenue(venue,{meta,book,trades});}));
+  return [normalizeLiquidityVenue("OKX",okxInput),...peers];
+ };
+ const first=await wave(false);await new Promise(r=>setTimeout(r,350));const second=await wave(true);
+ const prior=owner.liquidityPersistent.tracking||{},intermediate=aggregateVenueLiquidity(first,prior,null),final=aggregateVenueLiquidity(second,intermediate.state,first);
+ // Compare second wave with persisted baseline as well, so meaningful older walls are not forgotten.
+ const historical=aggregateVenueLiquidity(second,prior,first);final.report.changes=[...historical.report.changes,...final.report.changes].filter((x,i,a)=>a.findIndex(y=>y.venue===x.venue&&y.side===x.side&&y.nativePrice===x.nativePrice)===i).slice(0,6);
+ const currentOkx=second.find(v=>v.venue==="OKX"&&v.status==="ok"&&v.tradeFresh);
+ if(currentOkx){final.report.executionDepth=liquidityDepthReference(currentOkx);const last=currentOkx.trades.at(-1);final.report.executionQuote={status:"ok",source:"OKX_USDT_PERPETUAL",priceType:"LAST_TRADE_PLUS_REAL_BOOK",last:last.price,bid:currentOkx.bids[0].price,ask:currentOkx.asks[0].price,exchangeTimestamp:new Date(Math.min(last.ts,currentOkx.bookAt)).toISOString(),lastTradeTimestamp:new Date(last.ts).toISOString(),bookTimestamp:new Date(currentOkx.bookAt).toISOString()};}
+ owner.liquidityPersistent.tracking={...final.state,venues:{...(prior.venues||{}),...final.state.venues}};owner.liquidityPersistent.report=final.report;await owner.ctx.storage.put(LIQUIDITY_STATE_KEY,owner.liquidityPersistent);return final.report;
+}
+function liquidityDepthReference(venue){
+ return [1000,10000,50000].map(notional=>({notionalUsdt:notional,...Object.fromEntries([["buy",venue.asks],["sell",venue.bids]].map(([side,rows])=>{
+  const quantity=notional/rows[0].price;let remaining=quantity,total=0;
+  for(const level of rows){const take=Math.min(remaining,level.quantity);total+=take*level.price;remaining-=take;if(remaining<=1e-10)break;}
+  const complete=remaining<=1e-10,vwap=complete?total/quantity:null;
+  return [side,{complete,vwap:round(vwap,5),slippageBps:complete?round(Math.abs(vwap/rows[0].price-1)*10000,3):null}];
+ }))}));
+}
+function liquidityContextCurrent(context,now=Date.now()){
+ const age=(now-Date.parse(context?.checkedAt))/1000;return context?.status==="ok"&&Number.isFinite(age)&&age>=-2&&age<=10&&context.arrivalRecheck?.passed===true;
+}
+function liquidityTradePricing(asset,plan){
+ const context=asset?.crossVenueLiquidity;if(!context)return null;
+ if(plan.expiresAt&&Date.parse(plan.expiresAt)<=Date.now())return {status:'MODEL_EVENT_EXPIRED',entryReviewPassed:false,freshRecheckPassed:liquidityContextCurrent(context)};
+ const long=plan.direction==="LONG",entry=Number(plan.entry??(long?asset.ticker?.ask:asset.ticker?.bid)),stop=Number(plan.stopLoss),structural=Number(plan.target??plan.takeProfits?.[0]?.price),cost=Number(plan.estimatedRoundTripCostPct??.15),zone=plan.entryZone||{min:entry,max:entry};
+ const fresh=liquidityContextCurrent(context),contextAge=Date.now()-Date.parse(context.checkedAt),displayFresh=context?.status==="ok"&&contextAge>=-2000&&contextAge<=10000;
+ if(![entry,stop,structural,zone.min,zone.max].every(Number.isFinite))return {status:"NO_COMPLETE_STRUCTURAL_PLAN",freshRecheckPassed:fresh};
+ const costAt=p=>p*cost/100,rrAt=(p,target)=>planNetRR({direction:plan.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},p);
+ const opposing=(displayFresh?context.clusters||[]:[]).filter(x=>x.side===(long?"ASK":"BID")&&(long?x.high>Math.min(entry,zone.min):x.low<Math.max(entry,zone.max))).sort((a,b)=>long?a.low-b.low:b.high-a.high);
+ const wall=opposing[0]||null,atr=Number(asset.timeframes?.['15m']?.indicators?.atr14)||entry*.002,buffer=Math.max(entry*.0001,Math.min(atr*.05,entry*.0005));
+ const wallTarget=wall?(long?wall.low-buffer:wall.high+buffer):null;
+ const target=Number.isFinite(wallTarget)?(long?Math.min(structural,wallTarget):Math.max(structural,wallTarget)):structural;
+ const validTarget=long?target>stop:target<stop,cap=validTarget?(target+2*stop)/(3*(long?1+cost/100:1-cost/100)):null;
+ const qualified=Number.isFinite(cap)?long?{min:Math.max(zone.min,stop+1e-8),max:Math.min(zone.max,cap)}:{min:Math.max(zone.min,cap),max:Math.min(zone.max,stop-1e-8)}:null;
+ const qualifiedZone=qualified&&qualified.min<=qualified.max?qualified:null;
+ const currentRR=rrAt(entry,target),supports=(displayFresh?context.clusters||[]:[]).filter(x=>x.side===(long?'BID':'ASK')&&(long?x.low<entry:x.high>entry)).sort((a,b)=>long?b.high-a.high:a.low-b.low);
+ const support=supports[0]||null,changedSupport=(displayFresh?context.changes||[]:[]).some(x=>x.side===(long?'BID':'ASK')&&x.sizeDecreaseUsdt>=500000&&Math.abs(x.mappedPrice-entry)<=atr*.5&&x.classification!=='OUTSIDE_VISIBLE_DEPTH_UNKNOWN');
+ const currentInside=priceInsideEntryZone(entry,zone),scenarios=[{route:'CURRENT',entry,netRR:round(currentRR,3),inModelZone:currentInside}];
+ if(qualifiedZone){const better=long?qualifiedZone.min:qualifiedZone.max;scenarios.push({route:'MODEL_ZONE_BETTER_PRICE',entry:round(better,4),netRR:round(rrAt(better,target),3),requires:'FRESH_MODEL_TRIGGER_AND_ARRIVAL_RECHECK'});}
+ if(wall)scenarios.push({route:'BREAKOUT_RETEST',boundary:long?wall.high:wall.low,netRR:null,requires:'OBSERVED_CONSUMPTION_OR_WITHDRAWAL_THEN_PRICE_ACCEPTANCE_AND_NEW_STRUCTURAL_STOP_TARGET'});
+ const bid=Number(asset.ticker?.bid),ask=Number(asset.ticker?.ask),mid=(bid+ask)/2;
+ const executionOK=genuineExecutionQuote(asset.ticker)&&bid<=ask&&(ask-bid)/mid*10000<=20&&Math.abs(Number(asset.ticker?.last)/mid-1)*10000<=25;
+ const invalidation=Number(plan.modelInvalidationPrice??plan.invalidationPrice??stop),protectionIntact=Number.isFinite(invalidation)&&(long?entry>invalidation:entry<invalidation);
+ const reasons=[];if(!protectionIntact)reasons.push('MODEL_PROTECTION_LOST_AT_CURRENT_PRICE');if(!executionOK)reasons.push('EXECUTION_QUOTE_OR_SPREAD_ABNORMAL');if(!fresh)reasons.push('FRESH_MULTI_VENUE_RECHECK_PENDING');if(!(currentRR>=2))reasons.push('NEAREST_OBSTACLE_NET_RR_BELOW_2');if(!currentInside)reasons.push('CURRENT_PRICE_OUTSIDE_MODEL_ZONE');if(changedSupport)reasons.push('SUPPORTING_LIQUIDITY_THINNED_REVIEW_REQUIRED');
+ return {status:'REFERENCE_PRICED',checkedAt:context.checkedAt,freshRecheckPassed:fresh,structuralTarget:structural,liquidityAdjustedFirstTarget:round(target,5),currentNetRR:round(currentRR,5),structuralNetRR:round(rrAt(entry,structural),5),netRRAtCostStress:round(planNetRR({direction:plan.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry,1.5),5),rrQualifiedEntryZone:qualifiedZone,
+  nearestOpposingCluster:wall?.id||null,supportingCluster:support?.id||null,supportGrade:support?.grade||null,stopLossUnchanged:stop,roundTripCostPerEth:round(costAt(entry),5),
+  relativeRisk:reasons.length?'REVIEW_OR_WAIT':'LOWER_RELATIVE_EXECUTION_RISK_NOT_SAFE_GUARANTEE',reasons,scenarios,entryReviewPassed:protectionIntact&&executionOK&&fresh&&currentInside&&currentRR>=2&&!changedSupport};
+}
+function withLiquidityPricing(result,asset,seed){
+ if(!asset?.crossVenueLiquidity||!Number.isFinite(result?.stopLoss)||!Number.isFinite(result?.target))return result;
+ const p=liquidityTradePricing(asset,{...seed,...result}),candidate=result.candidate;
+ const output={...result,entryZone:seed.entryZone,liquidityPricing:p};if(p?.status==='MODEL_EVENT_EXPIRED')return {...output,candidate:null,state:'EXPIRED',failedGate:'MODEL_EVENT_EXPIRED'};if(!p||p.status!=='REFERENCE_PRICED')return output;
+ if(!p.freshRecheckPassed){if(candidate)output.candidate={...candidate,liquidityReview:{passed:false,pending:true}};return output;}
+ output.netRR=p.currentNetRR;output.target=p.liquidityAdjustedFirstTarget;output.rrQualifiedEntryZone=p.rrQualifiedEntryZone;
+ if(candidate&&!p.entryReviewPassed){output.candidate=null;output.state='WAIT_PRICE';output.failedGate=p.reasons[0]||'LIQUIDITY_RECHECK_PENDING';}
+ else if(candidate)output.candidate={...candidate,target:p.liquidityAdjustedFirstTarget,netRR:p.currentNetRR,rrQualifiedEntryZone:p.rrQualifiedEntryZone,liquidityReview:{checkedAt:p.checkedAt,passed:true,cluster:p.nearestOpposingCluster}};
+ return output;
+}
+
+function adaptiveAssessment(seed,asset,btc){return withLiquidityPricing(adaptiveAssessmentBase(seed,asset,btc),asset,seed);}
+function opportunityAssessment(seed,asset,btc){return withLiquidityPricing(opportunityAssessmentBase(seed,asset,btc),asset,seed);}
+function discoverRangeReversal(asset,btc){const r=discoverRangeReversalBase(asset,btc);if(!r)return null;const reviewed=withLiquidityPricing({...r,candidate:r},asset,r);return reviewed.candidate;}
+async function coordinatedLiquidityRecheck(owner){
+ if(owner.crossLiquidityWork)return owner.crossLiquidityWork;
+ const work=(async()=>{
+  const bundle=await coordinatedMarketBundle(owner),context=await collectCrossVenueLiquidity(owner,bundle.modules);
+  const saved=await owner.ctx.storage.get('market:liquidity-proposals:v1'),base=saved?.value;
+  const age=base?(Date.now()-Date.parse(base.generatedAt))/1000:Infinity;
+  const modelContextFresh=Number.isFinite(age)&&age>=0&&age<=35&&base?.dataReady===true
+    && Date.parse(base.closedBarAt)===expectedLastClosedStart("15m")
+    && Number(base.structureValidUntil)>=Date.now();
+  const ticker=context.executionQuote;
+  const asset={ticker,timeframes:{'15m':{indicators:{atr14:base?.atr15}}},crossVenueLiquidity:context};
+  const proposals=modelContextFresh&&genuineExecutionQuote(ticker)?(base.proposals||[]).map(p=>({submodel:p.submodel,direction:p.direction,modelState:p.modelState,
+   pricing:liquidityTradePricing(asset,{...p,entry:p.direction==='LONG'?ticker.ask:ticker.bid})})):[];
+  return {build:BUILD,apiVersion:API_VERSION,generatedAt:new Date().toISOString(),executionQuote:ticker||null,crossVenueLiquidity:context,
+   modelContext:{fresh:modelContextFresh,ageSeconds:Number.isFinite(age)?round(age,3):null,generatedAt:base?.generatedAt||null,reason:modelContextFresh?null:'REFRESH_MARKET_VIEW_BEFORE_ENTRY_RECHECK'},proposals,
+   openNowAllowed:false,remainingReview:['CURRENT_MODEL_STRUCTURE','LATEST_NEWS_AND_MACRO','ACTUAL_COSTS'],automaticOrders:false};
+ })();owner.crossLiquidityWork=work;try{return await work;}finally{owner.crossLiquidityWork=null;}
+}
+async function attachArrivalLiquidity(env,snapshot){
+ if(!snapshot?.assets?.ETHUSDT?.crossVenueLiquidity||!scannerStateStub(env))return snapshot;
+ try{const checked=await durableStateCall(env,{op:'liquidityRecheck'});snapshot.assets.ETHUSDT.crossVenueLiquidity=checked.crossVenueLiquidity||{status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
+ catch(e){snapshot.assets.ETHUSDT.crossVenueLiquidity={status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
+ return snapshot;
+}
+
 function snapshotReadiness(assets) {
   const required=Object.keys(ASSETS).map(k=>assets[k]);
   const executionPriceReady=genuineExecutionQuote(assets.ETHUSDT?.ticker);
@@ -212,10 +482,24 @@ function compactStatusValue(value, depth=0) {
 }
 function refreshServedSnapshot(snapshot) {
   const readiness=snapshotReadiness(snapshot.assets||{});
+  const flow=snapshot.assets?.ETHUSDT?.publicOrderflow;
+  if(flow?.status==="ok") {
+    const tradeAge=(Date.now()-Date.parse(flow.freshness?.tradeAt))/1000,bookAge=(Date.now()-Date.parse(flow.freshness?.bookAt))/1000;
+    flow.freshness={...flow.freshness,tradeAgeSeconds:round(tradeAge,3),bookAgeSeconds:round(bookAge,3),checkedAt:new Date().toISOString()};
+    if(!Number.isFinite(tradeAge)||!Number.isFinite(bookAge)||tradeAge>10||bookAge>10||tradeAge< -2||bookAge< -2) {
+      // Expired historical evidence must not survive as a current absorption classification.
+      snapshot.assets.ETHUSDT.publicOrderflow={status:"unavailable",source:flow.source,reason:"ORDERFLOW_EXPIRED_AT_READ",freshness:flow.freshness,standaloneEntryPermission:false};
+    }
+  }
   snapshot.coverage={...snapshot.coverage,...readiness,executionDataReady:readiness.criticalReady,openNowDataReady:readiness.criticalReady,
     priceAgeSeconds:Object.fromEntries(Object.entries(snapshot.assets||{}).map(([k,a])=>[k,a.ticker?.exchangeTimestamp?(Date.now()-Date.parse(a.ticker.exchangeTimestamp))/1000:null]))};
   snapshot.status=readiness.criticalReady?"ok":"partial";
   snapshot.decisionState=readiness.criticalReady?"DATA_READY":"DATA_BLOCKED";
+  const cross=snapshot.assets?.ETHUSDT?.crossVenueLiquidity;
+  if(cross&&!liquidityContextCurrent(cross)){
+    if(Date.now()-Date.parse(cross.checkedAt)>10000){snapshot.assets.ETHUSDT.crossVenueLiquidity={status:"unavailable",reason:"MULTI_VENUE_CONTEXT_EXPIRED_AT_READ",arrivalRecheck:{passed:false}};}
+    for(const model of snapshot.assets?.ETHUSDT?.opportunityEngine?.models||[])if(model.liquidityPricing){model.liquidityPricing.freshRecheckPassed=false;model.liquidityPricing.entryReviewPassed=false;if(model.candidate){model.candidate=null;model.state="WAIT_PRICE";model.failedGate="FRESH_MULTI_VENUE_RECHECK_PENDING";}}
+  }
   snapshot.servedAt=new Date().toISOString();
   return snapshot;
 }
@@ -293,6 +577,45 @@ function parseNewsCalendar(text,fetchedAt) {
     return title?{title,eventAt:at,source:"BLS_CALENDAR",url:"https://www.bls.gov/schedule/news_release/",fetchedAt,
       highImpact:/consumer price|producer price|employment situation|CPI|PPI/i.test(title)}:null;
   }).filter(Boolean).filter(e=>Date.parse(e.eventAt)>=Date.now()-3600000&&Date.parse(e.eventAt)<=Date.now()+7*86400000).sort((a,b)=>Date.parse(a.eventAt)-Date.parse(b.eventAt)).slice(0,30);
+}
+// Independent institution calendar; this never retries a blocked BLS URL through another host.
+function nyFedCalendarMonths(now=Date.now()) {
+  const d=new Date(now),end=new Date(now+7*86400000),months=[{year:d.getUTCFullYear(),month:d.getUTCMonth()+1}];
+  if(end.getUTCMonth()!==d.getUTCMonth()||end.getUTCFullYear()!==d.getUTCFullYear())months.push({year:end.getUTCFullYear(),month:end.getUTCMonth()+1});
+  return months.map(({year,month})=>({year,month,url:"https://www.newyorkfed.org/research/calendars/i-"+["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"][month-1]+String(year).slice(-2)+".html"}));
+}
+function parseNyFedCalendar(text,year,month,fetchedAt) {
+  const monthName=["January","February","March","April","May","June","July","August","September","October","November","December"][month-1];
+  if(!text.includes(monthName+" "+year)||!text.includes("Economic Indicators Calendar"))throw new Error("NYFED_CALENDAR_MONTH_NOT_VERIFIED");
+  const cells=[...text.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)],events=[];let dayCells=0,parsed=0,rejected=0;
+  for(const [,cell] of cells){
+    const day=cell.match(/^\s*<div[^>]*>\s*(\d{1,2})\s*<br\b/i)?.[1];if(!day)continue;
+    dayCells++;if(+day<1||+day>new Date(Date.UTC(year,month,0)).getUTCDate()){rejected++;continue;}
+    const links=[...cell.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+    for(let i=0;i<links.length;i++){
+      const a=links[i],end=i+1<links.length?links[i+1].index:cell.length,block=cell.slice(a.index,end);
+      const time=newsText(block,500).match(/\((\d{2}):(\d{2})\)/);if(!time){rejected++;continue;}
+      const at=calendarTime("DTSTART;TZID=America/New_York:"+year+String(month).padStart(2,"0")+day.padStart(2,"0")+"T"+time[1]+time[2]+"00");
+      let url;try{url=new URL(a[1],"https://www.newyorkfed.org");}catch{rejected++;continue;}
+      const title=newsText(a[2],200).replace(/\(\d{2}:\d{2}\)/g,"").trim();
+      if(!title||!at||!["https:","http:"].includes(url.protocol)||url.username||url.password){rejected++;continue;}
+      parsed++;events.push({title,eventAt:at,source:"NYFED_CALENDAR",url:"https://www.newyorkfed.org/research/calendars/",originalReleaseUrl:url.href,fetchedAt,
+        highImpact:/consumer price|producer price|employment situation|personal income|gross domestic|initial claims|ISM |Michigan|retail sales/i.test(title)});
+    }
+  }
+  if(!dayCells)throw new Error("NYFED_CALENDAR_NO_DAY_CELLS");
+  if(!parsed&&rejected)throw new Error("NYFED_CALENDAR_ALL_EVENTS_REJECTED");
+  const inWindow=events.filter(e=>Date.parse(e.eventAt)>=Date.now()-3600000&&Date.parse(e.eventAt)<=Date.now()+7*86400000);
+  return {events:inWindow,parseDiagnostics:{dayCellCount:dayCells,parsedEventCount:parsed,rejectedEventCount:rejected,windowEventCount:inWindow.length,contentStatus:inWindow.length?"EVENTS_IN_WINDOW":"NO_EVENT_IN_SUPPORTED_WINDOW",parserRevision:NEWS_PARSER_REVISION}};
+}
+async function loadNyFedCalendar(owner) {
+  const events=[],months=[],diagnostics=[];let httpStatus=null;
+  for(const m of nyFedCalendarMonths()){
+    const r=await boundedNewsFetch(m.url,{headers:{accept:"text/html"}},600000,Math.min(6000,owner.newsDeadlineAt-Date.now()));httpStatus=r.response.status;
+    const parsed=parseNyFedCalendar(r.text,m.year,m.month,new Date().toISOString());events.push(...parsed.events);months.push({year:m.year,month:m.month});diagnostics.push(parsed.parseDiagnostics);
+  }
+  return {status:"ok",httpStatus,items:[],events:events.sort((a,b)=>Date.parse(a.eventAt)-Date.parse(b.eventAt)),months,
+    parseDiagnostics:{parsedEventCount:diagnostics.reduce((n,d)=>n+d.parsedEventCount,0),rejectedEventCount:diagnostics.reduce((n,d)=>n+d.rejectedEventCount,0),windowEventCount:events.length,contentStatus:events.length?"EVENTS_IN_WINDOW":"NO_EVENT_IN_SUPPORTED_WINDOW",parserRevision:NEWS_PARSER_REVISION}};
 }
 function newsFailure(error,stage,httpStatus=null) {
   const raw=String(error?.message||error||""),e=new Error(
@@ -403,24 +726,27 @@ function newsContextSummary(records,now=Date.now()) {
   const recent=headlines.filter(i=>i.transportFresh&&i.ageSeconds<=900);
   const events=Object.values(records).filter(v=>v.status==="ok"&&now-Date.parse(v.fetchedAt)<=7200000).flatMap(v=>v.events||[]);
   return {status:Object.values(sources).some(v=>v.status==="ok"&&v.transportAgeSeconds>=0&&v.transportAgeSeconds<=300)?"PARTIAL_VERIFIED_FEEDS":"UNAVAILABLE",
-    checkedAt:new Date(now).toISOString(),sources,
+    checkedAt:new Date(now).toISOString(),sources,sourceCount:Object.keys(sources).length,expectedSourceCount:8,
     parserAudit:{expectedRevision:NEWS_PARSER_REVISION,
       obsoleteSources:Object.entries(sources).filter(([,v])=>v.parserRevision!==NEWS_PARSER_REVISION).map(([k])=>k),
-      missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id)].filter(k=>!sources[k]),
+      missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id),"NYFED_CALENDAR"].filter(k=>!sources[k]),
       cacheNeedsRefresh:Object.values(sources).some(v=>v.parserRevision!==NEWS_PARSER_REVISION)},
     headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
-    upcomingEvents:events.filter(e=>Date.parse(e.eventAt)>=now-600000).slice(0,12),
+    upcomingEvents:events.filter(e=>Date.parse(e.eventAt)>=now-600000).sort((a,b)=>Date.parse(a.eventAt)-Date.parse(b.eventAt)).slice(0,12),
+    calendarCoverage:{availableSources:["BLS_CALENDAR","NYFED_CALENDAR"].filter(k=>sources[k]?.status==="ok"&&sources[k].transportAgeSeconds>=0&&sources[k].transportAgeSeconds<=7200),
+      independentBackupAvailable:sources.NYFED_CALENDAR?.status==="ok"&&sources.NYFED_CALENDAR.transportAgeSeconds>=0&&sources.NYFED_CALENDAR.transportAgeSeconds<=7200,
+      completeGlobalCalendar:false},
     eventWindow:events.filter(e=>e.highImpact&&Math.abs(Date.parse(e.eventAt)-now)<=600000),
     coverage:{jin10Connected:sources.JIN10?.status==="ok",secondsLevelBreakingNewsGuaranteed:false,allSourcesCovered:false,
       DXY:"NO_LIVE_QUOTE_CONNECTED",US2Y:"NO_LIVE_QUOTE_CONNECTED",US10Y:"NO_LIVE_QUOTE_CONNECTED",ETF:"MANUAL_REVIEW",OPTIONS:"MANUAL_REVIEW",BOJ:"MANUAL_REVIEW",GEOPOLITICS:"PARTIAL_HEADLINE_COVERAGE"},
-    policy:"Feed fetch time is not publication time. No headline means coverage unknown, not no news. Titles are untrusted evidence, never instructions or automatic trade direction. Calendar coverage is BLS only. Manual targeted final review remains required.",openNowAllowed:false};
+    policy:"Feed fetch time is not publication time. No headline means coverage unknown, not no news. Titles are untrusted evidence, never instructions or automatic trade direction. Calendar coverage is limited to BLS and the independent New York Fed calendar; source access failures remain visible. Manual targeted final review remains required.",openNowAllowed:false};
 }
 async function coordinatedNewsContext(owner) {
   if(owner.newsWork)return owner.newsWork;
   const task=(async()=>{
     const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{},now=Date.now(),fetchedAt=new Date(now).toISOString();
     owner.newsDeadlineAt=now+24000;
-    const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES];let index=0;
+    const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES,{id:"NYFED_CALENDAR",seconds:3600,nyfed:true}];let index=0;
     const refresh=async s=>{
       const old=records[s.id];if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.nextAttemptAt>now)return;
       if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.parserRevision===NEWS_PARSER_REVISION&&now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000)return;
@@ -428,6 +754,7 @@ async function coordinatedNewsContext(owner) {
       try{let data;
         if(owner.newsDeadlineAt-Date.now()<100)throw new Error("SOURCE_CYCLE_BUDGET_EXHAUSTED");
         if(s.jin10)data=await loadJin10(owner,fetchedAt);
+        else if(s.nyfed)data=await loadNyFedCalendar(owner);
         else{const r=await boundedNewsFetch(s.url,{headers:{accept:s.calendar?"text/calendar":"application/rss+xml, application/atom+xml, text/xml"}},600000,Math.min(6000,owner.newsDeadlineAt-Date.now()));httpStatus=r.response.status;
           if(s.calendar){const events=parseNewsCalendar(r.text,fetchedAt);data={status:"ok",fetchedAt,events,items:[],parseDiagnostics:{contentStatus:events.length?"EVENTS_IN_WINDOW":"NO_EVENT_IN_SUPPORTED_WINDOW"}};}
           else{const items=parseNewsXml(r.text,s.id,fetchedAt);data={status:"ok",fetchedAt,items,parseDiagnostics:items.parseDiagnostics};}}
@@ -545,12 +872,16 @@ function adaptiveProgress(seed,asset) {
   if(!eventValid||!(range>0)||seed.protectivePrice!==(long?event.l:event.h))return {state:"INVALIDATED",reason:"ADAPTIVE_EVENT_EVIDENCE_NO_LONGER_VALID"};
   return {state:"STRUCTURE_READY",stopLoss:seed.stopLoss,protectivePrice:seed.protectivePrice,protectionConfirmed:true,triggerAt:seed.triggerAt,candleAt:rows.at(-1).ts};
 }
-function adaptiveAssessment(seed,asset,btc) {
+function confirmedSystemicConflict(asset,direction) {
+  const expected=direction==="LONG"?"LH_LL":"HH_HL";
+  return ["4h","1h"].every(tf=>asset?.timeframes?.[tf]?.status==="ok"&&asset.timeframes[tf].structure===expected&&trendAgainst(direction,asset.timeframes[tf]));
+}
+function adaptiveAssessmentBase(seed,asset,btc) {
   const p=adaptiveProgress(seed,asset),result={submodel:seed.submodel,direction:seed.direction,state:p.state,progress:p,minNetRR:2,candidate:null,failedGate:p.reason||null};
   if(p.state!=="STRUCTURE_READY")return result;
   const long=seed.direction==="LONG",t=asset.timeframes;
   if(!observationStructureReady(btc))return {...result,failedGate:"BTC_STRUCTURE_DATA_UNAVAILABLE"};
-  if((trendAgainst(seed.direction,t["4h"])&&trendAgainst(seed.direction,t["1h"]))||(trendAgainst(seed.direction,btc.timeframes["4h"])&&trendAgainst(seed.direction,btc.timeframes["1h"])))
+  if(confirmedSystemicConflict(asset,seed.direction)||confirmedSystemicConflict(btc,seed.direction))
     return {...result,failedGate:"CONFIRMED_MULTI_TIMEFRAME_SYSTEMIC_CONFLICT"};
   if(asset.rangeContext?.confirmed===true&&asset.rangeContext.locationZone==="MIDDLE")return {...result,failedGate:"CONFIRMED_RANGE_MIDDLE"};
   const price=finite(long?asset.ticker?.ask:asset.ticker?.bid),target=nearestStructuralTarget(seed.direction,asset,long?seed.entryZone.min:seed.entryZone.max,seed);
@@ -577,9 +908,13 @@ async function updateRejectionFunnel(env,audit) {
   if(!audit)return null;
   const key="scanner:rejection-funnel:v27",old=await scannerStateGet(env,key)||{days:[]},today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
   const day=old.days.find(d=>d.date===today)||{date:today,scans:0,models:{}};day.scans++;
-  for(const m of audit.models||[]){const x=day.models[m.submodel]||{scanned:0,prepared:0,gates:{}};x.scanned++;if(m.candidate)x.prepared++;else{const gate=m.failedGate||m.state;x.gates[gate]=(x.gates[gate]||0)+1;}day.models[m.submodel]=x;}
+  day.distinctBarTrackingSince ||=new Date().toISOString();
+  day.seenClosedBars ||= [];
+  const newBar=Boolean(audit.closedBarAt)&&!day.seenClosedBars.includes(audit.closedBarAt);
+  if(newBar)day.seenClosedBars=[...day.seenClosedBars,audit.closedBarAt].slice(-100);
+  for(const m of audit.models||[]){const x=day.models[m.submodel]||{scanned:0,prepared:0,gates:{}};x.scanned++;if(newBar)x.distinctClosedBars=(x.distinctClosedBars||0)+1;if(m.candidate&&audit.closedBarAt){x.preparedBarIds ||= [];if(!x.preparedBarIds.includes(audit.closedBarAt))x.preparedBarIds=[...x.preparedBarIds,audit.closedBarAt].slice(-100);x.preparedClosedBars=x.preparedBarIds.length;}if(m.candidate)x.prepared++;else{const gate=m.failedGate||m.state;x.gates[gate]=(x.gates[gate]||0)+1;}day.models[m.submodel]=x;}
   const days=[...old.days.filter(d=>d.date!==today),day].slice(-7);await scannerStatePut(env,key,{days},10*86400);
-  return {date:today,scans:day.scans,models:Object.fromEntries(Object.entries(day.models).map(([k,v])=>[k,{scanned:v.scanned,prepared:v.prepared,topGates:Object.entries(v.gates).sort((a,b)=>b[1]-a[1]).slice(0,3)}])),
+  return {date:today,scans:day.scans,distinctClosed15mBars:day.seenClosedBars.length,distinctBarTrackingSince:day.distinctBarTrackingSince,legacyScansHaveNoReconstructedDistinctBars:true,models:Object.fromEntries(Object.entries(day.models).map(([k,v])=>[k,{scanned:v.scanned,prepared:v.prepared,distinctClosedBars:v.distinctClosedBars||0,preparedClosedBars:v.preparedClosedBars||0,topGates:Object.entries(v.gates).sort((a,b)=>b[1]-a[1]).slice(0,3)}])),
     statement:"Counts are measured scanner decisions, not missed profitable trades, backtest wins or exhaustive opportunity coverage."};
 }
 
@@ -748,7 +1083,7 @@ function confirmedExternalBreakoutAcceptance(direction, boundary, asset) {
     && rows.every(c=>long?c.c>external+0.1*atr:c.c<external-0.1*atr);
 }
 
-function opportunityAssessment(seed,asset,btc) {
+function opportunityAssessmentBase(seed,asset,btc) {
   const progress=seed.model==="A"?pullbackProgress(seed,asset):breakoutProgress(seed,asset);
   const result={submodel:seed.submodel,direction:seed.direction,state:progress.state,progress,
     minNetRR:MIN_NET_RR,netRR:null,candidate:null,failedGate:null};
@@ -824,6 +1159,15 @@ function dynamicMarketContext(asset) {
     limitation:"Sample-window executed trades, not all-market order-flow imbalance, whale identities, instant news or automatic entry."};
 }
 
+function unseededModelAudit(submodel,asset) {
+  const rows=observationCandles(asset),t4=asset?.timeframes?.["4h"];
+  if(!observationStructureReady(asset))return {failedGate:"STRUCTURE_SOURCE_QUALITY_OR_FRESHNESS",observed:{structureReady:false},required:"COHERENT_CURRENT_PERPETUAL_STRUCTURE"};
+  const minimum=submodel[0]==="D"?22:submodel[0]==="B"?17:submodel[0]==="A"?14:16;
+  if(rows.length<minimum)return {failedGate:"INSUFFICIENT_CONFIRMED_EVENT_HISTORY",observed:{closedCandles:rows.length},required:{minimumClosedCandles:minimum}};
+  if(submodel[0]==="A"&&!fourHourTrendDirection(asset))return {failedGate:"FOUR_HOUR_DIRECTION_OR_PROTECTION_UNCONFIRMED",observed:{momentum:t4?.trend,swingStructure:t4?.structure},required:"COMPATIBLE_4H_DIRECTION_AND_UNBROKEN_PROTECTION"};
+  if(submodel[0]==="C"&&(asset.rangeContext?.confirmed!==true||asset.marketRegimeRouter?.regime!=="RANGE"))return {failedGate:"CONFIRMED_RANGE_EDGE_REQUIRED",observed:{rangeConfirmed:asset.rangeContext?.confirmed===true,regime:asset.marketRegimeRouter?.regime},required:"CONFIRMED_RANGE_AND_COMPLETE_EDGE_REVERSAL"};
+  return null;
+}
 function buildOpportunityScan(asset,btc) {
   const a=trendPullbackSeeds(asset),b2=compressionSeeds(asset),b1=breakoutSeeds(asset);
   const raw=[...a,...b2,...b1];
@@ -834,10 +1178,11 @@ function buildOpportunityScan(asset,btc) {
   assessments.push(...adaptiveSeeds(asset).map(seed=>adaptiveAssessment(seed,asset,btc)));
   const models=Object.keys(SUBMODEL_DEFINITIONS).map(submodel=>{
     const found=assessments.filter(x=>x.submodel===submodel).sort((x,y)=>(rank[y.state]||0)-(rank[x.state]||0)||finite(y.netRR,0)-finite(x.netRR,0))[0];
-    return found||{submodel,state:observationStructureReady(asset)?"NO_SETUP":"DATA_BLOCKED",candidate:null,
-      failedGate:submodel[0]==="D"?"NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP":submodel[0]==="A"?"NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL":submodel==="B2"?"NO_COMPRESSION_BREAKOUT":submodel[0]==="C"?"NO_COMPLETE_RANGE_EDGE_REVERSAL":"NO_BREAKOUT",minNetRR:MIN_NET_RR};
+    const audit=found?null:unseededModelAudit(submodel,asset);
+    return found||{submodel,audit,state:observationStructureReady(asset)?"NO_SETUP":"DATA_BLOCKED",candidate:null,
+      failedGate:audit?.failedGate||(submodel[0]==="D"?"NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP":submodel[0]==="A"?"NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL":submodel==="B2"?"NO_COMPRESSION_BREAKOUT":submodel[0]==="C"?"NO_COMPLETE_RANGE_EDGE_REVERSAL":"NO_BREAKOUT"),minNetRR:MIN_NET_RR};
   });
-  return {checkedAt:new Date(Date.now()).toISOString(),models,refusalFunnel:refusalFunnel(asset,models),dynamicContext:dynamicMarketContext(asset),
+  return {checkedAt:new Date(Date.now()).toISOString(),closedBarAt:observationCandles(asset).at(-1)?.ts||null,models,refusalFunnel:refusalFunnel(asset,models),dynamicContext:dynamicMarketContext(asset),
     preparedCount:models.filter(m=>m.candidate).length, executionQuoteReady:genuineExecutionQuote(asset?.ticker),
     minimumNetRR:MIN_NET_RR,coverage:"ORIGINAL_SIX_PLUS_D1_D2_SPECIFIED_DETECTORS_NOT_ALL_MARKET_OPPORTUNITIES",
     measuredWinRate:null,validationStatus:"NO_EMPIRICAL_WIN_RATE_CLAIM",openNowAllowed:false};
@@ -965,7 +1310,7 @@ function discoverBreakoutRetest(asset, btc) {
   return breakoutSeeds(asset).map(seed => breakoutCandidate(seed, asset, btc)).find(Boolean) || null;
 }
 
-function discoverRangeReversal(asset, btc) {
+function discoverRangeReversalBase(asset, btc) {
   const tfs = asset?.timeframes;
   const context = asset?.rangeContext;
   const sources = ["15m", "1h", "4h"].map(tf => tfs?.[tf]?.source);
@@ -1202,7 +1547,8 @@ function evaluateObservation(record, snapshot, verified) {
     if (candidate && candidate.direction !== record.direction) candidate = null;
     if (candidate) {
       const liq = planLiquidityRisk({ ...candidate, symbol: record.symbol, liquidityProtection: { blockDangerousStopPool: true, failureCooldownHours: 24, maximumFailuresNearZone: 2 } }, asset);
-      if (liq.passed && genuineExecutionQuote(asset.ticker) && asset.executionLiquidity?.status === "ok" && snapshot.coverage?.openNowDataReady) {
+      const linked=liquidityTradePricing(asset,{...candidate,entryZone:candidate.entryZone||record.observationZone});
+      if ((!asset.crossVenueLiquidity||linked?.entryReviewPassed===true) && liq.passed && genuineExecutionQuote(asset.ticker) && asset.executionLiquidity?.status === "ok" && snapshot.coverage?.openNowDataReady) {
         candidate.softWarnings = asset.capitalFlow?.status === "ok" ? [] : ["AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED"];
         state = "MARKET_CANDIDATE"; reason = "MARKET_FILTERS_PASSED_FRESH_NEWS_REVIEW_PENDING";
       } else { candidate = null; reason = "EXECUTION_OR_LIQUIDITY_REVIEW_PENDING"; }
@@ -1405,7 +1751,8 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const state = await scannerStateBundle(env, [DISCOVERY_STATE_KEY, OBSERVATIONS_KEY, MANUAL_PRIORITY_KEY]);
   const old = state[DISCOVERY_STATE_KEY] || {};
   const enabled = String(env?.DISCOVERY_ENABLED ?? "true") !== "false";
-  const due = enabled && now - finite(old.lastRunAt, 0) >= DISCOVERY_INTERVAL_MS;
+  const previousRun=finite(old.lastRunAt,0);
+  const due = enabled && (now-previousRun>=DISCOVERY_INTERVAL_MS||Math.floor(now/DISCOVERY_INTERVAL_MS)>Math.floor(previousRun/DISCOVERY_INTERVAL_MS));
   let records = state[OBSERVATIONS_KEY]?.records || [], full = null, reason = due ? "NO_NEW_AUTONOMOUS_CANDIDATE" : "DISCOVERY_INTERVAL_NOT_DUE";
   let discoveryError = null, added = 0, capacityReached = false;
   if (due) {
@@ -1446,6 +1793,10 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
     if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
     // Slow upstream recovery must not turn earlier samples into a current-price alert.
     if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { verification = null; priceError = String(error?.message || error); } }
+    if(full?.assets?.ETHUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
+      await attachArrivalLiquidity(env,full);
+      try{verification=await cycle.getPrices("ETHUSDT");}catch{verification=null;}
+    }
     if (full?.assets?.ETHUSDT && verification?.current) {
       full.assets.ETHUSDT.ticker = verification.current;
       full.assets.ETHUSDT.executionLiquidity=buildExecutionLiquidity(full.assets.ETHUSDT);
@@ -1478,7 +1829,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
     recentRiskHeadlineCount:full.newsContext.recentRiskHeadlines?.length||0,upcomingEventCount:full.newsContext.upcomingEvents?.length||0,
     jin10:full.newsContext.sources?.JIN10}:old.newsStatus||null, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
     lastSuccessAt: due && !discoveryError && observationStructureReady(full?.assets?.ETHUSDT) ? new Date(now).toISOString() : old.lastSuccessAt || null,
-    nextDiscoveryAt: new Date((due ? now : finite(old.lastRunAt, now)) + DISCOVERY_INTERVAL_MS).toISOString(),
+    nextDiscoveryAt: new Date((Math.floor((due?now:finite(old.lastRunAt,now))/DISCOVERY_INTERVAL_MS)+1)*DISCOVERY_INTERVAL_MS).toISOString(),
     reason: enabled ? reason : "AUTONOMOUS_DISCOVERY_DISABLED_REGISTERED_OBSERVATIONS_CONTINUE",
     discoveryError, priceError, added, capacityReached, evaluated: evaluations.length, evaluations, notifications, openNowAllowed: false };
   await scannerStatePut(env, DISCOVERY_STATE_KEY, detail, 7 * 86400);
@@ -2942,7 +3293,9 @@ function buildMarketRegimeRouter(asset) {
       ? "TRANSITION"
     : fourHourRange
       ? "RANGE"
-      : (fourHourUp || fourHourDown) && (!oneHourOpposes || fourHourTrendDirection(asset) !== null)
+      : fourHourUp && fourHourDown
+      ? "TRANSITION"
+    : (fourHourUp || fourHourDown) && (!oneHourOpposes || fourHourTrendDirection(asset) !== null)
         ? "TREND"
         : "TRANSITION";
   const entries = Object.entries(SUBMODEL_DEFINITIONS);
@@ -2955,7 +3308,7 @@ function buildMarketRegimeRouter(asset) {
     directSubmodels,
     watchSubmodels,
     permission: directSubmodels.length ? "EVALUATE_DIRECT_MODELS" : watchSubmodels.length ? "WAIT_FOR_COMPLETION" : "NO_TRADE",
-    evidence: { trend4h: tf4h.trend, structure4h: tf4h.structure, trend1h: tf1h.trend, structure1h: tf1h.structure, adx4h: Number.isFinite(adx4h) ? round(adx4h, 4) : null, adx1h: Number.isFinite(adx1h) ? round(adx1h, 4) : null, adx15m: Number.isFinite(adx15m) ? round(adx15m, 4) : null, rangeConfirmed: rangeContext.confirmed === true, rangeLocation: rangeContext.locationZone, rangeLegDirection: rangeContext.rangeLegDirection, boundaryState: rangeContext.boundaryState },
+    evidence: { momentumSwingConflict4h:fourHourUp&&fourHourDown,trend4h: tf4h.trend, structure4h: tf4h.structure, trend1h: tf1h.trend, structure1h: tf1h.structure, adx4h: Number.isFinite(adx4h) ? round(adx4h, 4) : null, adx1h: Number.isFinite(adx1h) ? round(adx1h, 4) : null, adx15m: Number.isFinite(adx15m) ? round(adx15m, 4) : null, rangeConfirmed: rangeContext.confirmed === true, rangeLocation: rangeContext.locationZone, rangeLegDirection: rangeContext.rangeLegDirection, boundaryState: rangeContext.boundaryState },
     referenceRangeIsExecutionGate:fourHourRange,
     eventAndLiquidityOverrideRequired: true,
     standaloneSignal: false,
@@ -4140,6 +4493,11 @@ async function buildSnapshot(options = {}) {
     asset.liquidityRisk = buildMarketLiquidityContext(asset);
     asset.estimatedLiquidationPressureZones = buildEstimatedLiquidationPressureZones(asset);
     asset.largeParticipantProxy = buildLargeParticipantProxy(asset);
+    if(symbol==="ETHUSDT") {
+      const shared=sharedMarketPromise?await sharedMarketPromise:null;
+      asset.crossVenueLiquidity=shared?.crossVenueLiquidity||{status:"unavailable",reason:"MULTI_VENUE_COORDINATOR_UNAVAILABLE",arrivalRecheck:{passed:false}};
+      asset.publicOrderflow=shared?.orderflow||{status:"unavailable",reason:"SHARED_PUBLIC_ORDERFLOW_UNAVAILABLE",standaloneEntryPermission:false};
+    }
     asset.effortVsResult = buildEffortVsResult(asset);
     asset.rangeContext = buildRangeContext(asset);
     asset.marketRegimeRouter = buildMarketRegimeRouter(asset);
@@ -4159,6 +4517,9 @@ async function buildSnapshot(options = {}) {
   const newsContext=await newsPromise;
   for(const a of Object.values(assets))a.newsEvidenceAvailable=Object.values(newsContext.sources||{}).some(source=>source.status==="ok"&&source.transportAgeSeconds>=0&&source.transportAgeSeconds<=300);
   assets.ETHUSDT.opportunityEngine = buildOpportunityScan(assets.ETHUSDT, assets.BTCUSDT);
+  if(scannerStateStub(options.env))try{await scannerStatePut(options.env,"market:liquidity-proposals:v1",{generatedAt:new Date().toISOString(),dataReady:snapshotReadiness(assets).criticalReady,closedBarAt:assets.ETHUSDT.opportunityEngine.closedBarAt,
+    structureValidUntil:Math.min(...Object.entries(assets.ETHUSDT.timeframes).map(([tf,t])=>Date.parse(t.coordinator?.lastRefreshAt||t.dataFreshness?.storedAt||new Date().toISOString())+STRUCTURE_MAX_COLLECTION_AGE_SECONDS[tf]*1000)),atr15:assets.ETHUSDT.timeframes?.['15m']?.indicators?.atr14,
+    proposals:assets.ETHUSDT.opportunityEngine.models.filter(m=>Number.isFinite(m.stopLoss)&&Number.isFinite(m.target)||m.candidate).map(m=>{const c=m.candidate||m;return {submodel:m.submodel,direction:m.direction||c.direction,modelState:m.state,entryZone:c.entryZone||m.progress?.entryZone||c.rrQualifiedEntryZone,stopLoss:c.stopLoss,modelInvalidationPrice:c.protectivePrice||m.progress?.protectivePrice||c.stopLoss,expiresAt:c.expiresAt||m.expiresAt||null,target:c.liquidityPricing?.structuralTarget||m.liquidityPricing?.structuralTarget||c.target,estimatedRoundTripCostPct:c.estimatedRoundTripCostPct};}).filter(p=>p.entryZone)},120);}catch{}
   const modules = [];
   for (const asset of Object.values(assets)) modules.push(asset.ticker, ...Object.values(asset.timeframes), asset.derivatives.openInterest, asset.derivatives.funding);
   const available = modules.filter((module) => module.status === "ok").length;
@@ -4201,7 +4562,8 @@ async function buildSnapshot(options = {}) {
     },
     requestBudget: {
       newsCoordinatorSubrequest:1,newsProviderCallsInsideCoordinator:"AT_MOST_SIX_FEEDS_PLUS_MCP_HANDSHAKE_CACHED_BY_SOURCE",
-      plannedOkx: 13,
+      plannedOkx: 16,
+      additionalPublicLiquidityFeeds:"THREE_METADATA_CACHED_PLUS_SIX_BOOK_TRADE_READS_PER_WAVE; TWO_WAVES",
       plannedBinanceCandles: 0,
       plannedGateStructureCandlesWarm: "0_TO_6_DUE_SERIES; normally 2x15M, with 1H/4H only at configured refresh age",
       plannedGateStructureCandlesCold: 6,
@@ -4332,7 +4694,7 @@ function scannerStateStub(env) {
 
 async function durableStateCall(env, payload) {
   const stub=scannerStateStub(env);if(!stub?.fetch)return null;
-  const attempts=payload.op==="get"?2:1, timeoutMs=["publicMarket","directQuote","newsContext"].includes(payload.op)?28000:4000;
+  const attempts=payload.op==="get"?2:1, timeoutMs=["publicMarket","directQuote","newsContext","liquidityRecheck"].includes(payload.op)?28000:4000;
   for(let attempt=0;attempt<attempts;attempt++){
     let timer;
     try {
@@ -4918,6 +5280,11 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     || (externalBoundaryAcceptance && !trendAgainst(plan.direction, tf4h))
     || (!trendAgainst(plan.direction, tf4h) && !trendAgainst(plan.direction, tf1h));
   const executionReality = planExecutionReality(plan, asset, executablePrice);
+  const multiVenuePricing=liquidityTradePricing(asset,{...plan,entry:executablePrice});
+  if(multiVenuePricing?.status==="REFERENCE_PRICED"){
+    executionReality.baselineNetRR=multiVenuePricing.currentNetRR;executionReality.stressedNetRR=multiVenuePricing.netRRAtCostStress;
+    executionReality.liquidityAdjustedFirstTarget=multiVenuePricing.liquidityAdjustedFirstTarget;
+  }
   const rr = executionReality.baselineNetRR;
   const minimumNetRR = effectivePlanMinNetRR(plan);
   const rrPassed = Number.isFinite(rr) && rr >= minimumNetRR;
@@ -4986,6 +5353,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     candlePassed,
     btcPricePassed,
     trendPassed,
+    multiVenueRecheckPassed: !asset.crossVenueLiquidity||multiVenuePricing?.entryReviewPassed===true,
     executionRealityPassed: executionReality.passed,
     rrPassed,
     flowPassed,
@@ -5004,6 +5372,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
   if (!protectiveStructurePassed) hardBlockers.push("NO_VALID_PROTECTIVE_STRUCTURE");
   if (!executionReality.targetAhead) hardBlockers.push("FIRST_REALISTIC_TARGET_ALREADY_PASSED_OR_WRONG_SIDE");
   if (!executionReality.stopOnInvalidationSide) hardBlockers.push("STOP_NO_LONGER_ON_INVALIDATION_SIDE");
+  if(asset.crossVenueLiquidity&&multiVenuePricing?.entryReviewPassed!==true)hardBlockers.push("MULTI_VENUE_PRE_ENTRY_RECHECK_OR_LIQUIDITY_RR_FAILED");
   if (!rrPassed) hardBlockers.push("NET_RR_BELOW_CONFIGURED_THRESHOLD");
   if (!liquidityRiskPassed) hardBlockers.push(...liquidityRisk.blockers);
   if (!explicitHardBlockersPassed) hardBlockers.push(...marketOnlyBlockers(plan.hardBlockers));
@@ -5020,6 +5389,7 @@ function evaluateTradingPlan(plan, snapshot, previousRuntime = null, zoneVerific
     priceExchangeTimestamp,
     entryZone: plan.entryZone,
     netRR: rr,
+    multiVenuePricing,
     minimumNetRR,
     executionReality,
     confirmed15mAt: confirmed15m.ts,
@@ -5220,6 +5590,7 @@ async function scanActivePlan(env, cycle = scannerCycle(env)) {
     if (zoneVerification.confirmed && !terminal) {
       try { snapshot = await cycle.getSnapshot(); }
       catch (error) { snapshot = { decisionState: "DATA_BLOCKED", assets: {}, scannerError: error?.message || String(error) }; }
+      await attachArrivalLiquidity(env,snapshot);
       const currentSamples = await cycle.getPrices(plan.symbol);
       zoneVerification = { ...currentSamples, confirmed: currentSamples.samples?.length === 2 && currentSamples.samples.every(p => priceInsideEntryZone(p.last, plan.entryZone)), entryZone: plan.entryZone };
     }
@@ -5581,7 +5952,7 @@ function openApi(origin) {
           summary: "Get realtime BTC and ETH perpetual market data",
           description: "Public live market data, independent of scanner authentication. view=news returns timestamped news context; view=diagnostics checks Worker connectivity. Private scanner-status still requires a Bearer header; use the authenticated scanner status Action when that header is unavailable.",
           security: [],
-          parameters:[{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","news","diagnostics","scanner-status"],default:"market"},description:"market: public prices; news: timestamped feeds/calendar only; diagnostics: connectivity; scanner-status: private, requires valid Bearer authentication."}],
+          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","news","diagnostics","scanner-status"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; news: feeds/calendar; diagnostics: connectivity; scanner-status: private Bearer."}],
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -5880,10 +6251,11 @@ async function handleSnapshot(request, env, ctx) {
 }
 
 async function buildManualResponse(request, env, ctx) {
+  const forceRecheck=new URL(request.url).searchParams.get("recheck")==="true";
   const cache = globalThis.caches?.default;
   const cacheKey = new Request(`https://crypto-alpha-cache.invalid/${CACHE_NAMESPACE}/realtime`);
   let snapshotCacheWarning=null;
-  if (cache) {
+  if (cache&&!forceRecheck) {
     try {
       const cached=await cache.match(cacheKey);
       if(cached){
@@ -5896,7 +6268,7 @@ async function buildManualResponse(request, env, ctx) {
   const snapshot = await buildSnapshot({ env, coinalyzeApiKey: env?.COINALYZE_API_KEY });
   if(snapshotCacheWarning)snapshot.transportDiagnostics={snapshotCacheWarning};
   const response = marketSnapshotResponse(snapshot);
-  if (cache) {
+  if (cache&&!forceRecheck) {
     try {
       const cachedResponse=json(snapshot,200,{"cache-control":`public, max-age=${SNAPSHOT_CACHE_SECONDS}`});
       const write=Promise.resolve(cache.put(cacheKey,cachedResponse)).catch(()=>{});
@@ -5962,6 +6334,7 @@ export class ScannerState {
     if (request.method !== "POST") return Response.json({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
     let input;
     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
+    if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
     if(input?.op==="newsSnapshot"){try{return Response.json(await cachedNewsContext(this));}catch{return Response.json({error:"NEWS_CACHE_READ_FAILED"},{status:503});}}
     if(input?.op==="newsContext"){try{return Response.json(await coordinatedNewsContext(this));}catch{return Response.json(newsContextSummary({JIN10:{status:"unavailable",reason:"NEWS_COORDINATOR_FAILED"}}));}}
     if (["publicMarket","directQuote"].includes(input?.op)) {
@@ -6094,6 +6467,9 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const origin = url.origin;
 
+    if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="liquidity"){
+      try{return json(await durableStateCall(env,{op:"liquidityRecheck"}),200,{"cache-control":"no-store"});}catch{return json({build:BUILD,apiVersion:API_VERSION,status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",openNowAllowed:false},503,{"cache-control":"no-store"});}
+    }
     if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="news")return json({build:BUILD,apiVersion:API_VERSION,newsContext:await loadNewsContext(env)},200,{"cache-control":"no-store"});
     if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="diagnostics")
       return json(publicConnectionDiagnostic(request,env),200,{"cache-control":"no-store"});
