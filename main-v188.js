@@ -1,4 +1,6 @@
-const BUILD = "crypto-alpha-worker-v27.6.1-shared-monitor-recovery";
+const BUILD = "crypto-alpha-worker-v27.6.2-owner-local-dispatch";
+const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
+const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -564,9 +566,10 @@ async function ensureFastMonitor(owner){
  return {status:'SCHEDULED',scheduled:true,nextAlarmAt:new Date(due&&due>=Date.now()-30000?due:Date.now()+1000).toISOString(),targetCadenceSeconds:10,fixedLatencyGuaranteed:false};
 }
 function compactFastMonitor(state,review=null,now=Date.now()){
- if(!state)return {status:'NOT_STARTED',targetCadenceSeconds:10,fullReview:review||null,fixedLatencyGuaranteed:false};
+ const identity={stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT};
+ if(!state)return {...identity,status:'NOT_STARTED',samplingHealthy:false,quoteHealthy:false,flowHealthy:false,targetCadenceSeconds:10,fullReview:review||null,fixedLatencyGuaranteed:false};
  const age=(now-Date.parse(state.lastSuccessAt))/1000;
- return {status:state.status,lastAttemptAt:state.lastAttemptAt||null,lastSuccessAt:state.lastSuccessAt||null,dataAgeSeconds:Number.isFinite(age)?round(age,3):null,
+ return {...identity,status:state.status,lastAttemptAt:state.lastAttemptAt||null,lastSuccessAt:state.lastSuccessAt||null,dataAgeSeconds:Number.isFinite(age)?round(age,3):null,
   samplingHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,targetCadenceSeconds:10,actualLastGapSeconds:state.actualLastGapSeconds??null,nextAlarmAt:state.nextAlarmAt||null,
   executionQuote:state.executionQuote||null,quoteHealthy:genuineExecutionQuote(state.executionQuote,10),quoteLastSuccessAt:state.quoteLastSuccessAt||null,flowHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,
   flowRetryAt:state.nextFlowAttemptAt?new Date(state.nextFlowAttemptAt).toISOString():null,feedDiagnostics:state.feedDiagnostics||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
@@ -598,20 +601,87 @@ async function fastSendPending(owner,state,event,now=Date.now()){
  const pending=state.pendingAlert||{eventId:[event.direction,event.firstObservedAt].join(':'),direction:event.direction,createdAt:new Date(now).toISOString(),attempts:0,nextAttemptAt:0};
  if(pending.nextAttemptAt>now)return;
  state.pendingAlert=pending;await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
- let result;try{result=await sendBark(owner.env,{title:'ETH（以太坊）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
+ let result;try{result=await sendBark(fastLocalEnvironment(owner),{title:'ETH（以太坊）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
   body:'采样窗口价格变化 '+formatPrice(event.moveUsd)+' 美元（'+round(event.movePct,2)+'%），本次门槛 '+formatPrice(event.thresholdUsd)+' 美元。主动'+(event.direction==='BUY'?'买入':'卖出')+'占比 '+round(state.window.dominantShare*100,1)+'%。\n行情时间 '+chinaTime(event.lastObservedAt)+'；检测时间 '+chinaTime(now)+'。这是机会进展提醒，完整模型正在复核，尚非开仓许可。采样不等于全市场逐笔覆盖。',level:'timeSensitive'},{kind:'FAST_FLOW',eventId:pending.eventId,stage:'MATERIAL_EXECUTED_FLOW'});}catch(e){result={sent:false,reason:String(e?.message||e)};}
  pending.attempts++;
  if(result.sent){state.lastAcceptedByDirection={...(state.lastAcceptedByDirection||{}),[event.direction]:new Date(now).toISOString()};state.lastAlert={eventId:pending.eventId,detectedAt:event.detectedAt,providerAcceptedAt:new Date().toISOString(),deliveryMeaning:'PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT',direction:event.direction};state.pendingAlert=null;}
  else{pending.nextAttemptAt=now+Math.min(60000,10000*2**Math.min(pending.attempts-1,3));state.pendingAlert=pending;state.lastAlertFailure=result.reason||'PUSH_FAILED';}
 }
 function fastLocalEnvironment(owner){
- // Same object and original state operations, without billable self-HTTP or a second scheduler.
- return owner.fastLocalEnv||=( {...owner.env,SCANNER_STATE:{getByName(){return {fetch:(url,init)=>owner.fetch(new Request(url,init))};}}} );
+ // The opaque marker cannot be supplied through an external JSON request.
+ // Keep internal state and coordinators on the current object, without fetch-to-self.
+ return owner.fastLocalEnv||=( {...owner.env,[LOCAL_SCANNER_OWNER]:owner} );
+}
+async function localScannerOperation(owner,input){
+ const storage=owner.ctx.storage,env=fastLocalEnvironment(owner);
+ if(input.op==='stateIdentity')return {stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT};
+ if(input.op==='scannerCycle'){
+  if(input.ensureMonitor)await ensureFastMonitor(owner);
+  return {stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT,...await runScanner(env,input.options||{})};
+ }
+ if(input.op==='publicMarket')return coordinatedMarketBundle(owner);
+ if(input.op==='directQuote')return coordinatedDirectQuote(owner,input.symbol);
+ if(input.op==='newsContext')return coordinatedNewsContext(owner);
+ if(input.op==='newsSnapshot')return cachedNewsContext(owner);
+ if(input.op==='liquidityRecheck')return coordinatedLiquidityRecheck(owner);
+ if(input.op==='fastMonitorEnsure')return ensureFastMonitor(owner);
+ if(input.op==='fastMonitorStatus')return compactFastMonitor(await storage.get(FAST_MONITOR_KEY),await syncFastModelReview(owner));
+ if(input.op==='pushAuditAppend')return appendPushAuditStorage(storage,input.attempt,input.patch);
+ if(input.op==='get'&&Array.isArray(input.keys)){
+  const values={};
+  for(const key of input.keys.slice(0,20)){
+   const record=await storage.get(String(key));
+   if(!record)values[key]=null;
+   else if(Number.isFinite(record.expiresAt)&&record.expiresAt<=Date.now()){await storage.delete(String(key));values[key]=null;}
+   else values[key]=record.value;
+  }
+  return {status:'ok',values};
+ }
+ if(input.op==='put'&&input.values&&typeof input.values==='object'){
+  const stored=[];
+  for(const [key,item] of Object.entries(input.values).slice(0,20)){
+   await storage.put(String(key),{value:item?.value??null,expiresAt:Date.now()+Math.max(60,finite(item?.ttlSeconds,30*86400))*1000});stored.push(key);
+  }
+  return {status:'ok',stored};
+ }
+ if(input.op==='compareAndPut'&&input.expected&&input.values){
+  const applied=await storage.transaction(async txn=>{
+   for(const [key,expected] of Object.entries(input.expected).slice(0,20)){
+    const record=await txn.get(key),current=record&&record.expiresAt>Date.now()?record.value:null;
+    if(JSON.stringify(current)!==JSON.stringify(expected))return false;
+   }
+   for(const [key,item] of Object.entries(input.values).slice(0,20))await txn.put(key,{value:item.value,expiresAt:Date.now()+Math.max(60,finite(item.ttlSeconds,7*86400))*1000});
+   return true;
+  });
+  return {status:'ok',applied};
+ }
+ if(input.op==='acquireLease')return storage.transaction(async txn=>{
+  const key=String(input.key||SCANNER_LEASE_KEY),now=Date.now(),existing=await txn.get(key);
+  if(existing?.value?.token&&Number.isFinite(existing.value.expiresAt)&&existing.value.expiresAt>now)return {status:'ok',acquired:false,owner:existing.value.token,expiresAt:existing.value.expiresAt};
+  const value={token:String(input.token),expiresAt:now+Math.min(60000,Math.max(5000,finite(input.ttlMs,55000)))};
+  await txn.put(key,{value,expiresAt:value.expiresAt+60000});return {status:'ok',acquired:true,expiresAt:value.expiresAt};
+ });
+ if(input.op==='releaseLease')return storage.transaction(async txn=>{
+  const key=String(input.key||SCANNER_LEASE_KEY),existing=await txn.get(key),released=existing?.value?.token===String(input.token);
+  if(released)await txn.delete(key);return {status:'ok',released};
+ });
+ throw Error('INVALID_LOCAL_STATE_OPERATION');
+}
+function stateBackendIdentity(fast){
+ const backendBuild=fast?.stateOwnerBuild||null,backendContract=fast?.stateOwnerContract||null;
+ const matched=backendBuild===BUILD&&backendContract===STATE_OWNER_CONTRACT;
+ return {frontendBuild:BUILD,stateOwnerBuild:backendBuild,stateOwnerContract:backendContract,matched,
+  status:matched?'MATCHED':backendBuild?'VERSION_OR_CONTRACT_MISMATCH':'OWNER_IDENTITY_NOT_RETURNED',
+  nextAction:matched?null:'CHECK_DEPLOYMENT_AND_SCANNER_STATE_BINDING_TARGET_NO_RECORD_DELETION'};
+}
+async function readFastMonitorResponse(env){
+ const fastMonitor=await durableStateCall(env,{op:'fastMonitorStatus'}),backendIdentity=stateBackendIdentity(fastMonitor);
+ return {build:BUILD,apiVersion:API_VERSION,status:backendIdentity.matched?'ok':'degraded',backendIdentity,fastMonitor};
 }
 function scannerCycleReceipt(result,startedAt,completedAt,requestId=null){
  const audit=result.observations?.opportunityAudit,models=audit?.models||[],complete=models.length===8;
  const dataReady=complete&&models.every(m=>m.state!=='DATA_BLOCKED')&&!result.observations?.discoveryError&&!result.observations?.priceError;
- return {status:complete?(dataReady?'completed':'data_blocked'):'failed',source:'SHARED_SCANNER',requestId,startedAt,checkedAt:audit?.checkedAt||null,completedAt,
+ return {status:complete?(dataReady?'completed':'data_blocked'):'failed',source:'SHARED_SCANNER',producerBuild:BUILD,requestId,startedAt,checkedAt:audit?.checkedAt||null,completedAt,
   inspectedModels:models.length,modelDataReady:Boolean(dataReady),closedBarAt:audit?.closedBarAt||null,preparedCount:audit?.preparedCount??null,swingPreparedCount:audit?.swingPreparedCount??null,
   nextCondition:result.observations?.reason||result.reason||null,lastError:result.observations?.discoveryError||result.observations?.priceError||result.observations?.status==='error'&&result.observations.reason||null,openNowAllowed:false};
 }
@@ -627,13 +697,17 @@ async function queueFastModelReview(owner,reason){
  throw Error('REVIEW_REQUEST_CONFLICT_RETRY');
 }
 async function syncFastModelReview(owner){
- const review=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{},receipt=(await owner.ctx.storage.get(SCANNER_CYCLE_RESULT_KEY))?.value,request=(await owner.ctx.storage.get(SCANNER_REVIEW_REQUEST_KEY))?.value;
+ const storedReview=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{},receipt=(await owner.ctx.storage.get(SCANNER_CYCLE_RESULT_KEY))?.value,request=(await owner.ctx.storage.get(SCANNER_REVIEW_REQUEST_KEY))?.value;
+ const legacy=Object.keys(storedReview).length&&storedReview.producerBuild!==BUILD;
+ const review=legacy?{...storedReview,status:'pending',reason:'OWNER_BUILD_CHANGED_RECHECK_REQUIRED',awaitingReview:true,inspectedModels:null,modelDataReady:false,
+  lastCompletedAt:storedReview.inspectedModels===8?storedReview.lastCompletedAt||null:null,
+  legacyReview:storedReview.legacyReview||{status:storedReview.status,producerBuild:storedReview.producerBuild||null,inspectedModels:storedReview.inspectedModels??null,lastCompletedAt:storedReview.lastCompletedAt||null,lastError:storedReview.lastError||null}}:storedReview;
  if(!receipt)return review.status==='coalesced'&&review.inspectedModels===0?{...review,lastCompletedAt:null}:review;
  const pending=request&&['PENDING','RUNNING'].includes(request.status)&&Date.parse(request.expiresAt)>Date.now();
  const linked=receipt.requestId&&receipt.requestId===request?.requestId;
- const actual={...receipt,lastCompletedAt:receipt.inspectedModels===8?receipt.completedAt:review.lastCompletedAt||null};
+ const actual={...receipt,modelDataReady:receipt.producerBuild===BUILD&&receipt.modelDataReady===true,lastCompletedAt:receipt.inspectedModels===8?receipt.completedAt:review.lastCompletedAt||null};
  let next;
- if(linked&&!pending)next={...review,...actual,reason:request.reason,requestId:request.requestId,requestedAt:request.requestedAt,awaitingReview:false};
+ if(linked&&!pending&&receipt.producerBuild===BUILD)next={...review,...actual,reason:request.reason,requestId:request.requestId,requestedAt:request.requestedAt,awaitingReview:false};
  else if(pending)next={...review,status:'pending',requestId:request.requestId,requestedAt:request.requestedAt,reason:request.reason,awaitingReview:true,inspectedModels:null,modelDataReady:false,
    nextCondition:'WAIT_FOR_SHARED_SCANNER_RESULT',lastCompletedReview:actual,lastCompletedAt:review.lastCompletedAt||null};
  else next={...review,lastSharedCycle:actual};
@@ -644,7 +718,7 @@ async function fastModelReview(owner,reason){
  if(owner.fastModelWork)return owner.fastModelWork;
  const work=(async()=>{
   const old=await syncFastModelReview(owner),now=Date.now(),request=await queueFastModelReview(owner,reason);
-  const pending={...old,status:'pending',reason:request.reason,requestId:request.requestId,requestedAt:request.requestedAt,startedAt:new Date(now).toISOString(),awaitingReview:true,inspectedModels:null,modelDataReady:false,preparedCount:null,swingPreparedCount:null,openNowAllowed:false};
+  const pending={...old,producerBuild:BUILD,status:'pending',reason:request.reason,requestId:request.requestId,requestedAt:request.requestedAt,startedAt:new Date(now).toISOString(),awaitingReview:true,inspectedModels:null,modelDataReady:false,preparedCount:null,swingPreparedCount:null,openNowAllowed:false};
   await owner.ctx.storage.put(FAST_REVIEW_KEY,pending);
   if(finite(request.nextAttemptAt,0)>now)return {...pending,retryAt:new Date(request.nextAttemptAt).toISOString()};
   try{
@@ -668,8 +742,9 @@ async function maintainFastModelReview(owner,state,now=Date.now()){
    ||plan?.status==='ARMED'&&Date.parse(plan.expiresAt)>now&&priceInsideEntryZone(state.executionQuote.last,plan.entryZone));
  const zoneDue=zone&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
  const recovery=!outstanding&&review.startedAt&&now-Date.parse(review.startedAt)>=30000&&['failed','data_blocked','coalesced','running','pending'].includes(review.status);
- if(!owner.fastModelWork&&(due||barDue||material||zoneDue||recovery)){
-  state.lastReviewedClosedBar=expected;const reason=material?'MATERIAL_FLOW':barDue?'NEW_CONFIRMED_BAR':due||recovery?'RECOVERY_RECHECK':'CURRENT_RESEARCH_ZONE';
+ const versionDue=!review.producerBuild||review.producerBuild!==BUILD;
+ if(!owner.fastModelWork&&(due||barDue||material||zoneDue||recovery||versionDue)){
+  state.lastReviewedClosedBar=expected;const reason=material?'MATERIAL_FLOW':barDue?'NEW_CONFIRMED_BAR':due||recovery?'RECOVERY_RECHECK':zoneDue?'CURRENT_RESEARCH_ZONE':'RECOVERY_RECHECK';
   const task=fastModelReview(owner,reason);if(owner.ctx.waitUntil)owner.ctx.waitUntil(task);else await task;
  }
 }
@@ -5024,20 +5099,22 @@ function scannerStateStub(env) {
 }
 
 async function durableStateCall(env, payload) {
-  const stub=scannerStateStub(env);if(!stub?.fetch)return null;
-  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck"].includes(payload.op)?28000:4000;
+  const localOwner=env?.[LOCAL_SCANNER_OWNER];
+  if(localOwner)return localScannerOperation(localOwner,payload);
+  if(!scannerStateStub(env)?.fetch)return null;
+  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="scannerCycle"?50000:payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck"].includes(payload.op)?28000:4000;
   for(let attempt=0;attempt<attempts;attempt++){
     let timer;
     try {
       return await Promise.race([
         (async()=>{
-          const response=await stub.fetch("https://scanner-state.internal/state",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
+          const response=await scannerStateStub(env).fetch("https://scanner-state.internal/state",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
           if(!response.ok)throw new Error(`STATE_HTTP_${response.status}`);
           const body=await response.json();if(body?.error)throw new Error(body.error);return body;
         })(),
         new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("STATE_TIMEOUT")),timeoutMs);}),
       ]);
-    }catch(error){if(attempt+1===attempts)throw error;}
+    }catch(error){if(error?.overloaded||attempt+1===attempts)throw error;}
     finally{clearTimeout(timer);}
   }
 }
@@ -6094,23 +6171,23 @@ async function runScanner(env,options={}) {
   }
   const token = crypto.randomUUID();
   if (!(await scannerAcquireLease(env, token))) return { status: "busy", build: BUILD, reason: "SCANNER_RUN_ALREADY_IN_PROGRESS" };
+  let claimed=null,old={},startedAt=new Date(Date.now()).toISOString();
   try {
     const requested=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
-    let claimed=null;
     if(requested&&['PENDING','RUNNING'].includes(requested.status)&&Date.parse(requested.expiresAt)>Date.now()&&finite(requested.nextAttemptAt,0)<=Date.now()){
       const next={...requested,status:'RUNNING',cycleStartedAt:new Date().toISOString()};
       if(await scannerCompareAndPut(env,{[SCANNER_REVIEW_REQUEST_KEY]:requested},{[SCANNER_REVIEW_REQUEST_KEY]:next},3600))claimed=next;
     }
-    const old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
-    const startedAt = new Date(Date.now()).toISOString();
-    await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, status: "running", lastAttemptAt: startedAt });
+    old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
+    startedAt = new Date(Date.now()).toISOString();
+    await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, producerBuild:BUILD,status: "running", lastAttemptAt: startedAt });
     // Acquire the single scanner lease before refreshing structures; all drivers consume the same request.
     if(options.forceStructureRefresh===true||claimed?.forceStructureRefresh)await loadDurableStructureRecords(env,{force:true});
     const result = await runScannerUnlocked(env,{...options,forceDiscovery:options.forceDiscovery===true||Boolean(claimed)});
     const completedAt = new Date(Date.now()).toISOString();
     const degraded = result.status === "error" || result.observations?.status === "error"
       || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
-    await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { status: degraded ? "degraded" : "completed", lastAttemptAt: startedAt,
+    await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { producerBuild:BUILD,status: degraded ? "degraded" : "completed", lastAttemptAt: startedAt,
       lastCompletedAt: completedAt, lastSuccessfulCycleAt: degraded ? old.lastSuccessfulCycleAt || null : completedAt,
       nextScheduledCheckAt: new Date(Date.now() + 60_000).toISOString(),
       planState: result.evaluation?.state || result.reason || result.status,
@@ -6124,6 +6201,12 @@ async function runScanner(env,options={}) {
         ...current,status:receipt.modelDataReady?'FULFILLED':'PENDING',lastAttemptAt:completedAt,nextAttemptAt:Date.now()+(receipt.modelDataReady?0:30000),completedAt:receipt.modelDataReady?completedAt:null}},3600);
     }
     return result;
+  } catch(error) {
+    const failedAt=new Date(Date.now()).toISOString(),message=String(error?.message||error).slice(0,180);
+    await scannerStatePut(env,SCANNER_HEARTBEAT_KEY,{...old,producerBuild:BUILD,status:'failed',lastAttemptAt:startedAt,lastFailedAt:failedAt,lastError:message}).catch(()=>{});
+    await scannerStatePut(env,SCANNER_CYCLE_RESULT_KEY,{producerBuild:BUILD,status:'failed',source:'SHARED_SCANNER',requestId:claimed?.requestId||null,startedAt,failedAt,inspectedModels:0,modelDataReady:false,lastError:message,openNowAllowed:false},3600).catch(()=>{});
+    if(claimed){const current=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY).catch(()=>null);if(current?.requestId===claimed.requestId)await scannerCompareAndPut(env,{[SCANNER_REVIEW_REQUEST_KEY]:current},{[SCANNER_REVIEW_REQUEST_KEY]:{...current,status:'PENDING',lastAttemptAt:failedAt,nextAttemptAt:Date.now()+30000,lastError:message}},3600).catch(()=>{});}
+    throw error;
   } finally {
     await scannerReleaseLease(env, token).catch(() => {});
   }
@@ -6131,7 +6214,7 @@ async function runScanner(env,options={}) {
 
 function boundedScannerStatus(result) {
   const pick=(v,keys)=>v&&typeof v==="object"?Object.fromEntries(keys.filter(k=>v[k]!==undefined).map(k=>[k,compactStatusValue(v[k])])):v??null;
-  result.heartbeat=pick(result.heartbeat,["status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError"]);
+  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError"]);
   result.responseMode="COMPACT_V26";
   result.generatedAt=new Date(Date.now()).toISOString();
   result.runtime=pick(result.runtime,["planId","state","checkedAt","lastAlertAt","lastAttemptAt","lastObservedPrice","notification"]);
@@ -6173,7 +6256,7 @@ async function scannerStatus(env) {
       activePlan:compactStatusValue(state[ACTIVE_PLAN_KEY]||null),runtime:compactStatusValue(state[SCANNER_RUNTIME_KEY]||null),
       observations:records.filter(r=>!OBSERVATION_TERMINAL.includes(r.state)).slice(0,OBSERVATION_LIMIT).map(r=>compactStatusValue(scannerStatusRecord(r))),
       observationHistory:records.filter(r=>OBSERVATION_TERMINAL.includes(r.state)).slice(-12).map(r=>compactStatusValue(scannerStatusRecord(r))),
-      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,fastMonitor,notificationAudit:pushAuditSummary(state[PUSH_AUDIT_KEY]),
+      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,fastMonitor,backendIdentity:stateBackendIdentity(fastMonitor),notificationAudit:pushAuditSummary(state[PUSH_AUDIT_KEY]),
       diagnostics:{stateReadSucceeded:true,stateFormatIssue:malformed?"OBSERVATION_RECORDS_NOT_ARRAY":null,completedCycleAgeSeconds:age,
         heartbeatHealthy:!malformed&&age!==null&&age>=0&&age<=180&&heartbeat.status==="completed",
         pendingObservationPushes:records.reduce((n,r)=>n+Object.values(r.alerts||{}).filter(a=>a?.status==="PENDING").length,0),
@@ -6188,6 +6271,7 @@ async function scannerStatus(env) {
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
     result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes+result.diagnostics.pendingFastPushes+result.diagnostics.pendingProgressPushes;
     if(JSON.stringify(result).length>65000){result.observationHistory=[];result.failureHistory=[];result.diagnostics.historyOmittedForResponseBudget=true;}
+    if(!result.backendIdentity.matched)result.status='degraded';
     return boundedScannerStatus(result);
   }catch(error){return {status:"degraded",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
     error:{code:"SCANNER_STATE_READ_FAILED",detail:scannerText(error?.message,"UNKNOWN_STATE_ERROR",200),retryable:true},
@@ -6741,6 +6825,7 @@ export class ScannerState {
     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
     if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
+    if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
     if(input?.op==="pushAuditAppend")return Response.json(await appendPushAuditStorage(this.ctx.storage,input.attempt,input.patch));
     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
     if(input?.op==="newsSnapshot"){try{return Response.json(await cachedNewsContext(this));}catch{return Response.json({error:"NEWS_CACHE_READ_FAILED"},{status:503});}}
@@ -6875,7 +6960,7 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const origin = url.origin;
 
-    if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="fast"){try{return json({build:BUILD,apiVersion:API_VERSION,fastMonitor:await durableStateCall(env,{op:"fastMonitorStatus"})},200,{"cache-control":"no-store"});}catch{return json({build:BUILD,apiVersion:API_VERSION,fastMonitor:{status:"STATUS_UNAVAILABLE"}},503);}}
+    if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="fast"){try{return json(await readFastMonitorResponse(env),200,{"cache-control":"no-store"});}catch{return json({build:BUILD,apiVersion:API_VERSION,fastMonitor:{status:"STATUS_UNAVAILABLE"},backendIdentity:stateBackendIdentity(null)},503);}}
     if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="liquidity"){
       try{return json(await durableStateCall(env,{op:"liquidityRecheck"}),200,{"cache-control":"no-store"});}catch{return json({build:BUILD,apiVersion:API_VERSION,status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",openNowAllowed:false},503,{"cache-control":"no-store"});}
     }
@@ -6928,12 +7013,10 @@ export default {
   async scheduled(_controller, env, ctx) {
     // Monitoring must continue during manual queries; shared endpoint/structure coordination deduplicates upstream work.
     const task = (async () => {
-      // Keep the shared structure baseline warm independently of whether a
-      // user plan is armed. Due series alone are refreshed; most cron ticks
-      // perform zero candle downloads for 1H/4H.
-      if(fastMonitorConfigured(env))await durableStateCall(env,{op:"fastMonitorEnsure"}).catch(()=>{});
-      await loadDurableStructureRecords(env).catch((error) => console.error("structure prewarm failed", error));
-      return runScanner(env);
+      // A single external hop; state, structures and model review stay inside the owner.
+      const result=await durableStateCall(env,{op:'scannerCycle',ensureMonitor:true});
+      if(result?.stateOwnerBuild!==BUILD||result?.stateOwnerContract!==STATE_OWNER_CONTRACT)throw Error('SCANNER_STATE_OWNER_VERSION_MISMATCH');
+      return result;
     })().catch((error) => console.error("scheduled scanner failed", error));
     if (ctx?.waitUntil) ctx.waitUntil(task);
     else await task;
