@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.5.0-swing-liquidity-review";
+const BUILD = "crypto-alpha-worker-v27.6.0-fast-monitor-boundary-fix";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -452,7 +452,7 @@ async function coordinatedLiquidityRecheck(owner){
   const saved=await owner.ctx.storage.get('market:liquidity-proposals:v1'),base=saved?.value;
   const age=base?(Date.now()-Date.parse(base.generatedAt))/1000:Infinity;
   const modelContextFresh=Number.isFinite(age)&&age>=0&&age<=35&&base?.dataReady===true
-    && Date.parse(base.closedBarAt)===expectedLastClosedStart("15m")
+    && Date.parse(base.closedBarAt)>=expectedLastClosedStart("15m")&&Date.parse(base.closedBarAt)<=Math.floor(Date.now()/900000)*900000-900000
     && Number(base.structureValidUntil)>=Date.now();
   const ticker=context.executionQuote;
   const asset={ticker,timeframes:{'15m':{indicators:{atr14:base?.atr15}}},crossVenueLiquidity:context};
@@ -534,6 +534,137 @@ function assessSwingOpportunity(asset,model){
 function compactSwingAssessment(review){
  const compact=c=>{if(!c)return undefined;const out={};for(const key of ['model','submodel','direction','tradeHorizon','holdingDays','entry','entryZone','stopLoss','target','netRR','estimatedRoundTripCostPct','rrQualifiedEntryZone','protectivePrice','modelInvalidationPrice','entryTriggerProtectionPrice','expiresAt','stopTimeframe','stopDistancePct','initialMarginStress','entryPlanVariant'])if(c[key]!==undefined)out[key]=c[key];return out;};
  return {...review,candidate:compact(review.candidate),pendingCandidate:compact(review.pendingCandidate)};
+}
+
+// V27.6: persistent sampled market monitor. No account access or automatic orders.
+const FAST_MONITOR_KEY='scanner:fast-market:v1';
+const FAST_REVIEW_KEY='scanner:fast-review:v1';
+const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
+const FAST_INTERVAL_MS=10000;
+function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
+async function ensureFastMonitor(owner){
+ if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED',scheduled:false};
+ if(typeof owner.ctx.storage.getAlarm!=='function'||typeof owner.ctx.storage.setAlarm!=='function')return {status:'ALARM_API_UNAVAILABLE',scheduled:false};
+ const due=await owner.ctx.storage.getAlarm();
+ if(!due||due<Date.now()-30000)await owner.ctx.storage.setAlarm(Date.now()+1000);
+ return {status:'SCHEDULED',scheduled:true,nextAlarmAt:new Date(due&&due>=Date.now()-30000?due:Date.now()+1000).toISOString(),targetCadenceSeconds:10,fixedLatencyGuaranteed:false};
+}
+function compactFastMonitor(state,review=null,now=Date.now()){
+ if(!state)return {status:'NOT_STARTED',targetCadenceSeconds:10,fixedLatencyGuaranteed:false};
+ const age=(now-Date.parse(state.lastSuccessAt))/1000;
+ return {status:state.status,lastAttemptAt:state.lastAttemptAt||null,lastSuccessAt:state.lastSuccessAt||null,dataAgeSeconds:Number.isFinite(age)?round(age,3):null,
+  samplingHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,targetCadenceSeconds:10,actualLastGapSeconds:state.actualLastGapSeconds??null,nextAlarmAt:state.nextAlarmAt||null,
+  executionQuote:state.executionQuote||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
+  lastError:state.lastError||null,lastAlertFailure:state.lastAlertFailure||null,failureCount:state.failureCount||0,fullReview:review?{...review}:null,partialSampledTape:true,continuousCoverageVerified:false,fixedLatencyGuaranteed:false,phoneReceiptVerified:false,openNowAllowed:false};
+}
+function fastWindowFromTrades(previous,venue,now=Date.now()){
+ const priorAt=Date.parse(previous?.lastSuccessAt)||previous?.buckets?.at(-1)?.lastAt,reset=Number.isFinite(priorAt)&&now-priorAt>25000;
+ const cutoff=now-120000,old=!reset&&Array.isArray(previous?.trades)?previous.trades:[],seen=new Set(old.map(t=>String(t[0])));
+ const added=venue.trades.filter(t=>t.ts>=cutoff&&!seen.has(t.id)&&(reset||!previous?.lastTradeAt||t.ts>previous.lastTradeAt));
+ const buckets=(!reset&&Array.isArray(previous?.buckets)?previous.buckets:[]).filter(b=>b.firstAt>=cutoff);
+ if(added.length){const first=added[0],last=added.at(-1);buckets.push({firstAt:first.ts,lastAt:last.ts,firstPrice:first.price,lastPrice:last.price,buy:added.filter(t=>t.side==='buy').reduce((n,t)=>n+t.notional,0),sell:added.filter(t=>t.side==='sell').reduce((n,t)=>n+t.notional,0),count:added.length});}
+ const first=buckets[0],last=buckets.at(-1),buy=buckets.reduce((n,b)=>n+b.buy,0),sell=buckets.reduce((n,b)=>n+b.sell,0),total=buy+sell,change=first&&last?last.lastPrice-first.firstPrice:0;
+ const overlap=venue.trades.some(t=>seen.has(t.id)),prices=buckets.flatMap(b=>[b.firstPrice,b.lastPrice]);
+ return {rows:venue.trades.slice(-500).map(t=>[t.id,t.ts,t.price,t.notional,t.side]),buckets:buckets.slice(-32),added:added.length,latestTradeAt:venue.trades.at(-1)?.ts||previous?.lastTradeAt||null,
+  window:{startAt:first?new Date(first.firstAt).toISOString():null,endAt:last?new Date(last.lastAt).toISOString():null,seconds:first&&last?round((last.lastAt-first.firstAt)/1000,3):0,sampledRecords:buckets.reduce((n,b)=>n+b.count,0),newRecords:added.length,
+  buyUsdt:round(buy,2),sellUsdt:round(sell,2),dominantShare:total?round(Math.max(buy,sell)/total,4):0,direction:buy>sell?'BUY':sell>buy?'SELL':null,priceChangeUsd:round(change,4),priceChangePct:first?round(change/first.firstPrice*100,5):null,
+  minimumObservedPrice:prices.length?Math.min(...prices):null,maximumObservedPrice:prices.length?Math.max(...prices):null,overlapsPreviousSample:overlap,samplingGapReset:reset,continuousCoverageVerified:false}};
+}
+function fastMaterialEvent(window,price,atr15,now=Date.now()){
+ const threshold=Math.max(12,price*.005,(Number(atr15)||0)*1.25),sameDirection=window.direction==='BUY'?window.priceChangeUsd>0:window.direction==='SELL'?window.priceChangeUsd<0:false;
+ const eligible=window.newRecords>0&&window.seconds>=30&&window.sampledRecords>=20&&(window.buyUsdt+window.sellUsdt)>=500000&&window.dominantShare>=.7&&sameDirection&&Math.abs(window.priceChangeUsd)>=threshold;
+ return {eligible,direction:window.direction,moveUsd:window.priceChangeUsd,movePct:window.priceChangePct,thresholdUsd:round(threshold,3),firstObservedAt:window.startAt,lastObservedAt:window.endAt,detectedAt:new Date(now).toISOString(),kind:'SAMPLED_EXECUTED_FLOW_AND_PRICE_CHANGE',standaloneEntryPermission:false};
+}
+async function fastSendPending(owner,state,event,now=Date.now()){
+ const old=state.pendingAlert;
+ if(old&&(now-Date.parse(old.createdAt)>120000||old.direction!==event.direction)){state.pendingAlert=null;state.lastAlertFailure='PENDING_EVENT_EXPIRED_OR_DIRECTION_CHANGED';}
+ const last=state.lastAcceptedByDirection?.[event.direction],inCooldown=last&&now-Date.parse(last)<1800000;
+ if(!event.eligible||inCooldown)return;
+ const pending=state.pendingAlert||{eventId:[event.direction,event.firstObservedAt].join(':'),direction:event.direction,createdAt:new Date(now).toISOString(),attempts:0,nextAttemptAt:0};
+ if(pending.nextAttemptAt>now)return;
+ state.pendingAlert=pending;await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
+ let result;try{result=await sendBark(owner.env,{title:'ETH（以太坊）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
+  body:'采样窗口价格变化 '+formatPrice(event.moveUsd)+' 美元（'+round(event.movePct,2)+'%），本次门槛 '+formatPrice(event.thresholdUsd)+' 美元。主动'+(event.direction==='BUY'?'买入':'卖出')+'占比 '+round(state.window.dominantShare*100,1)+'%。\n行情时间 '+chinaTime(event.lastObservedAt)+'；检测时间 '+chinaTime(now)+'。这是机会进展提醒，完整模型正在复核，尚非开仓许可。采样不等于全市场逐笔覆盖。',level:'timeSensitive'});}catch(e){result={sent:false,reason:String(e?.message||e)};}
+ pending.attempts++;
+ if(result.sent){state.lastAcceptedByDirection={...(state.lastAcceptedByDirection||{}),[event.direction]:new Date(now).toISOString()};state.lastAlert={eventId:pending.eventId,detectedAt:event.detectedAt,providerAcceptedAt:new Date().toISOString(),deliveryMeaning:'PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT',direction:event.direction};state.pendingAlert=null;}
+ else{pending.nextAttemptAt=now+Math.min(60000,10000*2**Math.min(pending.attempts-1,3));state.pendingAlert=pending;state.lastAlertFailure=result.reason||'PUSH_FAILED';}
+}
+async function fastModelReview(owner,reason){
+ if(owner.fastModelWork)return owner.fastModelWork;
+ const work=(async()=>{
+  const old=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{},now=Date.now();
+  if(old.status==='running'&&now-Date.parse(old.startedAt)<55000)return old;
+  const running={status:'running',reason,startedAt:new Date(now).toISOString(),lastCompletedAt:old.lastCompletedAt||null};await owner.ctx.storage.put(FAST_REVIEW_KEY,running);
+  try{
+   if(['MATERIAL_FLOW','NEW_CONFIRMED_BAR'].includes(reason))await loadDurableStructureRecords(owner.env,{force:true});
+   const result=await runScanner(owner.env,{forceDiscovery:true}),audit=result.observations?.opportunityAudit;
+   const completed={...running,status:result.status==='busy'?'coalesced':result.status==='error'||result.observations?.status==='error'?'failed':'completed',lastCompletedAt:new Date().toISOString(),
+    inspectedModels:audit?.models?.length||0,modelDataReady:audit?.models?.length===8&&audit.models.every(m=>m.state!=='DATA_BLOCKED'),preparedCount:audit?.preparedCount??null,swingPreparedCount:audit?.swingPreparedCount??null,
+    nextCondition:result.observations?.reason||result.reason||null,openNowAllowed:false};await owner.ctx.storage.put(FAST_REVIEW_KEY,completed);return completed;
+  }catch(e){const failed={...running,status:'failed',failedAt:new Date().toISOString(),lastError:String(e?.message||e).slice(0,180),openNowAllowed:false};await owner.ctx.storage.put(FAST_REVIEW_KEY,failed);return failed;}
+ })();owner.fastModelWork=work;try{return await work;}finally{owner.fastModelWork=null;}
+}
+async function runFastMonitorAlarm(owner){
+ if(owner.fastTickWork)return owner.fastTickWork;
+ const work=(async()=>{
+  if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED'};
+  const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
+  // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
+  if(state.lastTickAt&&now-state.lastTickAt<5000){if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);return compactFastMonitor(state);}
+  state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
+  state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
+  try{
+   const paths=orderflowPaths(),defs=[paths[0],paths[1],'/api/v5/market/books?instId=ETH-USDT-SWAP&sz=5'];
+   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0},i!==0)));
+   const input=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:rows[i].rows,error:rows[i].error||(!rows[i].rows?'MISSING_PUBLIC_FEED':null),fetchedAt:rows[i].storedAt}]));
+   const venue=normalizeLiquidityVenue('OKX',input);
+   if(venue.status!=='ok'||!venue.tradeFresh)throw Error(venue.reason||'FRESH_EXECUTED_TRADES_AND_BOOK_REQUIRED');
+   const last=venue.trades.at(-1),quote={status:'ok',source:'OKX_USDT_PERPETUAL',last:last.price,bid:venue.bids[0].price,ask:venue.asks[0].price,priceType:'LAST_TRADE_PLUS_REAL_BOOK',
+    exchangeTimestamp:new Date(Math.min(last.ts,venue.bookAt)).toISOString(),lastTradeTimestamp:new Date(last.ts).toISOString(),bookTimestamp:new Date(venue.bookAt).toISOString()};
+   if(!genuineExecutionQuote(quote,10))throw Error('FAST_QUOTE_EXPIRED');
+   const mid=(quote.bid+quote.ask)/2;if((quote.ask-quote.bid)/mid*10000>20||Math.abs(quote.last/mid-1)*10000>25)throw Error('FAST_EXECUTION_SPREAD_OR_TRADE_BOOK_MISMATCH');
+   const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,event=fastMaterialEvent(window.window,quote.last,model?.atr15);
+   state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.lastError=null;state.failureCount=0;
+   await fastSendPending(owner,state,event);
+   // Publish an accepted alert before the full review reads shared notification state.
+   await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
+   const expected=new Date(expectedLastClosedStart('15m')).toISOString(),review=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{};
+   const barDue=state.lastReviewedClosedBar!==expected,material=event.eligible&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
+   const observations=(await owner.ctx.storage.get(OBSERVATIONS_KEY))?.value?.records||[],plan=(await owner.ctx.storage.get(ACTIVE_PLAN_KEY))?.value;
+   const inResearch=observations.some(r=>!OBSERVATION_TERMINAL.includes(r.state)&&Date.parse(r.expiresAt)>now&&priceInsideEntryZone(quote.last,r.observationZone))
+    ||(plan?.status==='ARMED'&&Date.parse(plan.expiresAt)>now&&priceInsideEntryZone(quote.last,plan.entryZone));
+   const zoneDue=inResearch&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
+   const reviewRetry=review.startedAt&&now-Date.parse(review.startedAt)>=30000&&(review.status==='failed'||review.status==='coalesced'||review.modelDataReady===false||(review.status==='running'&&now-Date.parse(review.startedAt)>=55000));
+   if((barDue||material||zoneDue||reviewRetry)&&!owner.fastModelWork){state.lastReviewedClosedBar=expected;const reason=material?'MATERIAL_FLOW':barDue?'NEW_CONFIRMED_BAR':reviewRetry?'RECOVERY_RECHECK':'CURRENT_RESEARCH_ZONE';const task=fastModelReview(owner,reason);if(owner.ctx.waitUntil)owner.ctx.waitUntil(task);else await task;}
+  }catch(e){state.status='degraded';state.failureCount=(state.failureCount||0)+1;state.lastError=String(e?.message||e).slice(0,180);
+   if(state.failureCount>=3){state.nextAlarmAt=new Date(Date.now()+30000).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(Date.now()+30000);}
+  }finally{
+   while(state.trades?.length&&jsonUtf8Size(JSON.stringify(state))>90000)state.trades.shift();
+   await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
+   if(owner.publicRecords)await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
+  }
+  return compactFastMonitor(state,await owner.ctx.storage.get(FAST_REVIEW_KEY));
+ })();owner.fastTickWork=work;try{return await work;}finally{owner.fastTickWork=null;}
+}
+function compactProgressCandidate(c){
+ if(!c)return null;return Object.fromEntries(['submodel','direction','eventAt','breakoutAt','triggerAt','candleAt','entry','entryZone','stopLoss','target','netRR'].filter(k=>c[k]!==undefined).map(k=>[k,c[k]]));
+}
+async function processOpportunityProgress(env,record,evaluation,deadlineAt){
+ const c=evaluation.secondaryTechnicalCandidate;
+ if(!c||evaluation.state==='MARKET_CANDIDATE'||!evaluation.currentInZone||!evaluation.structureReady||deadlineAt-Date.now()<6000)return null;
+ const at=c.eventAt||c.breakoutAt||c.triggerAt||c.candleAt;
+ if(!Number.isFinite(Date.parse(at))||Date.parse(at)>Date.now()||c.direction!==record.direction||!Number.isFinite(c.netRR)||c.netRR<2||Date.parse(record.expiresAt)<=Date.now())return null;
+ const key=[record.submodel,record.direction,at].join(':'),book=await scannerStateGet(env,PROGRESS_ALERT_KEY)||{sent:[]};
+ if(book.sent.some(x=>x.key===key))return null;
+ const now=Date.now();book.pending=Object.fromEntries(Object.entries(book.pending||{}).filter(([,p])=>p.expiresAt>now));
+ const pending=book.pending[key]||{createdAt:now,expiresAt:Math.min(Date.parse(record.expiresAt),now+120000),attempts:0,nextAttemptAt:now};
+ if(pending.nextAttemptAt>now)return null;
+ let push;try{push=await sendBark(env,{title:'ETH（以太坊）'+record.submodel+' 入场结构已推进｜波段条件待复核',body:
+  (record.direction==='LONG'?'做多':'做空')+'；当前价 '+formatPrice(evaluation.price)+'。原模型触发和净盈亏比已出现技术候选，但波段主方案仍缺：'+String(evaluation.swingReview?.reason||'高周期及持仓成本复核')+'。\n此条不是开仓许可，也不是普通到区提醒。请复核当前价格、保护、目标和消息；不得按旧价追单。时间 '+chinaTime(Date.now()),level:'active'});}catch(e){push={sent:false,reason:String(e?.message||e)};}
+ if(push.sent){book.sent=[...book.sent,{key,at:new Date().toISOString()}].slice(-64);delete book.pending[key];}
+ else{pending.attempts++;pending.nextAttemptAt=now+Math.min(60000,10000*2**Math.min(pending.attempts-1,3));pending.reason=String(push.reason||'PUSH_FAILED').slice(0,180);book.pending[key]=pending;}
+ await scannerStatePut(env,PROGRESS_ALERT_KEY,book,7*86400);
+ return push;
 }
 
 function snapshotReadiness(assets) {
@@ -1293,6 +1424,10 @@ async function processDynamicAlert(env,context,previous,deadlineAt) {
   const observed=Date.parse(context?.observedAt),maxAge=context?.materialShock?20*60_000:120_000;
   if(!context?.alertEligible||!context.eventKey||!Number.isFinite(observed)||now-observed<0||now-observed>maxAge)
     return {...next,pending:null,qualifyingSince:null,qualifyingDirection:null,qualifyingLastAt:null,suppressedReason:context?.alertReason||"NO_FRESH_MATERIAL_CHANGE"};
+  try{const fast=await durableStateCall(env,{op:'fastMonitorStatus'}),direction=context.observedMovePct>0?'BUY':context.observedMovePct<0?'SELL':context.flowDirection;
+    if(fast.lastAlert?.direction===direction&&now-Date.parse(fast.lastAlert.providerAcceptedAt)>=0&&now-Date.parse(fast.lastAlert.providerAcceptedAt)<1800000)
+      return {...next,pending:null,suppressedReason:'FAST_CHANNEL_ALREADY_REPORTED_SAME_DIRECTION'};
+  }catch{} // Legacy alerts remain available if fast telemetry cannot be read.
   const direction=context.materialShock?"SHOCK":context.flowDirection;
   const same=old.qualifyingDirection===direction&&old.qualifyingLastAt>=now-120_000;
   const qualifyingSince=same?old.qualifyingSince:now;
@@ -1638,7 +1773,7 @@ function evaluateObservation(record, snapshot, verified) {
   if (structureOK && t && Date.parse(candle.ts) + 900_000 >= Date.parse(record.sourceAnalysisAt)
     && (long ? candle.c > t.level : candle.c < t.level)) triggerAt = candle.ts;
   if (inZone && structureOK && triggerAt) { state = "TRIGGER_MET"; reason = "REGISTERED_PRICE_CONDITION_ONLY_FULL_REVIEW_REQUIRED"; }
-  let swingReview=null;
+  let swingReview=null,secondaryTechnicalCandidate=null;
   if (inZone && structureOK) {
     candidate = record.seed?.kind==="ADAPTIVE"?adaptiveAssessment(record.seed,asset,snapshot.assets.BTCUSDT).candidate:["BREAKOUT", "PULLBACK"].includes(record.seed?.kind) ? opportunityAssessment(record.seed, asset, snapshot.assets.BTCUSDT).candidate
       : record.seed?.kind==="RANGE"?discoverRangeReversal(asset,snapshot.assets.BTCUSDT)
@@ -1646,7 +1781,7 @@ function evaluateObservation(record, snapshot, verified) {
     if(candidate&&!priceInsideEntryZone(verified.current.last,candidate.rrQualifiedEntryZone||candidate.entryZone))candidate=null;
     if (candidate && candidate.direction !== record.direction) candidate = null;
     if(candidate&&asset.holdingProfile?.mode==='SWING_FIRST'){
-      swingReview=assessSwingOpportunity(asset,{candidate});candidate=swingReview.candidate||null;
+      secondaryTechnicalCandidate=candidate;swingReview=assessSwingOpportunity(asset,{candidate});candidate=swingReview.candidate||null;
       if(!candidate)reason='SWING_PREFERENCE_'+swingReview.reason;
     }
     if (candidate) {
@@ -1662,7 +1797,7 @@ function evaluateObservation(record, snapshot, verified) {
   if (!inZone && (triggerAt || record.lastCandidateAt)) reason = "CONDITION_SEEN_BUT_CURRENT_PRICE_OUTSIDE_ZONE_NO_CHASING";
   if (!structureOK && inZone) reason = "ZONE_REACHED_STRUCTURE_DATA_PENDING";
   return { ...base, state, reason, price, currentInZone: inZone, distanceToZone: distance,
-    structureReady: Boolean(structureOK), triggerAt, progress, candidate,swingReview:swingReview?{...swingReview,candidate:undefined,pendingCandidate:undefined}:null,
+    structureReady: Boolean(structureOK), triggerAt, progress, candidate,secondaryTechnicalCandidate:compactProgressCandidate(secondaryTechnicalCandidate),swingReview:swingReview?{...swingReview,candidate:undefined,pendingCandidate:undefined}:null,
     missing: state === "MARKET_CANDIDATE" ? ["NEWS_MACRO_REVIEW"]
       : ["FULL_MODEL_REVIEW", "STRUCTURAL_STOP_AND_FIRST_TARGET_NET_RR", "NEWS_MACRO_REVIEW"] };
 }
@@ -1833,10 +1968,11 @@ async function updateForwardStudy(env,snapshot,selected) {
   return forwardStudySummary(book);
 }
 
-function scannerCycle(env) {
+function scannerCycle(env,options={}) {
   let snapshot;
   const prices = new Map();
   return {
+    forceDiscovery:options.forceDiscovery===true,
     deadlineAt: Date.now() + 45_000,
     getSnapshot() { return snapshot ||= buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); },
     getPrices(symbol) {
@@ -1856,7 +1992,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const old = state[DISCOVERY_STATE_KEY] || {};
   const enabled = String(env?.DISCOVERY_ENABLED ?? "true") !== "false";
   const previousRun=finite(old.lastRunAt,0);
-  const due = enabled && (now-previousRun>=DISCOVERY_INTERVAL_MS||Math.floor(now/DISCOVERY_INTERVAL_MS)>Math.floor(previousRun/DISCOVERY_INTERVAL_MS));
+  const due = enabled && (cycle.forceDiscovery===true||now-previousRun>=DISCOVERY_INTERVAL_MS||Math.floor(now/DISCOVERY_INTERVAL_MS)>Math.floor(previousRun/DISCOVERY_INTERVAL_MS));
   let records = state[OBSERVATIONS_KEY]?.records || [], full = null, reason = due ? "NO_NEW_AUTONOMOUS_CANDIDATE" : "DISCOVERY_INTERVAL_NOT_DUE";
   let discoveryError = null, added = 0, capacityReached = false;
   if (due) {
@@ -1916,6 +2052,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
     if(evaluation.state==="MARKET_CANDIDATE"&&record.observationId!==preferred)
       evaluation.notificationSuppressedReason="HIGHER_NET_RR_PREPARED_TRADE_SELECTED_THIS_CYCLE";
     const result = await processObservation(env, record, evaluation, cycle.deadlineAt);
+    const progressNotice=await processOpportunityProgress(env,record,evaluation,cycle.deadlineAt);if(progressNotice)notifications.push({observationId:record.observationId,kind:"OPPORTUNITY_PROGRESS",...progressNotice});
     evaluations.push({ observationId: record.observationId, submodel: record.submodel, state: evaluation.state, reason: evaluation.reason });
     if (result.notification) notifications.push({ observationId: record.observationId, ...result.notification });
   }
@@ -3667,9 +3804,9 @@ function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
     [c.open, c.high, c.low, c.close].every(Number.isFinite) && c.high >= Math.max(c.open, c.close) && c.low <= Math.min(c.open, c.close) && c.low > 0,
   );
 
-  const expectedLastClosedStart = Math.floor(Date.now() / tfConfig.intervalMs) * tfConfig.intervalMs - tfConfig.intervalMs;
+  const expectedClosedStart = expectedLastClosedStart(timeframe);
   const newestClosed = candles.filter(c => c.confirmed === true).at(-1);
-  if (!newestClosed || Date.parse(newestClosed.ts) < expectedLastClosedStart) reasons.push("latest_closed_candle_missing");
+  if (!newestClosed || Date.parse(newestClosed.ts) < expectedClosedStart) reasons.push("latest_closed_candle_missing");
   if (candles.some(c => !Number.isFinite(Date.parse(c.ts)) || Date.parse(c.ts) > Date.now())) reasons.push("invalid_or_future_timestamp");
   if (new Set(candles.map(c => c.ts)).size !== candles.length) reasons.push("duplicate_candle_timestamp");
   if (candles.length < 200) reasons.push(`candle_count_${candles.length}_below_200`);
@@ -3693,7 +3830,8 @@ function candleQuality(candles, referencePrice, timeframe, tfConfig, source) {
         ? "SPOT_EMERGENCY_CROSS_MARKET"
         : "USDT_PERPETUAL_CROSS_EXCHANGE",
     newestClosedCandleAt: newestClosed?.ts || null,
-    expectedLastClosedStart: new Date(expectedLastClosedStart).toISOString(),
+    expectedLastClosedStart: new Date(expectedClosedStart).toISOString(),
+    finalizationGraceSeconds:30,
     reasons,
   };
 }
@@ -4914,6 +5052,7 @@ function scannerConfiguration(env) {
     registeredObservationSubmodels: ["A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2"],
     observationLimit: OBSERVATION_LIMIT,
     observationPollingSeconds: 60,
+    fastMonitor:{enabled:fastMonitorConfigured(env),targetSamplingSeconds:10,targetActiveResearchRecheckSeconds:30,driver:"DURABLE_OBJECT_ALARM",continuousTape:false,fixedLatencyGuaranteed:false},
     atomicStateUpdates: Boolean(scannerStateStub(env)),
     executionAuthority: "NONE_FRESH_MARKET_AND_NEWS_REVIEW_REQUIRED",
     discovery: {
@@ -5802,8 +5941,8 @@ async function scanActivePlan(env, cycle = scannerCycle(env)) {
   };
 }
 
-async function runScannerUnlocked(env) {
-  const cycle = scannerCycle(env);
+async function runScannerUnlocked(env,options={}) {
+  const cycle = scannerCycle(env,options);
   let plan, observations;
   try { plan = await scanActivePlan(env, cycle); }
   catch (error) { plan = { status: "error", reason: String(error?.message || error) }; }
@@ -5813,7 +5952,7 @@ async function runScannerUnlocked(env) {
   return { ...plan, build: BUILD, observations, configuration: scannerConfiguration(env) };
 }
 
-async function runScanner(env) {
+async function runScanner(env,options={}) {
   const configuration = scannerConfiguration(env);
   if (!configuration.barkConfigured || !configuration.scannerTokenConfigured || !configuration.stateConfigured) {
     const result = { status: "configuration_error", build: BUILD, configuration };
@@ -5826,7 +5965,7 @@ async function runScanner(env) {
     const old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
     const startedAt = new Date(Date.now()).toISOString();
     await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, status: "running", lastAttemptAt: startedAt });
-    const result = await runScannerUnlocked(env);
+    const result = await runScannerUnlocked(env,options);
     const completedAt = new Date(Date.now()).toISOString();
     const degraded = result.status === "error" || result.observations?.status === "error"
       || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
@@ -5874,28 +6013,31 @@ function boundedScannerStatus(result) {
 
 async function scannerStatus(env) {
   try {
-    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY]);
+    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY]);
     const stored=state[OBSERVATIONS_KEY], malformed=Boolean(stored)&&(!Array.isArray(stored.records)||stored.records.some(r=>!r||typeof r!=="object"||Array.isArray(r)));
     const records=Array.isArray(stored?.records)?stored.records.filter(r=>r&&typeof r==="object"&&!Array.isArray(r)):[];
     const heartbeat=compactStatusValue(state[SCANNER_HEARTBEAT_KEY]||null);
+    let fastMonitor;try{fastMonitor=await durableStateCall(env,{op:"fastMonitorStatus"});}catch{fastMonitor={status:"STATUS_UNAVAILABLE"};}
     const rawAge=heartbeat?.lastCompletedAt?(Date.now()-Date.parse(heartbeat.lastCompletedAt))/1000:null;
     const age=Number.isFinite(rawAge)?rawAge:null;
     const result={status:malformed?"degraded":"ok",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
       activePlan:compactStatusValue(state[ACTIVE_PLAN_KEY]||null),runtime:compactStatusValue(state[SCANNER_RUNTIME_KEY]||null),
       observations:records.filter(r=>!OBSERVATION_TERMINAL.includes(r.state)).slice(0,OBSERVATION_LIMIT).map(r=>compactStatusValue(scannerStatusRecord(r))),
       observationHistory:records.filter(r=>OBSERVATION_TERMINAL.includes(r.state)).slice(-12).map(r=>compactStatusValue(scannerStatusRecord(r))),
-      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,
+      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,fastMonitor,
       diagnostics:{stateReadSucceeded:true,stateFormatIssue:malformed?"OBSERVATION_RECORDS_NOT_ARRAY":null,completedCycleAgeSeconds:age,
         heartbeatHealthy:!malformed&&age!==null&&age>=0&&age<=180&&heartbeat.status==="completed",
         pendingObservationPushes:records.reduce((n,r)=>n+Object.values(r.alerts||{}).filter(a=>a?.status==="PENDING").length,0),
         pendingNewsPushes:state[DISCOVERY_STATE_KEY]?.newsAlert?.pending?1:0,
         pendingDynamicPushes:state[DISCOVERY_STATE_KEY]?.dynamicAlert?.pending?1:0,
         pendingPlanPushes:state[SCANNER_RUNTIME_KEY]?.lastAttemptAt&&state[SCANNER_RUNTIME_KEY]?.notification?.sent===false?1:0,
+        pendingFastPushes:fastMonitor?.pendingAlert?1:0,
+        pendingProgressPushes:Object.values(state[PROGRESS_ALERT_KEY]?.pending||{}).filter(p=>p.expiresAt>Date.now()).length,
         newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
           parserAudit:state[DISCOVERY_STATE_KEY]?.newsStatus?.parserAudit||null,coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
-        configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true},
+        configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true,fastSamplingHealthy:fastMonitor?.samplingHealthy===true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
-    result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes;
+    result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes+result.diagnostics.pendingFastPushes+result.diagnostics.pendingProgressPushes;
     if(JSON.stringify(result).length>65000){result.observationHistory=[];result.failureHistory=[];result.diagnostics.historyOmittedForResponseBudget=true;}
     return boundedScannerStatus(result);
   }catch(error){return {status:"degraded",build:BUILD,apiVersion:API_VERSION,configuration:scannerConfiguration(env),
@@ -6059,9 +6201,9 @@ function openApi(origin) {
         get: {
           operationId: "getCryptoAlphaData",
           summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Live ETH/BTC perpetual data and eight entry models. market supports recheck=true; liquidity performs fresh multi-venue pre-entry pricing. Swing assessments are separate from intraday research. News is timestamped. Private scanner records require Bearer authentication.",
+          description: "Live ETH/BTC data, eight entry models and swing assessments. market supports recheck=true; liquidity rechecks multi-venue entry pricing; fast reports actual background sampling and review freshness. News is timestamped. Private scanner records require Bearer authentication.",
           security: [],
-          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","news","diagnostics","scanner-status"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; news: feeds/calendar; diagnostics: connectivity; scanner-status: private Bearer."}],
+          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","fast","news","diagnostics","scanner-status"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; fast: compact actual sampling/review telemetry; news: feeds/calendar; diagnostics: connectivity; scanner-status: private Bearer."}],
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -6360,6 +6502,7 @@ async function handleSnapshot(request, env, ctx) {
 }
 
 async function buildManualResponse(request, env, ctx) {
+  if(fastMonitorConfigured(env)){const warm=durableStateCall(env,{op:"fastMonitorEnsure"}).catch(()=>{});if(ctx?.waitUntil)ctx.waitUntil(warm);else await warm;}
   const forceRecheck=new URL(request.url).searchParams.get("recheck")==="true";
   const cache = globalThis.caches?.default;
   const cacheKey = new Request(`https://crypto-alpha-cache.invalid/${CACHE_NAMESPACE}/realtime`);
@@ -6439,10 +6582,16 @@ export class ScannerState {
     this.env = env;
   }
 
+  async alarm() {
+    await runFastMonitorAlarm(this);
+  }
+
   async fetch(request) {
     if (request.method !== "POST") return Response.json({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
     let input;
     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
+    if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
+    if(input?.op==="fastMonitorStatus")return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),await this.ctx.storage.get(FAST_REVIEW_KEY)));
     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
     if(input?.op==="newsSnapshot"){try{return Response.json(await cachedNewsContext(this));}catch{return Response.json({error:"NEWS_CACHE_READ_FAILED"},{status:503});}}
     if(input?.op==="newsContext"){try{return Response.json(await coordinatedNewsContext(this));}catch{return Response.json(newsContextSummary({JIN10:{status:"unavailable",reason:"NEWS_COORDINATOR_FAILED"}}));}}
@@ -6576,6 +6725,7 @@ export default {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const origin = url.origin;
 
+    if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="fast"){try{return json({build:BUILD,apiVersion:API_VERSION,fastMonitor:await durableStateCall(env,{op:"fastMonitorStatus"})},200,{"cache-control":"no-store"});}catch{return json({build:BUILD,apiVersion:API_VERSION,fastMonitor:{status:"STATUS_UNAVAILABLE"}},503);}}
     if(request.method==="GET"&&path==="/"&&url.searchParams.get("view")==="liquidity"){
       try{return json(await durableStateCall(env,{op:"liquidityRecheck"}),200,{"cache-control":"no-store"});}catch{return json({build:BUILD,apiVersion:API_VERSION,status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",openNowAllowed:false},503,{"cache-control":"no-store"});}
     }
@@ -6631,6 +6781,7 @@ export default {
       // Keep the shared structure baseline warm independently of whether a
       // user plan is armed. Due series alone are refreshed; most cron ticks
       // perform zero candle downloads for 1H/4H.
+      if(fastMonitorConfigured(env))await durableStateCall(env,{op:"fastMonitorEnsure"}).catch(()=>{});
       await loadDurableStructureRecords(env).catch((error) => console.error("structure prewarm failed", error));
       return runScanner(env);
     })().catch((error) => console.error("scheduled scanner failed", error));
