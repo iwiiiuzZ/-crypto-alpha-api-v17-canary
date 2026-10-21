@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.0-fast-monitor-boundary-fix";
+const BUILD = "crypto-alpha-worker-v27.6.1-shared-monitor-recovery";
 const API_VERSION = "7.6.0";
 const KRAKEN_FUTURES_BASE = "https://futures.kraken.com";
 const KRAKEN_SPOT_BASE = "https://api.kraken.com";
@@ -87,7 +87,7 @@ function publicMarketDefinitions() {
 async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   owner.publicReady ||= (async()=>{
     const saved = await owner.ctx.storage.get(PUBLIC_MARKET_STATE_KEY);
-    owner.publicRecords = {entries:saved?.entries&&typeof saved.entries==="object"?saved.entries:{},cooldowns:saved?.cooldowns&&typeof saved.cooldowns==="object"?saved.cooldowns:{}};
+    owner.publicRecords = {entries:saved?.entries&&typeof saved.entries==="object"?saved.entries:{},cooldowns:saved?.cooldowns&&typeof saved.cooldowns==="object"?saved.cooldowns:{},cooldownDiagnostics:saved?.cooldownDiagnostics||{}};
     owner.publicInflight = new Map();
   })();
   try {await owner.publicReady;} catch(error) {owner.publicReady=null;throw error;}
@@ -109,10 +109,22 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
       const item={rows:filtered,storedAt:Date.now(),state:"live",endpoint:path,error:null};
       state.entries[path]=item;return item;
     } catch(e) {
-      if(e?.status===429)state.cooldowns[family]=Date.now()+Math.max(30,finite(e.retryAfterSeconds,30))*1000;
+      const localCooldown=e?.localCooldown===true||e?.message==='UPSTREAM_RATE_LIMIT_COOLDOWN';
+      if(e?.status===429){
+        // Reading an open circuit is not a new upstream rejection. Never slide its deadline.
+        const until=localCooldown?Math.max(finite(e.retryAt,0),finite(state.cooldowns[family],0),finite(upstreamCooldowns.get(family),0))
+          :Math.max(finite(state.cooldowns[family],0),finite(upstreamCooldowns.get(family),0),Date.now()+Math.max(30,finite(e.retryAfterSeconds,30))*1000);
+        if(until>0)state.cooldowns[family]=until;
+        state.cooldownDiagnostics||={};const prior=state.cooldownDiagnostics[family]||{};
+        state.cooldownDiagnostics[family]={...prior,httpStatus:429,retryAt:until||null,
+          upstreamFailedAt:localCooldown?prior.upstreamFailedAt||null:new Date().toISOString(),
+          originalError:localCooldown?prior.originalError||null:String(e.message||e).slice(0,180),
+          upstreamFailures:(prior.upstreamFailures||0)+(localCooldown?0:1),cooldownSkips:(prior.cooldownSkips||0)+(localCooldown?1:0)};
+      }
       const message=String(e?.message||e);
-      if(old && age>=0 && age<=policy.staleSeconds)return {...old,state:"stale-on-error",error:message};
-      return {rows:null,storedAt:null,state:"unavailable",endpoint:path,error:message};
+      const diagnostics={httpStatus:e?.status||null,localCooldown,retryAt:state.cooldowns[family]?new Date(state.cooldowns[family]).toISOString():null,upstreamFailedAt:state.cooldownDiagnostics?.[family]?.upstreamFailedAt||null};
+      if(old && age>=0 && age<=policy.staleSeconds)return {...old,state:"stale-on-error",error:message,...diagnostics};
+      return {rows:null,storedAt:null,state:"unavailable",endpoint:path,error:message,...diagnostics};
     }
   })();
   owner.publicInflight.set(path,work);
@@ -539,6 +551,8 @@ function compactSwingAssessment(review){
 // V27.6: persistent sampled market monitor. No account access or automatic orders.
 const FAST_MONITOR_KEY='scanner:fast-market:v1';
 const FAST_REVIEW_KEY='scanner:fast-review:v1';
+const SCANNER_REVIEW_REQUEST_KEY='scanner:review-request:v2761';
+const SCANNER_CYCLE_RESULT_KEY='scanner:last-cycle-result:v2761';
 const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
 const FAST_INTERVAL_MS=10000;
 function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
@@ -550,12 +564,13 @@ async function ensureFastMonitor(owner){
  return {status:'SCHEDULED',scheduled:true,nextAlarmAt:new Date(due&&due>=Date.now()-30000?due:Date.now()+1000).toISOString(),targetCadenceSeconds:10,fixedLatencyGuaranteed:false};
 }
 function compactFastMonitor(state,review=null,now=Date.now()){
- if(!state)return {status:'NOT_STARTED',targetCadenceSeconds:10,fixedLatencyGuaranteed:false};
+ if(!state)return {status:'NOT_STARTED',targetCadenceSeconds:10,fullReview:review||null,fixedLatencyGuaranteed:false};
  const age=(now-Date.parse(state.lastSuccessAt))/1000;
  return {status:state.status,lastAttemptAt:state.lastAttemptAt||null,lastSuccessAt:state.lastSuccessAt||null,dataAgeSeconds:Number.isFinite(age)?round(age,3):null,
   samplingHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,targetCadenceSeconds:10,actualLastGapSeconds:state.actualLastGapSeconds??null,nextAlarmAt:state.nextAlarmAt||null,
-  executionQuote:state.executionQuote||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
-  lastError:state.lastError||null,lastAlertFailure:state.lastAlertFailure||null,failureCount:state.failureCount||0,fullReview:review?{...review}:null,partialSampledTape:true,continuousCoverageVerified:false,fixedLatencyGuaranteed:false,phoneReceiptVerified:false,openNowAllowed:false};
+  executionQuote:state.executionQuote||null,quoteHealthy:genuineExecutionQuote(state.executionQuote,10),quoteLastSuccessAt:state.quoteLastSuccessAt||null,flowHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,
+  flowRetryAt:state.nextFlowAttemptAt?new Date(state.nextFlowAttemptAt).toISOString():null,feedDiagnostics:state.feedDiagnostics||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
+  lastError:state.lastError||null,lastAlertFailure:state.lastAlertFailure||null,failureCount:state.failureCount||0,reviewSchedulingError:state.reviewSchedulingError||null,fullReview:review?{...review}:null,partialSampledTape:true,continuousCoverageVerified:false,fixedLatencyGuaranteed:false,phoneReceiptVerified:false,openNowAllowed:false};
 }
 function fastWindowFromTrades(previous,venue,now=Date.now()){
  const priorAt=Date.parse(previous?.lastSuccessAt)||previous?.buckets?.at(-1)?.lastAt,reset=Number.isFinite(priorAt)&&now-priorAt>25000;
@@ -584,25 +599,89 @@ async function fastSendPending(owner,state,event,now=Date.now()){
  if(pending.nextAttemptAt>now)return;
  state.pendingAlert=pending;await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
  let result;try{result=await sendBark(owner.env,{title:'ETH（以太坊）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
-  body:'采样窗口价格变化 '+formatPrice(event.moveUsd)+' 美元（'+round(event.movePct,2)+'%），本次门槛 '+formatPrice(event.thresholdUsd)+' 美元。主动'+(event.direction==='BUY'?'买入':'卖出')+'占比 '+round(state.window.dominantShare*100,1)+'%。\n行情时间 '+chinaTime(event.lastObservedAt)+'；检测时间 '+chinaTime(now)+'。这是机会进展提醒，完整模型正在复核，尚非开仓许可。采样不等于全市场逐笔覆盖。',level:'timeSensitive'});}catch(e){result={sent:false,reason:String(e?.message||e)};}
+  body:'采样窗口价格变化 '+formatPrice(event.moveUsd)+' 美元（'+round(event.movePct,2)+'%），本次门槛 '+formatPrice(event.thresholdUsd)+' 美元。主动'+(event.direction==='BUY'?'买入':'卖出')+'占比 '+round(state.window.dominantShare*100,1)+'%。\n行情时间 '+chinaTime(event.lastObservedAt)+'；检测时间 '+chinaTime(now)+'。这是机会进展提醒，完整模型正在复核，尚非开仓许可。采样不等于全市场逐笔覆盖。',level:'timeSensitive'},{kind:'FAST_FLOW',eventId:pending.eventId,stage:'MATERIAL_EXECUTED_FLOW'});}catch(e){result={sent:false,reason:String(e?.message||e)};}
  pending.attempts++;
  if(result.sent){state.lastAcceptedByDirection={...(state.lastAcceptedByDirection||{}),[event.direction]:new Date(now).toISOString()};state.lastAlert={eventId:pending.eventId,detectedAt:event.detectedAt,providerAcceptedAt:new Date().toISOString(),deliveryMeaning:'PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT',direction:event.direction};state.pendingAlert=null;}
  else{pending.nextAttemptAt=now+Math.min(60000,10000*2**Math.min(pending.attempts-1,3));state.pendingAlert=pending;state.lastAlertFailure=result.reason||'PUSH_FAILED';}
 }
+function fastLocalEnvironment(owner){
+ // Same object and original state operations, without billable self-HTTP or a second scheduler.
+ return owner.fastLocalEnv||=( {...owner.env,SCANNER_STATE:{getByName(){return {fetch:(url,init)=>owner.fetch(new Request(url,init))};}}} );
+}
+function scannerCycleReceipt(result,startedAt,completedAt,requestId=null){
+ const audit=result.observations?.opportunityAudit,models=audit?.models||[],complete=models.length===8;
+ const dataReady=complete&&models.every(m=>m.state!=='DATA_BLOCKED')&&!result.observations?.discoveryError&&!result.observations?.priceError;
+ return {status:complete?(dataReady?'completed':'data_blocked'):'failed',source:'SHARED_SCANNER',requestId,startedAt,checkedAt:audit?.checkedAt||null,completedAt,
+  inspectedModels:models.length,modelDataReady:Boolean(dataReady),closedBarAt:audit?.closedBarAt||null,preparedCount:audit?.preparedCount??null,swingPreparedCount:audit?.swingPreparedCount??null,
+  nextCondition:result.observations?.reason||result.reason||null,lastError:result.observations?.discoveryError||result.observations?.priceError||result.observations?.status==='error'&&result.observations.reason||null,openNowAllowed:false};
+}
+async function queueFastModelReview(owner,reason){
+ const env=fastLocalEnvironment(owner),now=Date.now();
+ for(let i=0;i<4;i++){
+  const old=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
+  if(old&&['PENDING','RUNNING'].includes(old.status)&&Date.parse(old.expiresAt)>now)return old;
+  const request={requestId:crypto.randomUUID(),status:'PENDING',reason,requestedAt:new Date(now).toISOString(),expiresAt:new Date(now+5*60000).toISOString(),
+   forceStructureRefresh:['MATERIAL_FLOW','NEW_CONFIRMED_BAR','RECOVERY_RECHECK'].includes(reason),nextAttemptAt:now};
+  if(await scannerCompareAndPut(env,{[SCANNER_REVIEW_REQUEST_KEY]:old},{[SCANNER_REVIEW_REQUEST_KEY]:request},3600))return request;
+ }
+ throw Error('REVIEW_REQUEST_CONFLICT_RETRY');
+}
+async function syncFastModelReview(owner){
+ const review=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{},receipt=(await owner.ctx.storage.get(SCANNER_CYCLE_RESULT_KEY))?.value,request=(await owner.ctx.storage.get(SCANNER_REVIEW_REQUEST_KEY))?.value;
+ if(!receipt)return review.status==='coalesced'&&review.inspectedModels===0?{...review,lastCompletedAt:null}:review;
+ const pending=request&&['PENDING','RUNNING'].includes(request.status)&&Date.parse(request.expiresAt)>Date.now();
+ const linked=receipt.requestId&&receipt.requestId===request?.requestId;
+ const actual={...receipt,lastCompletedAt:receipt.inspectedModels===8?receipt.completedAt:review.lastCompletedAt||null};
+ let next;
+ if(linked&&!pending)next={...review,...actual,reason:request.reason,requestId:request.requestId,requestedAt:request.requestedAt,awaitingReview:false};
+ else if(pending)next={...review,status:'pending',requestId:request.requestId,requestedAt:request.requestedAt,reason:request.reason,awaitingReview:true,inspectedModels:null,modelDataReady:false,
+   nextCondition:'WAIT_FOR_SHARED_SCANNER_RESULT',lastCompletedReview:actual,lastCompletedAt:review.lastCompletedAt||null};
+ else next={...review,lastSharedCycle:actual};
+ if(JSON.stringify(next)!==JSON.stringify(review))await owner.ctx.storage.put(FAST_REVIEW_KEY,next);
+ return next;
+}
 async function fastModelReview(owner,reason){
  if(owner.fastModelWork)return owner.fastModelWork;
  const work=(async()=>{
-  const old=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{},now=Date.now();
-  if(old.status==='running'&&now-Date.parse(old.startedAt)<55000)return old;
-  const running={status:'running',reason,startedAt:new Date(now).toISOString(),lastCompletedAt:old.lastCompletedAt||null};await owner.ctx.storage.put(FAST_REVIEW_KEY,running);
+  const old=await syncFastModelReview(owner),now=Date.now(),request=await queueFastModelReview(owner,reason);
+  const pending={...old,status:'pending',reason:request.reason,requestId:request.requestId,requestedAt:request.requestedAt,startedAt:new Date(now).toISOString(),awaitingReview:true,inspectedModels:null,modelDataReady:false,preparedCount:null,swingPreparedCount:null,openNowAllowed:false};
+  await owner.ctx.storage.put(FAST_REVIEW_KEY,pending);
+  if(finite(request.nextAttemptAt,0)>now)return {...pending,retryAt:new Date(request.nextAttemptAt).toISOString()};
   try{
-   if(['MATERIAL_FLOW','NEW_CONFIRMED_BAR'].includes(reason))await loadDurableStructureRecords(owner.env,{force:true});
-   const result=await runScanner(owner.env,{forceDiscovery:true}),audit=result.observations?.opportunityAudit;
-   const completed={...running,status:result.status==='busy'?'coalesced':result.status==='error'||result.observations?.status==='error'?'failed':'completed',lastCompletedAt:new Date().toISOString(),
-    inspectedModels:audit?.models?.length||0,modelDataReady:audit?.models?.length===8&&audit.models.every(m=>m.state!=='DATA_BLOCKED'),preparedCount:audit?.preparedCount??null,swingPreparedCount:audit?.swingPreparedCount??null,
-    nextCondition:result.observations?.reason||result.reason||null,openNowAllowed:false};await owner.ctx.storage.put(FAST_REVIEW_KEY,completed);return completed;
-  }catch(e){const failed={...running,status:'failed',failedAt:new Date().toISOString(),lastError:String(e?.message||e).slice(0,180),openNowAllowed:false};await owner.ctx.storage.put(FAST_REVIEW_KEY,failed);return failed;}
+   const result=await runScanner(fastLocalEnvironment(owner),{forceDiscovery:true});
+   // A busy lease keeps the request queued. The lease owner publishes the real eight-model result.
+   if(result.status==='busy'){const next={...pending,nextCondition:result.reason,retryAt:new Date(Date.now()+10000).toISOString()};await owner.ctx.storage.put(FAST_REVIEW_KEY,next);return next;}
+   const synced=await syncFastModelReview(owner);
+   if(synced.requestId===request.requestId&&synced.awaitingReview===false)return synced;
+   return synced;
+  }catch(e){const failed={...pending,status:'failed',failedAt:new Date().toISOString(),lastError:String(e?.message||e).slice(0,180),retryAt:new Date(Date.now()+30000).toISOString()};await owner.ctx.storage.put(FAST_REVIEW_KEY,failed);return failed;}
  })();owner.fastModelWork=work;try{return await work;}finally{owner.fastModelWork=null;}
+}
+async function maintainFastModelReview(owner,state,now=Date.now()){
+ const review=await syncFastModelReview(owner),expected=new Date(expectedLastClosedStart('15m')).toISOString(),pending=(await owner.ctx.storage.get(SCANNER_REVIEW_REQUEST_KEY))?.value;
+ const outstanding=pending&&['PENDING','RUNNING'].includes(pending.status)&&Date.parse(pending.expiresAt)>now;
+ const due=outstanding&&finite(pending.nextAttemptAt,0)<=now&&(!review.retryAt||Date.parse(review.retryAt)<=now)&&(!review.startedAt||now-Date.parse(review.startedAt)>=10000);
+ const freshQuote=genuineExecutionQuote(state.executionQuote,10),freshFlow=state.status==='ok'&&now-Date.parse(state.materialEvent?.detectedAt)<15000;
+ const barDue=state.lastReviewedClosedBar!==expected,material=freshFlow&&state.materialEvent?.eligible&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
+ const records=(await owner.ctx.storage.get(OBSERVATIONS_KEY))?.value?.records||[],plan=(await owner.ctx.storage.get(ACTIVE_PLAN_KEY))?.value;
+ const zone=freshQuote&&(records.some(r=>!OBSERVATION_TERMINAL.includes(r.state)&&Date.parse(r.expiresAt)>now&&priceInsideEntryZone(state.executionQuote.last,r.observationZone))
+   ||plan?.status==='ARMED'&&Date.parse(plan.expiresAt)>now&&priceInsideEntryZone(state.executionQuote.last,plan.entryZone));
+ const zoneDue=zone&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
+ const recovery=!outstanding&&review.startedAt&&now-Date.parse(review.startedAt)>=30000&&['failed','data_blocked','coalesced','running','pending'].includes(review.status);
+ if(!owner.fastModelWork&&(due||barDue||material||zoneDue||recovery)){
+  state.lastReviewedClosedBar=expected;const reason=material?'MATERIAL_FLOW':barDue?'NEW_CONFIRMED_BAR':due||recovery?'RECOVERY_RECHECK':'CURRENT_RESEARCH_ZONE';
+  const task=fastModelReview(owner,reason);if(owner.ctx.waitUntil)owner.ctx.waitUntil(task);else await task;
+ }
+}
+async function refreshFastQuoteDuringFlowFailure(owner,state){
+ // Independent, normally rate-limited quote service; never bypass a depth/trade circuit.
+ const item=await coordinatedPublicEndpoint(owner,'/api/v5/market/ticker?instId=ETH-USDT-SWAP',{freshSeconds:4,staleSeconds:0},false);
+ const row=item.rows?.find(r=>r.instId==='ETH-USDT-SWAP');if(item.error||!tickerRowValid(row,10))return false;
+ const q={status:'ok',source:'OKX_USDT_PERPETUAL',last:Number(row.last),bid:Number(row.bidPx),ask:Number(row.askPx),exchangeTimestamp:new Date(Number(row.ts)).toISOString(),
+   priceType:'LAST_TICKER_WITH_BBO',timestampMeaning:'TICKER_GENERATION_NOT_INDEPENDENT_TRADE_TIMESTAMP',primaryEndpoint:item.endpoint};
+ if(!genuineExecutionQuote(q,10))return false;
+ const mid=(q.bid+q.ask)/2;if((q.ask-q.bid)/mid*10000>20||Math.abs(q.last/mid-1)*10000>25)return false;
+ state.executionQuote=q;state.quoteLastSuccessAt=new Date().toISOString();return true;
 }
 async function runFastMonitorAlarm(owner){
  if(owner.fastTickWork)return owner.fastTickWork;
@@ -614,8 +693,11 @@ async function runFastMonitorAlarm(owner){
   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
   state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
   try{
-   const paths=orderflowPaths(),defs=[paths[0],paths[1],'/api/v5/market/books?instId=ETH-USDT-SWAP&sz=5'];
-   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0},i!==0)));
+   if(state.nextFlowAttemptAt>now)throw Error('FLOW_RETRY_SCHEDULED');
+   // Manual analysis, entry recheck and fast monitoring share the canonical feeds.
+   const defs=orderflowPaths();
+   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0},false)));
+   state.feedDiagnostics=rows.map((r,i)=>({path:defs[i],state:r.state,error:r.error||null,httpStatus:r.httpStatus||null,localCooldown:r.localCooldown||false,retryAt:r.retryAt||null,upstreamFailedAt:r.upstreamFailedAt||null}));
    const input=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:rows[i].rows,error:rows[i].error||(!rows[i].rows?'MISSING_PUBLIC_FEED':null),fetchedAt:rows[i].storedAt}]));
    const venue=normalizeLiquidityVenue('OKX',input);
    if(venue.status!=='ok'||!venue.tradeFresh)throw Error(venue.reason||'FRESH_EXECUTED_TRADES_AND_BOOK_REQUIRED');
@@ -624,21 +706,17 @@ async function runFastMonitorAlarm(owner){
    if(!genuineExecutionQuote(quote,10))throw Error('FAST_QUOTE_EXPIRED');
    const mid=(quote.bid+quote.ask)/2;if((quote.ask-quote.bid)/mid*10000>20||Math.abs(quote.last/mid-1)*10000>25)throw Error('FAST_EXECUTION_SPREAD_OR_TRADE_BOOK_MISMATCH');
    const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,event=fastMaterialEvent(window.window,quote.last,model?.atr15);
-   state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.lastError=null;state.failureCount=0;
+   state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.quoteLastSuccessAt=state.lastSuccessAt;state.nextFlowAttemptAt=0;state.lastError=null;state.failureCount=0;
    await fastSendPending(owner,state,event);
    // Publish an accepted alert before the full review reads shared notification state.
    await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
-   const expected=new Date(expectedLastClosedStart('15m')).toISOString(),review=await owner.ctx.storage.get(FAST_REVIEW_KEY)||{};
-   const barDue=state.lastReviewedClosedBar!==expected,material=event.eligible&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
-   const observations=(await owner.ctx.storage.get(OBSERVATIONS_KEY))?.value?.records||[],plan=(await owner.ctx.storage.get(ACTIVE_PLAN_KEY))?.value;
-   const inResearch=observations.some(r=>!OBSERVATION_TERMINAL.includes(r.state)&&Date.parse(r.expiresAt)>now&&priceInsideEntryZone(quote.last,r.observationZone))
-    ||(plan?.status==='ARMED'&&Date.parse(plan.expiresAt)>now&&priceInsideEntryZone(quote.last,plan.entryZone));
-   const zoneDue=inResearch&&(!review.startedAt||now-Date.parse(review.startedAt)>=30000);
-   const reviewRetry=review.startedAt&&now-Date.parse(review.startedAt)>=30000&&(review.status==='failed'||review.status==='coalesced'||review.modelDataReady===false||(review.status==='running'&&now-Date.parse(review.startedAt)>=55000));
-   if((barDue||material||zoneDue||reviewRetry)&&!owner.fastModelWork){state.lastReviewedClosedBar=expected;const reason=material?'MATERIAL_FLOW':barDue?'NEW_CONFIRMED_BAR':reviewRetry?'RECOVERY_RECHECK':'CURRENT_RESEARCH_ZONE';const task=fastModelReview(owner,reason);if(owner.ctx.waitUntil)owner.ctx.waitUntil(task);else await task;}
-  }catch(e){state.status='degraded';state.failureCount=(state.failureCount||0)+1;state.lastError=String(e?.message||e).slice(0,180);
-   if(state.failureCount>=3){state.nextAlarmAt=new Date(Date.now()+30000).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(Date.now()+30000);}
+  }catch(e){state.status='degraded';state.failureCount=(state.failureCount||0)+1;if(e?.message!=='FLOW_RETRY_SCHEDULED')state.lastError=String(e?.message||e).slice(0,180);
+   const feedDeadline=Math.max(0,...(state.feedDiagnostics||[]).map(r=>Date.parse(r.retryAt)||0));
+   if(e?.message!=='FLOW_RETRY_SCHEDULED')state.nextFlowAttemptAt=feedDeadline>Date.now()?feedDeadline:state.failureCount>=3?Date.now()+30000:0;
+   try{if(await refreshFastQuoteDuringFlowFailure(owner,state))state.status='partial';}catch{}
   }finally{
+   // Review requests are independent of flow collection. A book cooldown must not freeze model work.
+   try{await maintainFastModelReview(owner,state);}catch(e){state.reviewSchedulingError=String(e?.message||e).slice(0,180);}
    while(state.trades?.length&&jsonUtf8Size(JSON.stringify(state))>90000)state.trades.shift();
    await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
    if(owner.publicRecords)await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
@@ -660,7 +738,7 @@ async function processOpportunityProgress(env,record,evaluation,deadlineAt){
  const pending=book.pending[key]||{createdAt:now,expiresAt:Math.min(Date.parse(record.expiresAt),now+120000),attempts:0,nextAttemptAt:now};
  if(pending.nextAttemptAt>now)return null;
  let push;try{push=await sendBark(env,{title:'ETH（以太坊）'+record.submodel+' 入场结构已推进｜波段条件待复核',body:
-  (record.direction==='LONG'?'做多':'做空')+'；当前价 '+formatPrice(evaluation.price)+'。原模型触发和净盈亏比已出现技术候选，但波段主方案仍缺：'+String(evaluation.swingReview?.reason||'高周期及持仓成本复核')+'。\n此条不是开仓许可，也不是普通到区提醒。请复核当前价格、保护、目标和消息；不得按旧价追单。时间 '+chinaTime(Date.now()),level:'active'});}catch(e){push={sent:false,reason:String(e?.message||e)};}
+  (record.direction==='LONG'?'做多':'做空')+'；当前价 '+formatPrice(evaluation.price)+'。原模型触发和净盈亏比已出现技术候选，但波段主方案仍缺：'+String(evaluation.swingReview?.reason||'高周期及持仓成本复核')+'。\n此条不是开仓许可，也不是普通到区提醒。请复核当前价格、保护、目标和消息；不得按旧价追单。时间 '+chinaTime(Date.now()),level:'active'},{kind:'OPPORTUNITY_PROGRESS',eventId:key,stage:'TECHNICAL_PROGRESS'});}catch(e){push={sent:false,reason:String(e?.message||e)};}
  if(push.sent){book.sent=[...book.sent,{key,at:new Date().toISOString()}].slice(-64);delete book.pending[key];}
  else{pending.attempts++;pending.nextAttemptAt=now+Math.min(60000,10000*2**Math.min(pending.attempts-1,3));pending.reason=String(push.reason||'PUSH_FAILED').slice(0,180);book.pending[key]=pending;}
  await scannerStatePut(env,PROGRESS_ALERT_KEY,book,7*86400);
@@ -689,7 +767,11 @@ function scannerStatusRecord(r) {
   return {observationId:r.observationId,revision:r.revision,state:r.state,origin:r.origin,symbol:r.symbol,direction:r.direction,
     model:r.model,submodel:r.submodel,observationZone:r.observationZone,observationInvalidation:r.observationInvalidation,
     observationTrigger:r.observationTrigger,pendingCondition:r.pendingCondition,sourceAnalysisAt:r.sourceAnalysisAt,expiresAt:r.expiresAt,
-    checkedAt:r.checkedAt,reason:r.reason,price:r.price,alerts:r.alerts||{},lastCandidateAt:r.lastCandidateAt,notificationMode:r.notificationMode||"ACTIONABLE_ONLY",preparedTrade:candidateCard(r.candidate,r,r.checkedAt)};
+    checkedAt:r.checkedAt,reason:r.reason,price:r.price,alerts:r.alerts||{},lastCandidateAt:r.lastCandidateAt,notificationMode:r.notificationMode||"ACTIONABLE_ONLY",preparedTrade:candidateCard(r.candidate,r,r.checkedAt),
+    notificationDecision:{checkedAt:r.checkedAt||null,state:r.state,reason:r.notificationSuppressedReason||r.reason||null,
+      currentInZone:r.currentInZone===true,structureReady:r.structureReady===true,triggerAt:r.triggerAt||null,
+      modelProgress:r.progress?.state||null,swingReason:r.swingReview?.reason||null,technicalCandidatePresent:Boolean(r.candidate||r.secondaryTechnicalCandidate),
+      currentStagePushStatus:r.alerts?.[r.state]?.status||"NOT_QUEUED",ordinaryResearchSilent:(r.notificationMode||"ACTIONABLE_ONLY")==="ACTIONABLE_ONLY",deviceReceiptVerified:false}};
 }
 
 const RETIRED_ACCOUNT_BLOCKERS = new Set(["ACCOUNT_OR_PSYCHOLOGY_STATE_NOT_VERIFIED","DAILY_RISK_LIMIT_REACHED","PSYCHOLOGICAL_VETO","CURRENT_ACCOUNT_AND_PSYCHOLOGY"]);
@@ -1022,7 +1104,7 @@ async function processNewsReassessment(env,context,asset,old={},deadlineAt=Infin
   const selected=fresh.find(i=>i.id===old.pending?.id)||fresh[0];
   const pending=old.pending?.id===selected.id?old.pending:{id:selected.id,attempts:0,nextAttemptAt:0};
   if(pending.nextAttemptAt>now||now+6500>deadlineAt)return {...next,pending,reason:"NEWS_PUSH_RETRY_PENDING"};
-  try{const result=await sendBark(env,{title:"ETH（以太坊）重要消息与价格变化｜复核",body:newsText(selected.title,150)+"；价格位移"+formatPrice(move.observedMoveUsd)+"美元。消息与波动同期出现，因果未确认；重新检查八模型及旧方案。",level:"timeSensitive"});
+  try{const result=await sendBark(env,{title:"ETH（以太坊）重要消息与价格变化｜复核",body:newsText(selected.title,150)+"；价格位移"+formatPrice(move.observedMoveUsd)+"美元。消息与波动同期出现，因果未确认；重新检查八模型及旧方案。",level:"timeSensitive"},{kind:"NEWS",eventId:String(selected.id),stage:"MATERIAL_NEWS_PRICE_EVENT"});
     if(result.sent!==true)throw new Error("PUSH_NOT_ACCEPTED");
     return {...next,pending:null,seen:[...new Set([...seen,selected.id])].slice(-100),sent:true,lastSentAt:new Date(now).toISOString(),reason:"NEWS_PLUS_MATERIAL_PRICE_RESPONSE",deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"};}
   catch{return {...next,seen:old.seen||[],pending:{...pending,attempts:pending.attempts+1,nextAttemptAt:now+Math.min(15,2**Math.min(pending.attempts+1,4))*60000},reason:"NEWS_PUSH_FAILED_WILL_RETRY"};}
@@ -1443,7 +1525,7 @@ async function processDynamicAlert(env,context,previous,deadlineAt) {
   try{result=await sendBark(env,{title:"ETH（以太坊）显著价格变化，需复核",body:
     "同窗口价格变动 "+formatPrice(context.observedMoveUsd)+" 美元（"+round(context.observedMovePct,2)+"%）；本次门槛 "+formatPrice(context.minimumAlertMoveUsd)+" 美元。"
     +"\n"+(context.materialShock?"已收盘15分钟放量扩幅。":"持续大额主动成交与价格同向响应。")
-    +"后台已重新扫描八模型；本条不是开仓信号。新闻原因未核实。北京时间 "+chinaTime(now),level:"active"});}
+    +"后台已重新扫描八模型；本条不是开仓信号。新闻原因未核实。北京时间 "+chinaTime(now),level:"active"},{kind:"DYNAMIC_PRICE",eventId:context.eventKey,stage:"MATERIAL_PRICE_CHANGE"});}
   catch(error){result={sent:false,reason:String(error?.message||error)};}
   return result.sent?{...next,sentKeys:[...sentKeys,context.eventKey].slice(-32),pending:null,lastAcceptedAt:new Date(now).toISOString(),deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"}
     :{...next,pending:{...pending,attempts:pending.attempts+1,nextAttemptAt:now+Math.min(15,2**Math.min(pending.attempts+1,4))*60_000,lastError:result.reason}};
@@ -1883,7 +1965,7 @@ async function processObservation(env, original, evaluation, deadlineAt = Infini
     if(duplicate){await updateObservation(env,record,r=>({...r,alerts:{...r.alerts,MARKET_CANDIDATE:{...pending,status:"DEDUPLICATED",reason:"OVERLAPPING_PREPARED_TRADE_ALREADY_NOTIFIED"}}}));return {state:record.state,sent:false,reason:"OVERLAPPING_PREPARED_TRADE_ALREADY_NOTIFIED"};}
   }
   let notification;
-  try { notification = await sendBark(env, observationAlert(record, record)); }
+  try { notification = await sendBark(env, observationAlert(record, record),{kind:"OBSERVATION",eventId:record.observationId,stage:record.state}); }
   catch (error) { notification = { sent: false, reason: String(error?.message || error) }; }
   if(notification.sent&&record.state==="MARKET_CANDIDATE") {
     const zone=record.candidate?.rrQualifiedEntryZone||record.observationZone;
@@ -1894,6 +1976,8 @@ async function processObservation(env, original, evaluation, deadlineAt = Infini
     status: notification.sent ? "SENT" : "PENDING", attempts, lastAttemptAt: new Date(Date.now()).toISOString(),
     nextAttemptAt: Date.now() + Math.min(15, 2 ** Math.min(attempts, 4)) * 60_000,
     deliveredAt: notification.sent ? new Date(Date.now()).toISOString() : null,
+    providerAcceptedAt:notification.sent?notification.providerAcceptedAt||new Date(Date.now()).toISOString():null,
+    auditAttemptId:notification.auditAttemptId||null,auditPersisted:notification.auditPersisted===true,
     lastError: notification.sent ? null : notification.reason,
     deliveryMeaning: "PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT", } } }));
   return { state: record.state, notification };
@@ -2160,6 +2244,8 @@ function cooldownKey(url) {
 function cooldownError(until) {
   const error = new Error("UPSTREAM_RATE_LIMIT_COOLDOWN");
   error.status = 429;
+  error.localCooldown = true;
+  error.retryAt = until;
   error.retryAfterSeconds = Math.max(1, Math.ceil((until - Date.now()) / 1000));
   return error;
 }
@@ -4939,7 +5025,7 @@ function scannerStateStub(env) {
 
 async function durableStateCall(env, payload) {
   const stub=scannerStateStub(env);if(!stub?.fetch)return null;
-  const attempts=payload.op==="get"?2:1, timeoutMs=["publicMarket","directQuote","newsContext","liquidityRecheck"].includes(payload.op)?28000:4000;
+  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck"].includes(payload.op)?28000:4000;
   for(let attempt=0;attempt<attempts;attempt++){
     let timer;
     try {
@@ -5701,9 +5787,48 @@ function scannerNotification(plan, evaluation) {
   return null;
 }
 
-async function sendBark(env, notification) {
+const PUSH_AUDIT_KEY="scanner:push-audit:v1";
+const PUSH_KINDS=["OBSERVATION","NEWS","DYNAMIC_PRICE","PLAN","FAST_FLOW","OPPORTUNITY_PROGRESS","CONTROL"];
+function mergePushAudit(old,attempt,patch) {
+    if(old&&(!Array.isArray(old.records)||typeof old.channels!=="object"))throw Error("PUSH_AUDIT_FORMAT_INVALID_PRESERVED");
+    const records=[...(old?.records||[])],index=records.findIndex(x=>x.attemptId===attempt.attemptId),prior=index>=0?records[index]:null;
+    const row={...attempt,...prior,...patch},channels={...(old?.channels||{})},channel={...(channels[attempt.kind]||{})};
+    if(!prior){channel.attempts=(channel.attempts||0)+1;channel.lastAttemptAt=attempt.attemptedAt;}
+    if(patch.outcome&&prior?.outcome!==patch.outcome){
+      if(patch.outcome==="PROVIDER_ACCEPTED"){channel.accepted=(channel.accepted||0)+1;channel.lastAcceptedAt=patch.completedAt;}
+      if(["FAILED","NOT_CONFIGURED"].includes(patch.outcome)){channel.failures=(channel.failures||0)+1;channel.lastFailureAt=patch.completedAt;channel.lastFailureReason=patch.reason;}
+    }
+    channel.lastOutcome=row.outcome;channels[attempt.kind]=channel;
+    if(index>=0)records[index]=row;else records.push(row);
+    return {firstRecordedAt:old?.firstRecordedAt||attempt.attemptedAt,updatedAt:new Date(Date.now()).toISOString(),channels,records:records.slice(-80)};
+}
+async function appendPushAuditStorage(storage,attempt,patch) {
+  await storage.transaction(async txn=>{
+    const stored=await txn.get(PUSH_AUDIT_KEY),old=stored?.expiresAt>Date.now()?stored.value:null;
+    await txn.put(PUSH_AUDIT_KEY,{value:mergePushAudit(old,attempt,patch),expiresAt:Date.now()+30*86400000});
+  });
+  return {recorded:true};
+}
+async function recordPushAudit(env,attempt,patch) {
+  if(scannerStateStub(env))return (await durableStateCall(env,{op:"pushAuditAppend",attempt,patch}))?.recorded===true;
+  if(!env?.ALERT_STATE?.put)return false;
+  // Legacy KV is best effort; production Durable Object writes above are atomic.
+  await scannerStatePut(env,PUSH_AUDIT_KEY,mergePushAudit(await scannerStateGet(env,PUSH_AUDIT_KEY),attempt,patch),30*86400);
+  return true;
+}
+function pushAuditSummary(book) {
+  const channels=PUSH_KINDS.map(kind=>({kind,...(book?.channels?.[kind]||{attempts:0,accepted:0,failures:0,lastOutcome:"NO_PERSISTED_ATTEMPTS"})}));
+  return {status:book?"RECORDED_PROVIDER_ATTEMPTS":"NO_PERSISTED_ATTEMPTS",firstRecordedAt:book?.firstRecordedAt||null,updatedAt:book?.updatedAt||null,
+    channels,recentAttempts:(book?.records||[]).slice(-6),retainedAttempts:book?.records?.length||0,retentionLimit:80,
+    historicalCoverage:"ONLY_ATTEMPTS_RECORDED_AFTER_THIS_UPDATE",archiveRequested:true,archiveIsNotDeviceReceipt:true,deviceReceiptVerified:false};
+}
+async function sendBark(env, notification, context={}) {
+  const attempt={attemptId:crypto.randomUUID(),kind:PUSH_KINDS.includes(context.kind)?context.kind:"CONTROL",stage:scannerText(context.stage,"UNSPECIFIED",50),
+    eventId:scannerText(context.eventId,"",150)||null,attemptedAt:new Date(Date.now()).toISOString(),outcome:"ATTEMPTING",deviceReceiptVerified:false};
+  try{await recordPushAudit(env,attempt,{});}catch{}
+  const finish=async patch=>{try{return await recordPushAudit(env,attempt,{...patch,completedAt:new Date(Date.now()).toISOString()});}catch{return false;}};
   const deviceKey = String(env?.BARK_DEVICE_KEY || "").trim();
-  if (!deviceKey) return { sent: false, reason: "BARK_DEVICE_KEY_NOT_CONFIGURED" };
+  if (!deviceKey) {const reason="BARK_DEVICE_KEY_NOT_CONFIGURED";return {sent:false,reason,auditAttemptId:attempt.attemptId,auditPersisted:await finish({outcome:"NOT_CONFIGURED",reason})};}
   const base = String(env?.BARK_SERVER_BASE || "https://api.day.app").replace(/\/+$/, "");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 6000);
@@ -5717,15 +5842,23 @@ async function sendBark(env, notification) {
       title: notification.title,
       body: notification.body,
       group: "CryptoAlpha",
+      isArchive: "1",
       level: notification.level || "active",
       sound: notification.level === "timeSensitive" ? "alarm" : "bell",
       url: scannerText(env?.ALERT_OPEN_URL, "", 1000) || undefined,
     }),
   });
-  if (!response.ok) throw new Error(`Bark HTTP ${response.status}`);
+  if (!response.ok) {const error=new Error(`Bark HTTP ${response.status}`);error.httpStatus=response.status;throw error;}
   const result = await response.json().catch(() => ({}));
-  if (finite(result?.code) !== 200) throw new Error(`Bark rejected or unverified push: ${result?.message || result?.code || "MISSING_SUCCESS_CODE"}`);
-  return { sent: true, provider: "BARK", status: response.status };
+  if (finite(result?.code) !== 200) {const error=new Error("BARK_PROVIDER_REJECTED_OR_UNVERIFIED");error.httpStatus=response.status;error.providerCode=Number.isFinite(Number(result?.code))?Number(result.code):null;throw error;}
+  const auditPersisted=await finish({outcome:"PROVIDER_ACCEPTED",httpStatus:response.status,providerCode:200});
+  return { sent: true, provider: "BARK", status: response.status,providerAcceptedAt:new Date(Date.now()).toISOString(),
+    auditAttemptId:attempt.attemptId,auditPersisted,archiveRequested:true,deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT",deviceReceiptVerified:false };
+  } catch(error) {
+    const reason=error?.message==="BARK_PROVIDER_REJECTED_OR_UNVERIFIED"?"BARK_PROVIDER_REJECTED_OR_UNVERIFIED":error?.httpStatus?`BARK_HTTP_${error.httpStatus}`:controller.signal.aborted?"BARK_TIMEOUT":"BARK_NETWORK_OR_RESPONSE_ERROR";
+    await finish({outcome:"FAILED",reason,httpStatus:error?.httpStatus||null,providerCode:error?.providerCode??null});
+    // Never persist or return a provider message which could echo credentials.
+    throw new Error(reason);
   } finally { clearTimeout(timeout); }
 }
 
@@ -5779,7 +5912,7 @@ async function saveTradingPlan(env, input) {
       title: `🛡️ ${plan.symbol} GPT方案已布防`,
       body: `${plan.direction === "LONG" ? "做多" : "做空"}｜入场 ${plan.entryZone.min}-${plan.entryZone.max}｜止损 ${plan.stopLoss}｜有效至 ${plan.expiresAt}\n扫描器将按这份方案验证，不会另造方向。`,
       level: "active",
-    });
+    },{kind:"CONTROL",eventId:plan.planId,stage:"PLAN_SAVED"});
   } catch (error) {
     notification = { sent: false, reason: error?.message || String(error) };
   }
@@ -5815,7 +5948,7 @@ async function scanActivePlan(env, cycle = scannerCycle(env)) {
     if (plan && ["EXPIRED", "INVALIDATED"].includes(plan.status) && previous?.planId === plan.planId
       && previous.notification?.sent === false && scannerShouldNotify(previous, previous.evaluation)) {
       let notification;
-      try { notification = await sendBark(env, scannerNotification(plan, previous.evaluation)); }
+      try { notification = await sendBark(env, scannerNotification(plan, previous.evaluation),{kind:"PLAN",eventId:plan.planId,stage:previous.evaluation.state}); }
       catch (error) { notification = { sent: false, reason: String(error?.message || error) }; }
       const now = new Date(Date.now()).toISOString();
       await scannerCompareAndPut(env, { [ACTIVE_PLAN_KEY]: plan, [SCANNER_RUNTIME_KEY]: previous }, {
@@ -5897,7 +6030,7 @@ async function scanActivePlan(env, cycle = scannerCycle(env)) {
   let notification = previous?.notification || { sent: false, reason: "NO_STATE_TRANSITION" };
   if (shouldNotify) {
     if (!(await scannerPlanIsCurrent(env, plan))) return { status: "stale_aborted", build: BUILD, reason: "ACTIVE_PLAN_CHANGED_BEFORE_NOTIFICATION", notification: { sent: false, reason: "STALE_PLAN" } };
-    try { notification = await sendBark(env, scannerNotification(plan, evaluation)); }
+    try { notification = await sendBark(env, scannerNotification(plan, evaluation),{kind:"PLAN",eventId:plan.planId,stage:evaluation.state}); }
     catch (error) { notification = { sent: false, reason: error?.message || String(error) }; }
   }
   // Use the same clock source as direct verification/evaluation. Mixing the
@@ -5962,10 +6095,18 @@ async function runScanner(env,options={}) {
   const token = crypto.randomUUID();
   if (!(await scannerAcquireLease(env, token))) return { status: "busy", build: BUILD, reason: "SCANNER_RUN_ALREADY_IN_PROGRESS" };
   try {
+    const requested=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
+    let claimed=null;
+    if(requested&&['PENDING','RUNNING'].includes(requested.status)&&Date.parse(requested.expiresAt)>Date.now()&&finite(requested.nextAttemptAt,0)<=Date.now()){
+      const next={...requested,status:'RUNNING',cycleStartedAt:new Date().toISOString()};
+      if(await scannerCompareAndPut(env,{[SCANNER_REVIEW_REQUEST_KEY]:requested},{[SCANNER_REVIEW_REQUEST_KEY]:next},3600))claimed=next;
+    }
     const old = await scannerStateGet(env, SCANNER_HEARTBEAT_KEY) || {};
     const startedAt = new Date(Date.now()).toISOString();
     await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { ...old, status: "running", lastAttemptAt: startedAt });
-    const result = await runScannerUnlocked(env,options);
+    // Acquire the single scanner lease before refreshing structures; all drivers consume the same request.
+    if(options.forceStructureRefresh===true||claimed?.forceStructureRefresh)await loadDurableStructureRecords(env,{force:true});
+    const result = await runScannerUnlocked(env,{...options,forceDiscovery:options.forceDiscovery===true||Boolean(claimed)});
     const completedAt = new Date(Date.now()).toISOString();
     const degraded = result.status === "error" || result.observations?.status === "error"
       || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
@@ -5975,6 +6116,13 @@ async function runScanner(env,options={}) {
       planState: result.evaluation?.state || result.reason || result.status,
       observationReason: result.observations?.reason || null, observationError: result.observations?.discoveryError || result.observations?.priceError || null,
       lastError: result.status === "error" ? result.reason : result.observations?.status === "error" ? result.observations.reason : null });
+    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
+    await scannerStatePut(env,SCANNER_CYCLE_RESULT_KEY,receipt,3600);
+    if(claimed){
+      const current=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
+      if(current?.requestId===claimed.requestId)await scannerCompareAndPut(env,{[SCANNER_REVIEW_REQUEST_KEY]:current},{[SCANNER_REVIEW_REQUEST_KEY]:{
+        ...current,status:receipt.modelDataReady?'FULFILLED':'PENDING',lastAttemptAt:completedAt,nextAttemptAt:Date.now()+(receipt.modelDataReady?0:30000),completedAt:receipt.modelDataReady?completedAt:null}},3600);
+    }
     return result;
   } finally {
     await scannerReleaseLease(env, token).catch(() => {});
@@ -5992,9 +6140,10 @@ function boundedScannerStatus(result) {
   result.observationHistory=(result.observationHistory||[]).slice(-4);
   result.failureHistory=(result.failureHistory||[]).slice(-4);
   const budget=24000;
+  if(JSON.stringify(result).length>budget&&result.notificationAudit)result.notificationAudit.recentAttempts=result.notificationAudit.recentAttempts.slice(-2);
   if(JSON.stringify(result).length>budget){result.observationHistory=[];result.failureHistory=[];result.diagnostics.detailsOmitted=true;}
   if(JSON.stringify(result).length>budget){
-    result.observations=(result.observations||[]).map(r=>pick(r,["observationId","revision","state","submodel","direction","observationZone","expiresAt","checkedAt","preparedTrade"]));
+    result.observations=(result.observations||[]).map(r=>pick(r,["observationId","revision","state","submodel","direction","observationZone","expiresAt","checkedAt","preparedTrade","notificationDecision"]));
     result.activePlan=pick(result.activePlan,["planId","symbol","direction","model","submodel","status","entryZone","stopLoss","takeProfits","expiresAt"]);
     result.discovery=pick(result.discovery,["lastCheckedAt","lastSuccessAt","reason","discoveryError","priceError"]);
   }
@@ -6013,7 +6162,7 @@ function boundedScannerStatus(result) {
 
 async function scannerStatus(env) {
   try {
-    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY]);
+    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY,PUSH_AUDIT_KEY]);
     const stored=state[OBSERVATIONS_KEY], malformed=Boolean(stored)&&(!Array.isArray(stored.records)||stored.records.some(r=>!r||typeof r!=="object"||Array.isArray(r)));
     const records=Array.isArray(stored?.records)?stored.records.filter(r=>r&&typeof r==="object"&&!Array.isArray(r)):[];
     const heartbeat=compactStatusValue(state[SCANNER_HEARTBEAT_KEY]||null);
@@ -6024,7 +6173,7 @@ async function scannerStatus(env) {
       activePlan:compactStatusValue(state[ACTIVE_PLAN_KEY]||null),runtime:compactStatusValue(state[SCANNER_RUNTIME_KEY]||null),
       observations:records.filter(r=>!OBSERVATION_TERMINAL.includes(r.state)).slice(0,OBSERVATION_LIMIT).map(r=>compactStatusValue(scannerStatusRecord(r))),
       observationHistory:records.filter(r=>OBSERVATION_TERMINAL.includes(r.state)).slice(-12).map(r=>compactStatusValue(scannerStatusRecord(r))),
-      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,fastMonitor,
+      discovery:compactStatusValue(state[DISCOVERY_STATE_KEY]||null),heartbeat,fastMonitor,notificationAudit:pushAuditSummary(state[PUSH_AUDIT_KEY]),
       diagnostics:{stateReadSucceeded:true,stateFormatIssue:malformed?"OBSERVATION_RECORDS_NOT_ARRAY":null,completedCycleAgeSeconds:age,
         heartbeatHealthy:!malformed&&age!==null&&age>=0&&age<=180&&heartbeat.status==="completed",
         pendingObservationPushes:records.reduce((n,r)=>n+Object.values(r.alerts||{}).filter(a=>a?.status==="PENDING").length,0),
@@ -6591,7 +6740,8 @@ export class ScannerState {
     let input;
     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
-    if(input?.op==="fastMonitorStatus")return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),await this.ctx.storage.get(FAST_REVIEW_KEY)));
+    if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
+    if(input?.op==="pushAuditAppend")return Response.json(await appendPushAuditStorage(this.ctx.storage,input.attempt,input.patch));
     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
     if(input?.op==="newsSnapshot"){try{return Response.json(await cachedNewsContext(this));}catch{return Response.json({error:"NEWS_CACHE_READ_FAILED"},{status:503});}}
     if(input?.op==="newsContext"){try{return Response.json(await coordinatedNewsContext(this));}catch{return Response.json(newsContextSummary({JIN10:{status:"unavailable",reason:"NEWS_COORDINATOR_FAILED"}}));}}
