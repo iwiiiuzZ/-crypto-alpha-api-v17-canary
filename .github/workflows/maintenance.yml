@@ -1,0 +1,54 @@
+name: Managed operations
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'diagnose=只读复核；deploy=测试后发布；rollback=回退指定版本'
+        type: choice
+        options: [diagnose, deploy, rollback]
+        default: diagnose
+      version_id:
+        description: '仅回退时填写已核实的版本 UUID'
+        type: string
+        required: false
+  schedule:
+    - cron: '*/5 * * * *'
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  operations:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Regression gate for rollback tooling
+        if: inputs.operation == 'rollback'
+        run: npm test
+      - name: Checked deployment
+        if: inputs.operation == 'deploy'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy:checked
+      - name: Explicit version rollback
+        if: inputs.operation == 'rollback'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ROLLBACK_VERSION: ${{ inputs.version_id }}
+        run: node ops/rollback.mjs
+      - name: Read-only production verification
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: npm run ops:diagnose

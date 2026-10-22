@@ -1,0 +1,17 @@
+{
+  "name": "crypto-alpha-managed-operations",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node ops/run-tests.mjs",
+    "test:unit": "node ops/run-tests.mjs --unit",
+    "ops:diagnose": "node ops/maintenance.mjs diagnose",
+    "deploy:checked": "node ops/deploy.mjs"
+  },
+  "devDependencies": {
+    "workerd": "1.20261018.1",
+    "wrangler": "4.151.3"
+  }
+}
