@@ -14,7 +14,7 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   push:
-    branches: [main]
+    branches: [main, 'codex/managed-operations']
 permissions:
   contents: read
 concurrency:
@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   operations:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/managed-operations'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -34,15 +34,15 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
       - name: Regression gate for rollback tooling
-        if: inputs.operation == 'rollback'
+        if: github.ref == 'refs/heads/main' && inputs.operation == 'rollback'
         run: npm test
       - name: Checked deployment
-        if: inputs.operation == 'deploy'
+        if: github.ref == 'refs/heads/main' && inputs.operation == 'deploy'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run deploy:checked
       - name: Explicit version rollback
-        if: inputs.operation == 'rollback'
+        if: github.ref == 'refs/heads/main' && inputs.operation == 'rollback'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ROLLBACK_VERSION: ${{ inputs.version_id }}
