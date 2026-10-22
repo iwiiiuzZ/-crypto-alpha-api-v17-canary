@@ -4,7 +4,7 @@ import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 
 const root=new URL('../',import.meta.url),require=createRequire(import.meta.url);
-const unit=['test-operations.mjs','test-course-engine.mjs','test-rate-protection.mjs','test-fast-monitor.mjs','test-monitor-coordination.mjs','test-owner-local-dispatch.mjs','test-push-observability.mjs'];
+const unit=['test-operations.mjs','test-cost-contract.mjs','test-course-engine.mjs','test-rate-protection.mjs','test-fast-monitor.mjs','test-monitor-coordination.mjs','test-owner-local-dispatch.mjs','test-push-observability.mjs'];
 const native=['verify-workerd-full-system.mjs','verify-workerd-fast-monitor.mjs','verify-workerd-owner-local.mjs'];
 mkdirSync(new URL('test-results/',root),{recursive:true});
 const summary=[];

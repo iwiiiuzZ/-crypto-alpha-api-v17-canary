@@ -5,9 +5,41 @@ const at=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?Date.parse(v):Na
 const stamp=v=>Number.isFinite(at(v))?new Date(at(v)).toISOString():null;
 const word=v=>typeof v==='string'&&/^[A-Za-z0-9_.:-]{1,120}$/.test(v)?v:null;
 const number=v=>typeof v==='number'&&Number.isFinite(v)?v:null;
+const enumCode=v=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{0,119}$/.test(v)?v:null;
 const age=(v,now)=>Number.isFinite(at(v))?(now-at(v))/1000:null;
 const fresh=(v,now,max)=>{const a=age(v,now);return a!==null&&a>=-5&&a<=max;};
 export class OpsError extends Error {constructor(code){super(code);this.code=code;}}
+
+// Public CI logs contain aggregate stages only: never prices, IDs, messages or secrets.
+export function summarizeCandidateChain(status){
+  const omitted=status?.diagnostics?.detailsOmitted===true||status?.diagnostics?.historyOmittedForResponseBudget===true;
+  const active=Array.isArray(status?.observations)?status.observations:null;
+  const history=Array.isArray(status?.observationHistory)?status.observationHistory:null;
+  const aggregate=rows=>{
+    if(!rows)return null;
+    const groups=new Map();
+    for(const r of rows){
+      const d=r?.notificationDecision,card=r?.preparedTrade;
+      const row={model:['A1','A2','B1','B2','C1','C2','D1','D2'].includes(r?.submodel)?r.submodel:null,
+        state:enumCode(r?.state),reason:enumCode(d?.reason||r?.reason),progress:enumCode(d?.modelProgress),
+        swingReason:enumCode(d?.swingReason),pushStatus:enumCode(d?.currentStagePushStatus),
+        technicalCardPresent:card?true:Object.hasOwn(r||{},'preparedTrade')?false:null,
+        executionPermission:enumCode(card?.executionPermission),decisionAvailable:!!d};
+      const key=JSON.stringify(row);groups.set(key,{...row,count:(groups.get(key)?.count||0)+1});
+    }
+    return [...groups.values()];
+  };
+  const audit=status?.notificationAudit;
+  const attempts=Array.isArray(audit?.recentAttempts)?audit.recentAttempts:[];
+  return {stateReadSucceeded:status?.diagnostics?.stateReadSucceeded===true,detailsOmitted:omitted,
+    activeCount:active?.length??null,returnedHistoryCount:history?.length??null,
+    historyCoverage:'BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY',active:aggregate(active),history:aggregate(history),
+    activePlanPresent:status?.activePlan?true:Object.hasOwn(status||{},'activePlan')?false:null,
+    auditFirstRecordedAt:stamp(audit?.firstRecordedAt),auditUpdatedAt:stamp(audit?.updatedAt),retainedAttempts:number(audit?.retainedAttempts),
+    recentAttemptStages:attempts.map(a=>({kind:enumCode(a.kind),stage:enumCode(a.stage),outcome:enumCode(a.outcome),attemptedAt:stamp(a.attemptedAt),completedAt:stamp(a.completedAt)})),
+    pendingByKind:Object.fromEntries(['Observation','News','Dynamic','Plan','Fast','Progress'].map(k=>[k,number(status?.diagnostics?.['pending'+k+'Pushes'])])),
+    preparedNotificationLiveVerified:false,deviceReceiptVerified:false};
+}
 
 export async function requestJson(fetcher,url,headers={}){
   let r;
@@ -28,7 +60,8 @@ export function summarizeSample(fast,status,now=Date.now()){
     health:{sampling:f.samplingHealthy===true,quote:f.quoteHealthy===true,flow:f.flowHealthy===true,lastSuccessAt:stamp(f.lastSuccessAt),lastTradeAt:stamp(f.executionQuote?.lastTradeTimestamp),bookAt:stamp(f.executionQuote?.bookTimestamp),dataAgeSeconds:number(f.dataAgeSeconds),gapSeconds:number(f.actualLastGapSeconds)},
     receipts,
     scanner:{build:word(status?.build),stateReadSucceeded:d.stateReadSucceeded===true,identityMatched:status?.backendIdentity?.matched===true,status:word(status?.heartbeat?.status),producerBuild:word(status?.heartbeat?.producerBuild),lastCompletedAt:stamp(status?.heartbeat?.lastCompletedAt),lastSuccessfulCycleAt:stamp(status?.heartbeat?.lastSuccessfulCycleAt),newsConsumedAt:stamp(d.newsConsumption?.consumedAt),pendingPushes:number(d.pendingPushes)},
-    notifications:{auditStatus:word(status?.notificationAudit?.status),channels:(status?.notificationAudit?.channels||[]).filter(c=>kinds.has(c.kind)).map(c=>({kind:c.kind,attempts:number(c.attempts),accepted:number(c.accepted),failures:number(c.failures)})),deviceReceiptVerified:false}};
+    notifications:{auditStatus:word(status?.notificationAudit?.status),channels:(status?.notificationAudit?.channels||[]).filter(c=>kinds.has(c.kind)).map(c=>({kind:c.kind,attempts:number(c.attempts),accepted:number(c.accepted),failures:number(c.failures)})),deviceReceiptVerified:false},
+    candidateChain:summarizeCandidateChain(status)};
 }
 
 export function assessSamples(samples,expected){

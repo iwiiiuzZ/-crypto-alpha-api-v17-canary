@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {requestJson,summarizeSample,assessSamples,cloudflareSnapshot,safeOutput} from '../ops/diagnostics.mjs';
+import {requestJson,summarizeSample,summarizeCandidateChain,assessSamples,cloudflareSnapshot,safeOutput} from '../ops/diagnostics.mjs';
 import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
 import fs from 'node:fs';
 const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
@@ -7,6 +7,16 @@ const start=Date.parse('2026-10-22T05:00:00Z'),iso=n=>new Date(n).toISOString();
 function sample(delta){const now=start+delta,identity={matched:true,frontendBuild:'current',stateOwnerBuild:'current',stateOwnerContract:config.stateContract};return summarizeSample({build:'current',apiVersion:'7.6.0',backendIdentity:identity,fastMonitor:{samplingHealthy:true,quoteHealthy:true,flowHealthy:true,lastSuccessAt:iso(now-1000),executionQuote:{lastTradeTimestamp:iso(now-1500),bookTimestamp:iso(now-500)},fullReview:{status:'completed',producerBuild:'current',inspectedModels:8,modelDataReady:true,checkedAt:iso(now-3000),completedAt:iso(now-2000)}}},{build:'current',backendIdentity:identity,heartbeat:{status:'completed',producerBuild:'current',lastCompletedAt:iso(now-2000),lastSuccessfulCycleAt:iso(now-2000)},diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(now-2500)},pendingPushes:0},notificationAudit:{channels:[],recentAttempts:[{body:'private-financial-detail'}]},observations:[{entry:2400,accountBalance:10000}],configuration:{secret:'not-for-logs'}},now);}
 let passed=0;
 async function test(name,fn){await fn();passed++;console.log('PASS '+name);}
+await test('candidate diagnosis preserves unknown/omitted states and distinguishes technical cards from execution permission',()=>{
+ const unknown=summarizeCandidateChain({diagnostics:{stateReadSucceeded:false},observations:null});
+ assert.equal(unknown.activeCount,null);assert.equal(unknown.active,null);
+ const r=summarizeCandidateChain({diagnostics:{stateReadSucceeded:true,detailsOmitted:true},observations:[{submodel:'B1',state:'MARKET_CANDIDATE',preparedTrade:{executionPermission:'FINAL_REVIEW_REQUIRED',entry:2400},notificationDecision:{currentStagePushStatus:'PENDING',reason:'NEWS_REVIEW_PENDING'}}],observationHistory:[]});
+ assert.equal(r.activeCount,1);assert.equal(r.active[0].technicalCardPresent,true);assert.equal(r.active[0].executionPermission,'FINAL_REVIEW_REQUIRED');assert.equal(r.detailsOmitted,true);assert.equal(r.preparedNotificationLiveVerified,false);
+});
+await test('candidate stage evidence excludes private IDs, prices and free text',()=>{
+ const r=summarizeCandidateChain({observations:[{observationId:'private-id',submodel:'B1',state:'IN_ZONE',price:2444.123,preparedTrade:null,notificationDecision:{reason:'private text',currentStagePushStatus:'NOT_QUEUED'}}],notificationAudit:{recentAttempts:[{eventId:'private-id',body:'private-body',stage:'MARKET_CANDIDATE',outcome:'PROVIDER_ACCEPTED',attemptedAt:iso(start)}]}});
+ const out=JSON.stringify(r);for(const s of ['private-id','2444.123','private text','private-body'])assert.ok(!out.includes(s));assert.equal(r.active[0].reason,null);assert.equal(r.recentAttemptStages[0].outcome,'PROVIDER_ACCEPTED');assert.equal(r.deviceReceiptVerified,false);
+});
 await test('three genuinely advancing samples and a new current-producer receipt pass only with limits',()=>{const r=assessSamples([sample(0),sample(25000),sample(85000)],config);assert.equal(r.operationalPassed,true);assert.equal(r.limits.deviceReceipt,'NOT_VERIFIED');assert.equal(r.limits.pushRetryRecovery,'NOT_PROVEN_BY_EMPTY_QUEUES');});
 await test('healthy flags cannot hide frozen quote/trade/complete timestamps',()=>{const a=sample(0),b=sample(85000);b.health={...a.health};const r=assessSamples([a,sample(25000),b],config);assert.equal(r.gates.autonomousSamples,false);assert.equal(r.gates.independentHealth,false);});
 await test('new attempt times do not count as a new minute completion',()=>{const a=sample(0),b=sample(85000);b.scanner.lastCompletedAt=a.scanner.lastCompletedAt;b.scanner.lastSuccessfulCycleAt=a.scanner.lastSuccessfulCycleAt;assert.equal(assessSamples([a,sample(25000),b],config).gates.minuteScanner,false);});
