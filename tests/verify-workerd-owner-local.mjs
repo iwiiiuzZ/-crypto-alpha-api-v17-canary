@@ -13,7 +13,7 @@ export class ScannerState extends BaseScannerState {
 }
 
 export default {async fetch(req,env,ctx){const u=new URL(req.url);
- if(u.pathname==='/__fixture/cron'){await app.scheduled({},env);return Response.json({completed:true});}
+ if(u.pathname==='/__fixture/cron'){await app.scheduled({},env);return Response.json({handled:true});}
  if(u.pathname==='/__fixture/forbidden')return env.SCANNER_STATE.get(env.SCANNER_STATE.idFromName('crypto-alpha-primary')).fetch('https://internal/state',{method:'POST',body:JSON.stringify({op:'fixtureForbiddenCount'})});
  if(u.pathname==='/__fixture/public')return env.SCANNER_STATE.get(env.SCANNER_STATE.idFromName('crypto-alpha-primary')).fetch('https://internal/state',{method:'POST',body:JSON.stringify({op:'publicMarket'})});
  if(u.pathname==='/__fixture/control'){const q=await req.json();if(q.now)setClock(q.now);return fetch('https://fixtures.invalid/control',{method:'POST',body:JSON.stringify(q)});}
@@ -95,7 +95,13 @@ try{
  assert.equal(backgroundReviewObserved,true,JSON.stringify({recovered,failed}));checks.push('active research completes a shared eight-model review while executed-flow collection is still cooling');
  const status=(await call('/scanner/status')).body;assert.ok(status.observations.some(o=>o.observationId===obs.observationId));assert.equal(status.activePlan,null);assert.equal(status.diagnostics.pendingPushes,0);checks.push('the same research survives cooldown and recovery without creating an execution plan');
  assert.equal(status.backendIdentity.matched,true);assert.equal(status.fastMonitor.stateOwnerBuild,'crypto-alpha-worker-v27.6.2-owner-local-dispatch');assert.equal(typeof status.fastMonitor.quoteHealthy,'boolean');assert.equal(typeof status.fastMonitor.flowHealthy,'boolean');checks.push('actual owner build, contract and all three health flags are visible in the native response');
- const cron=await call('/__fixture/cron');assert.equal(cron.body.completed,true);const afterCron=(await call('/scanner/status')).body;assert.equal(afterCron.heartbeat.producerBuild,'crypto-alpha-worker-v27.6.2-owner-local-dispatch');assert.equal(afterCron.heartbeat.status,'completed');checks.push('actual scheduled entry completes a shared owner-local scanner cycle and heartbeat');
+ const previousCompletion=Date.parse(status.heartbeat.lastSuccessfulCycleAt),cronStartedAt=Date.now();
+ const cron=await call('/__fixture/cron');assert.equal(cron.body.handled,true);
+ // The scheduled entry can share an existing lease, and a native alarm can start
+ // the next cycle before this read. Neither "handled" nor "running" proves a
+ // new success: wait for an independently observed, strictly newer completion.
+ const afterCron=await until(async()=>{const s=(await call('/scanner/status')).body,finished=Date.parse(s.heartbeat?.lastSuccessfulCycleAt);return finished>=cronStartedAt&&finished>previousCompletion?s:null;},20000);
+ assert.equal(afterCron.heartbeat.producerBuild,'crypto-alpha-worker-v27.6.2-owner-local-dispatch');assert.ok(['completed','running'].includes(afterCron.heartbeat.status));checks.push('scheduled entry shares the owner-local scanner and a strictly new successful heartbeat is observed');
  assert.equal((await call('/__fixture/forbidden')).body.calls,0);checks.push('native alarms, depth-rejection fault injection, forced refreshes and scheduled cycles make zero owner self-namespace fetch calls');
  const pushes=(await call('/__fixture/control',{})).body.pushes;assert.equal(pushes.length,0);checks.push('ordinary research touches and degraded-flow history do not generate spurious push messages');
  console.log(JSON.stringify({runtime:execFileSync(bin,['--version'],{encoding:'utf8'}).trim(),realDurableObject:true,nativeAlarms:true,concurrentManualRefreshes:contexts,observedLastGapSeconds:recovered.actualLastGapSeconds,checks,passed:checks.length,failed:0,externalUpstreams:'LOCAL_FIXTURES_ONLY',selfNamespaceFetchPolicy:'THROW_SYNTHETIC_DEPTH_ERROR',productionDepthErrorReplayed:false,productionDeploymentVerified:false,realDeviceDeliveryVerified:false},null,2));

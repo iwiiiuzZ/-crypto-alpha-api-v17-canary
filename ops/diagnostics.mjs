@@ -27,7 +27,7 @@ export function summarizeSample(fast,status,now=Date.now()){
     identity:{frontendBuild:word(identity.frontendBuild),stateOwnerBuild:word(identity.stateOwnerBuild),stateOwnerContract:word(identity.stateOwnerContract),matched:identity.matched===true},
     health:{sampling:f.samplingHealthy===true,quote:f.quoteHealthy===true,flow:f.flowHealthy===true,lastSuccessAt:stamp(f.lastSuccessAt),lastTradeAt:stamp(f.executionQuote?.lastTradeTimestamp),bookAt:stamp(f.executionQuote?.bookTimestamp),dataAgeSeconds:number(f.dataAgeSeconds),gapSeconds:number(f.actualLastGapSeconds)},
     receipts,
-    scanner:{build:word(status?.build),stateReadSucceeded:d.stateReadSucceeded===true,identityMatched:status?.backendIdentity?.matched===true,status:word(status?.heartbeat?.status),producerBuild:word(status?.heartbeat?.producerBuild),lastCompletedAt:stamp(status?.heartbeat?.lastCompletedAt),newsConsumedAt:stamp(d.newsConsumption?.consumedAt),pendingPushes:number(d.pendingPushes)},
+    scanner:{build:word(status?.build),stateReadSucceeded:d.stateReadSucceeded===true,identityMatched:status?.backendIdentity?.matched===true,status:word(status?.heartbeat?.status),producerBuild:word(status?.heartbeat?.producerBuild),lastCompletedAt:stamp(status?.heartbeat?.lastCompletedAt),lastSuccessfulCycleAt:stamp(status?.heartbeat?.lastSuccessfulCycleAt),newsConsumedAt:stamp(d.newsConsumption?.consumedAt),pendingPushes:number(d.pendingPushes)},
     notifications:{auditStatus:word(status?.notificationAudit?.status),channels:(status?.notificationAudit?.channels||[]).filter(c=>kinds.has(c.kind)).map(c=>({kind:c.kind,attempts:number(c.attempts),accepted:number(c.accepted),failures:number(c.failures)})),deviceReceiptVerified:false}};
 }
 
@@ -40,7 +40,9 @@ export function assessSamples(samples,expected){
     versionIdentity:samples.length>=3&&samples.every(s=>s.build===expected.build&&s.apiVersion===expected.apiVersion&&s.identity.matched&&s.identity.frontendBuild===expected.build&&s.identity.stateOwnerBuild===expected.build&&s.identity.stateOwnerContract===expected.stateContract),
     independentHealth:samples.length>=3&&samples.every(s=>s.health.sampling&&s.health.quote&&s.health.flow&&fresh(s.health.lastSuccessAt,at(s.readAt),25)&&fresh(s.health.lastTradeAt,at(s.readAt),10)&&fresh(s.health.bookAt,at(s.readAt),10)),
     autonomousSamples:advanced('lastSuccessAt')&&advanced('lastTradeAt')&&advanced('bookAt'),
-    minuteScanner:!!last&&last.scanner.stateReadSucceeded&&last.scanner.identityMatched&&last.scanner.build===expected.build&&last.scanner.producerBuild===expected.build&&last.scanner.status==='completed'&&fresh(last.scanner.lastCompletedAt,end,180)&&at(last.scanner.lastCompletedAt)>start&&at(last.scanner.lastCompletedAt)>at(first.scanner.lastCompletedAt),
+    // A new cycle may already be running; require a new successful completion,
+    // rather than an instantaneous idle/completed phase or a mere new attempt.
+    minuteScanner:!!last&&last.scanner.stateReadSucceeded&&last.scanner.identityMatched&&last.scanner.build===expected.build&&last.scanner.producerBuild===expected.build&&['completed','running'].includes(last.scanner.status)&&fresh(last.scanner.lastSuccessfulCycleAt,end,180)&&at(last.scanner.lastSuccessfulCycleAt)>start&&at(last.scanner.lastSuccessfulCycleAt)>at(first.scanner.lastSuccessfulCycleAt),
     newEightModelReview:!!newestReceipt&&at(newestReceipt.checkedAt)>=start&&at(newestReceipt.completedAt)>=start&&fresh(newestReceipt.completedAt,end,180),
     newsConsumer:!!last&&fresh(last.scanner.newsConsumedAt,end,180)&&at(last.scanner.newsConsumedAt)>start&&at(last.scanner.newsConsumedAt)>at(first.scanner.newsConsumedAt)
   };
