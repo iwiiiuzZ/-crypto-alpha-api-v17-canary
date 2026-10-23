@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {requestJson,summarizeSample,summarizeCandidateChain,summarizeReadContext,assessSamples,cloudflareSnapshot,safeOutput} from '../ops/diagnostics.mjs';
+import {requestJson,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
 import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
 import fs from 'node:fs';
 const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
@@ -7,6 +7,17 @@ const start=Date.parse('2026-10-22T05:00:00Z'),iso=n=>new Date(n).toISOString();
 function sample(delta){const now=start+delta,identity={matched:true,frontendBuild:'current',stateOwnerBuild:'current',stateOwnerContract:config.stateContract};return summarizeSample({build:'current',apiVersion:'7.6.0',backendIdentity:identity,fastMonitor:{samplingHealthy:true,quoteHealthy:true,flowHealthy:true,lastSuccessAt:iso(now-1000),executionQuote:{lastTradeTimestamp:iso(now-1500),bookTimestamp:iso(now-500)},fullReview:{status:'completed',producerBuild:'current',inspectedModels:8,modelDataReady:true,checkedAt:iso(now-3000),completedAt:iso(now-2000)}}},{build:'current',backendIdentity:identity,heartbeat:{status:'completed',producerBuild:'current',lastCompletedAt:iso(now-2000),lastSuccessfulCycleAt:iso(now-2000)},diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(now-2500)},pendingPushes:0},notificationAudit:{channels:[],recentAttempts:[{body:'private-financial-detail'}]},observations:[{entry:2400,accountBalance:10000}],configuration:{secret:'not-for-logs'}},now);}
 let passed=0;
 async function test(name,fn){await fn();passed++;console.log('PASS '+name);}
+await test('news consumption needs matching successful source batches, not a newer generic heartbeat',()=>{
+ const c={newsSources:[{source:'JIN10',status:'ok',fetchedAt:iso(start)}]},s={scanner:{newsConsumedAt:iso(start+5000)},consumedNewsSources:[]};
+ assert.equal(compareNewsBatches(s,c)[0].verified,false);
+ s.consumedNewsSources=[{source:'JIN10',status:'ok',fetchedAt:iso(start-60000)}];assert.equal(compareNewsBatches(s,c)[0].verified,false);
+ s.consumedNewsSources[0].fetchedAt=iso(start);assert.equal(compareNewsBatches(s,c)[0].verified,true);
+ s.consumedNewsSources[0].status='unavailable';assert.equal(compareNewsBatches(s,c)[0].verified,false);
+});
+await test('build configuration audit only reads the target and excludes commands and credentials',async()=>{
+ const urls=[];const r=await cloudflareBuildSnapshot(async(url,init)=>{urls.push(url);assert.equal(init.method,'GET');return Response.json({success:true,result:url.endsWith('/scripts')?[{id:'other',tag:'unrelated'},{id:'worker',tag:'target-tag'}]:[{trigger_uuid:'target-trigger',branch_includes:['main'],branch_excludes:[],root_directory:'/',deploy_command:'npm run deploy:checked',environment_variables:{TOKEN:'private-key'},build_token_uuid:'private-token'}]});},config,'token');
+ assert.ok(urls[1].includes('/target-tag/'));assert.equal(r.triggers[0].checkedDeployCommand,true);assert.equal(r.triggers[0].exactMainOnly,true);assert.ok(!JSON.stringify(r).includes('private-'));assert.ok(!JSON.stringify(r).includes('unrelated'));
+});
 await test('foreground audit cannot expose market prices or news contents or claim background proof',()=>{
  const r=summarizeReadContext({assets:{ETHUSDT:{ticker:{last:2444.321},timeframes:{'15m':{quality:{passed:true,newestClosedCandleAt:iso(start)}}},opportunityEngine:{models:[{submodel:'B1',state:'NO_SETUP',candidate:{entry:2444.321}}]}}}},{newsContext:{headlines:[{title:'private-headline'}],sources:{JIN10:{status:'ok',httpStatus:200,fetchedAt:iso(start),secret:'private-secret'}}}});
  const s=JSON.stringify(r);for(const v of ['2444.321','private-headline','private-secret'])assert.ok(!s.includes(v));assert.equal(r.structure.length,6);assert.equal(r.structure[1].qualityPassed,false);assert.equal(r.newsSources[0].httpStatus,200);assert.ok(r.evidenceScope.includes('NOT_BACKGROUND_PROOF'));

@@ -8,6 +8,7 @@ const number=v=>typeof v==='number'&&Number.isFinite(v)?v:null;
 const enumCode=v=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{0,119}$/.test(v)?v:null;
 const age=(v,now)=>Number.isFinite(at(v))?(now-at(v))/1000:null;
 const fresh=(v,now,max)=>{const a=age(v,now);return a!==null&&a>=-5&&a<=max;};
+const NEWS_IDS=['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'];
 export class OpsError extends Error {constructor(code){super(code);this.code=code;}}
 
 // Public CI logs contain aggregate stages only: never prices, IDs, messages or secrets.
@@ -53,7 +54,7 @@ export function summarizeReadContext(market,news){
     count:number(t?.candleCount),newestClosedAt:stamp(q.newestClosedCandleAt),expectedClosedAt:stamp(q.expectedLastClosedStart),continuityRatio:number(q.continuityRatio),nonZeroVolumeRatio:number(q.nonZeroVolumeRatio),collectionAgeSeconds:number(t?.coordinator?.collectionAgeSeconds)};
   })),
   models:(market?.assets?.ETHUSDT?.opportunityEngine?.models||[]).map(m=>({model:word(m.submodel),state:word(m.state),failedGate:enumCode(m.failedGate),swingState:word(m.swingAssessment?.state),swingReason:enumCode(m.swingAssessment?.reason)})),
-  newsCheckedAt:stamp(news?.newsContext?.checkedAt),newsSources:Object.entries(sources).filter(([k])=>['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'].includes(k)).map(([source,v])=>({source,status:word(v.status),httpStatus:number(v.httpStatus),fetchedAt:stamp(v.fetchedAt),publishedAt:stamp(v.latestPublishedAt),retryAt:stamp(v.nextAttemptAt),lastAttemptAt:stamp(v.lastAttemptAt),cacheState:word(v.cacheState)})),
+  newsCheckedAt:stamp(news?.newsContext?.checkedAt),newsSources:Object.entries(sources).filter(([k])=>NEWS_IDS.includes(k)).map(([source,v])=>({source,status:word(v.status),httpStatus:number(v.httpStatus),fetchedAt:stamp(v.fetchedAt),publishedAt:stamp(v.latestPublishedAt),retryAt:stamp(v.nextAttemptAt),lastAttemptAt:stamp(v.lastAttemptAt),cacheState:word(v.cacheState)})),
   evidenceScope:'FOREGROUND_READ_AFTER_AUTONOMOUS_WINDOW_NOT_BACKGROUND_PROOF'};
 }
 
@@ -77,7 +78,39 @@ export function summarizeSample(fast,status,now=Date.now()){
     receipts,
     scanner:{build:word(status?.build),stateReadSucceeded:d.stateReadSucceeded===true,identityMatched:status?.backendIdentity?.matched===true,status:word(status?.heartbeat?.status),producerBuild:word(status?.heartbeat?.producerBuild),lastCompletedAt:stamp(status?.heartbeat?.lastCompletedAt),lastSuccessfulCycleAt:stamp(status?.heartbeat?.lastSuccessfulCycleAt),newsConsumedAt:stamp(d.newsConsumption?.consumedAt),pendingPushes:number(d.pendingPushes)},
     notifications:{auditStatus:word(status?.notificationAudit?.status),channels:(status?.notificationAudit?.channels||[]).filter(c=>kinds.has(c.kind)).map(c=>({kind:c.kind,attempts:number(c.attempts),accepted:number(c.accepted),failures:number(c.failures)})),deviceReceiptVerified:false},
+    consumedNewsSources:NEWS_IDS.filter(k=>status?.discovery?.newsStatus?.sources?.[k]).map(source=>({source,status:word(status.discovery.newsStatus.sources[source].status),fetchedAt:stamp(status.discovery.newsStatus.sources[source].fetchedAt)})),
     candidateChain:summarizeCandidateChain(status)};
+}
+
+export function compareNewsBatches(sample,context){
+  return (context?.newsSources||[]).map(s=>{
+    const consumed=sample?.consumedNewsSources?.find(c=>c.source===s.source);
+    return {source:s.source,observedBatchAt:s.fetchedAt,consumedBatchAt:consumed?.fetchedAt??null,
+      verified:s.status==='ok'&&consumed?.status==='ok'&&!!s.fetchedAt&&consumed.fetchedAt===s.fetchedAt&&at(sample.scanner.newsConsumedAt)>=at(s.fetchedAt),
+      meaning:consumed?'EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON':'SOURCE_DETAILS_NOT_RETURNED'};
+  });
+}
+
+// Read build configuration without exposing commands, environment variables,
+// build tokens, other Workers, or repository connection credentials in logs.
+export async function cloudflareBuildSnapshot(fetcher,config,token){
+  if(!token)throw new OpsError('MISSING_CLOUDFLARE_API_TOKEN');
+  const base='https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(config.accountId);
+  const headers={authorization:'Bearer '+token};
+  const scripts=await requestJson(fetcher,base+'/workers/scripts',headers);
+  if(scripts.success!==true||!Array.isArray(scripts.result))throw new OpsError('WORKER_LIST_NOT_RETURNED');
+  const target=scripts.result.find(s=>s.id===config.worker);
+  if(!target?.tag)throw new OpsError('TARGET_WORKER_TAG_NOT_RETURNED');
+  const response=await requestJson(fetcher,base+'/builds/workers/'+encodeURIComponent(target.tag)+'/triggers',headers);
+  if(response.success!==true||!Array.isArray(response.result))throw new OpsError('BUILD_TRIGGERS_NOT_RETURNED');
+  return {worker:config.worker,triggers:response.result.map(t=>({id:word(t.trigger_uuid),
+    includesMain:Array.isArray(t.branch_includes)&&t.branch_includes.includes('main'),
+    excludesMain:Array.isArray(t.branch_excludes)&&t.branch_excludes.includes('main'),
+    exactMainOnly:Array.isArray(t.branch_includes)&&t.branch_includes.length===1&&t.branch_includes[0]==='main'&&!(t.branch_excludes||[]).length,
+    rootDirectoryMatches:['','/','.'].includes(t.root_directory),
+    checkedDeployCommand:t.deploy_command?.trim()==='npm run deploy:checked',
+    standardWranglerDeploy:['npx wrangler deploy','npx wrangler deploy --keep-vars'].includes(t.deploy_command?.trim()),
+    buildCommandPresent:!!t.build_command?.trim()}))};
 }
 
 export function assessSamples(samples,expected){

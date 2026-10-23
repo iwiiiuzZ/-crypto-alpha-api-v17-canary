@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {setTimeout as delay} from 'node:timers/promises';
-import {requestJson,summarizeSample,summarizeReadContext,assessSamples,cloudflareSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
+import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
@@ -38,7 +38,10 @@ if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){
   try{
     const [market,news]=await Promise.all([requestJson(fetch,config.origin+'/'),requestJson(fetch,config.origin+'/?view=news')]);
     report.foregroundContext=summarizeReadContext(market,news);
+    report.newsBatchComparison=compareNewsBatches(samples.at(-1),report.foregroundContext);
   }catch(e){report.foregroundContext={error:code(e),evidenceScope:'FOREGROUND_READ_ONLY'};}
+  try{report.buildConfiguration=await cloudflareBuildSnapshot(fetch,config,token);}
+  catch(e){report.buildConfiguration={error:code(e)};}
 }
 const ok=!failures.length&&report.cloudflare?.bindingMatches&&report.cloudflare?.singleVersion&&report.assessment.operationalPassed;
 report.result=ok?'OPERATIONAL_WINDOW_PASSED_WITH_LIMITS':failures.some(e=>e.code.startsWith('MISSING_'))?'AUTHORIZATION_REQUIRED':'DEGRADED';
