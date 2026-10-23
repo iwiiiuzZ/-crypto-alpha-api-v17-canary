@@ -8,3 +8,5 @@ assert.equal((await runHistory(fake,config,secret)).status,'HISTORICAL_QUERY_COM
 let calls=0;const absent=await runHistory(async()=>{calls++;return Response.json({success:true,result:[]});},config,secret);assert.equal(calls,1);assert.equal(absent.status,'SERVICE_FIELD_NOT_AVAILABLE');
 await assert.rejects(runHistory(async()=>new Response(secret,{status:403}),config,secret),/TELEMETRY_HTTP_403/);
 console.log('PASS historical query target, time bounds, missing-field guard, HTTP errors and private-log projection');
+
+const workerEvent=projectHistory({events:{events:[{$metadata:{service:config.worker,error:'Cannot perform I/O on behalf of a different request '+secret},$workers:{eventType:'fetch',outcome:'exception',wallTimeMs:123,event:{request:{url:'https://example.test/?view=news&key='+secret},response:{status:503}}},timestamp:10}]}},config.worker);assert.equal(workerEvent.events[0].endpoint,'NEWS');assert.equal(workerEvent.events[0].httpStatus,503);assert.equal(workerEvent.events[0].durationMs,123);assert.ok(workerEvent.events[0].knownErrorCodes.includes('CROSS_REQUEST_IO'));assert.ok(!JSON.stringify(workerEvent).includes(secret));

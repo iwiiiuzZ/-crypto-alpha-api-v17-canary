@@ -6,14 +6,17 @@ const known=['MARKET_RESPONSE_BUDGET_EXCEEDED','MARKET_RESPONSE_DEADLINE','MARKE
 export function projectHistory(result,worker){
  const rows=result?.events?.events||[],matched=rows.filter(x=>x.$metadata?.service===worker);
  const events=matched.map(e=>{
-  const m=e.$metadata||{},raw=JSON.stringify(e),codes=known.filter(c=>raw.includes(c));
+  const m=e.$metadata||{},w=e.$workers||{},raw=JSON.stringify(e),codes=known.filter(c=>raw.includes(c));
   if(/Subrequest depth limit exceeded/i.test(raw))codes.push('SUBREQUEST_DEPTH_LIMIT');
   if(/Too many subrequests/i.test(raw))codes.push('SUBREQUEST_COUNT_LIMIT');
   if(/exceeded.*CPU|CPU.*limit/i.test(raw))codes.push('CPU_LIMIT');
   if(/exceeded.*memory|memory.*limit/i.test(raw))codes.push('MEMORY_LIMIT');
-  let endpoint='OTHER';try{const u=new URL(m.url);if(u.pathname==='/')endpoint=u.searchParams.get('view')==='news'?'NEWS':u.searchParams.get('view')==='fast'?'FAST':'MARKET';else if(u.pathname==='/scanner/status')endpoint='STATUS';}catch{}
+  for(const [pattern,code] of [[/Cannot perform I\/O on behalf of a different request/i,'CROSS_REQUEST_IO'],[/code had hung|never generate a response|promise will never complete/i,'RUNTIME_HUNG_REQUEST'],[/canceled|cancelled/i,'CANCELLATION'],[/network connection lost/i,'NETWORK_CONNECTION_LOST'],[/exceeded.*subrequest|subrequest.*limit/i,'SUBREQUEST_LIMIT'],[/Too many requests|rate limit|50011/i,'UPSTREAM_RATE_LIMIT']])if(pattern.test(raw))codes.push(code);
+  const status=m.statusCode??w.event?.response?.status,duration=m.duration??w.wallTimeMs;
+  const words=['promise','context','execution','canceled','cancelled','memory','quota','budget','internal','network','fetch','socket','disconnect','timeout','storage','durable','object','reset','exception','body','limit','invalid','hung','response','request'].filter(x=>new RegExp('\\b'+x+'\\b','i').test(String(m.error||'')));
+  let endpoint='OTHER';try{const u=new URL(m.url||w.event?.request?.url);if(u.pathname==='/')endpoint=u.searchParams.get('view')==='news'?'NEWS':u.searchParams.get('view')==='fast'?'FAST':'MARKET';else if(u.pathname==='/scanner/status')endpoint='STATUS';}catch{}
   const timestamp=Number.isFinite(e.timestamp)?new Date(e.timestamp).toISOString():null;
-  return {timestamp,endpoint,httpStatus:Number.isInteger(m.statusCode)?m.statusCode:null,durationMs:Number.isFinite(m.duration)?m.duration:null,errorPresent:Boolean(m.error),knownErrorCodes:codes};
+  return {timestamp,endpoint,httpStatus:Number.isInteger(status)?status:null,durationMs:Number.isFinite(duration)?duration:null,eventType:['fetch','scheduled','alarm','rpc','jsrpc'].includes(w.eventType)?w.eventType:null,outcome:['ok','exception','canceled','exceededCpu','exceededMemory'].includes(w.outcome)?w.outcome:null,errorPresent:Boolean(m.error),errorVocabulary:words,knownErrorCodes:codes};
  });
  return {returnedRows:rows.length,matchedRows:matched.length,totalReported:Number.isFinite(result?.events?.count)?result.events.count:null,events,coverage:'BOUNDED_RETAINED_LOGS_NOT_FULL_HISTORY',absenceOfErrorDoesNotProveSuccess:true};
 }
