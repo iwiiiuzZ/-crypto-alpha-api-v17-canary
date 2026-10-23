@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.2-owner-local-dispatch";
+const BUILD = "crypto-alpha-worker-v27.6.3-acceptance-candidate";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -503,7 +503,7 @@ function holdingFundingScenarios(asset,direction,entry,stop,target){
  const f=asset.derivatives?.funding,interval=(Date.parse(f?.nextFundingAt)-Date.parse(f?.fundingAt))/3600000,rate=f?.ratePct;
  if(f?.status!=='ok'||!Number.isFinite(rate)||!(interval>=1&&interval<=24))return {status:'UNKNOWN_INTERVAL_OR_RATE',futureRatesKnown:false,scenarios:[]};
  // Scenario only: do not credit hypothetical future receipts and do not assert constant future rates.
- const perSettlement=Math.max(0,direction==='LONG'?rate:-rate),baseCost=Math.max(.15,estimatedCandidateCost(asset)-Math.max(0,rate));
+ const perSettlement=Math.max(0,direction==='LONG'?rate:-rate),baseCost=.15;
  return {status:'CURRENT_RATE_SCENARIO_NOT_FORECAST',intervalHours:interval,currentRatePct:rate,futureRatesKnown:false,scenarios:[2,7,14].map(days=>{const settlements=Math.ceil(days*24/interval),fundingPct=perSettlement*settlements,cost=baseCost+fundingPct;
   return {days,settlements,assumedFundingCostPct:round(fundingPct,6),totalCostPct:round(cost,6),netRR:round(planNetRR({direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry),5),stressNetRR:round(planNetRR({direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry,1.5),5)};})};
 }
@@ -524,7 +524,7 @@ function assessSwingOpportunity(asset,model){
  const target=possible.filter(p=>Number.isFinite(p)&&(long?p>entry:p<entry)).sort((a,b)=>long?a-b:b-a)[0];
  if(!Number.isFinite(target))return {...state,reason:'NO_REAL_FIRST_SWING_TARGET'};
  const move=Math.abs(target-entry),minimumMove=Math.max(profile.minimumFirstTargetMoveUsd,entry*profile.minimumFirstTargetMovePct/100,atr*profile.minimumFirstTargetAtr4h);
- const costs=holdingFundingScenarios(asset,c.direction,entry,stop,target),qualifiedHorizon=[...costs.scenarios].reverse().find(x=>x.netRR>=2),baseCost=qualifiedHorizon?.totalCostPct??costs.scenarios.at(-1)?.totalCostPct??estimatedCandidateCost(asset);
+ const costs=holdingFundingScenarios(asset,c.direction,entry,stop,target),qualifiedHorizon=[...costs.scenarios].reverse().find(x=>x.netRR>=2),baseCost=qualifiedHorizon?.totalCostPct??costs.scenarios.at(-1)?.totalCostPct??estimatedCandidateCost(asset,c.direction);
  const netRR=planNetRR({direction:c.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:baseCost},entry);
  const projected={...state,structuralStop:stop,modelProtectionPrice:pivot.price,protectionAt:pivot.ts,stopTimeframe:'4h',firstTarget:target,firstTargetMoveUsd:round(move,3),minimumPreferredMoveUsd:round(minimumMove,3),netRR:round(netRR,5),funding:costs};
  if(move<minimumMove)return {...projected,reason:'FIRST_REAL_TARGET_SPACE_BELOW_SWING_PREFERENCE'};
@@ -557,6 +557,16 @@ const SCANNER_REVIEW_REQUEST_KEY='scanner:review-request:v2761';
 const SCANNER_CYCLE_RESULT_KEY='scanner:last-cycle-result:v2761';
 const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
 const FAST_INTERVAL_MS=10000;
+function nextFastAlarmAt(state,now=Date.now()){
+ const anchor=Number.isFinite(state.lastTickAt)?state.lastTickAt:now;
+ const quote=state.executionQuote,times=[quote?.exchangeTimestamp,quote?.lastTradeTimestamp,quote?.bookTimestamp].map(x=>Date.parse(x)).filter(Number.isFinite);
+ // Keep the ten-second maximum cadence, but account for age already present
+ // in an exchange sample. Leave one second for the next fetch, never poll
+ // more often than five seconds, and never extend an upstream cooldown.
+ const expiry=times.length?Math.min(...times)+9000:Infinity;
+ const deadline=state.status==='ok'?Math.min(anchor+FAST_INTERVAL_MS,expiry):anchor+FAST_INTERVAL_MS;
+ return Math.max(now+1000,anchor+5000,deadline);
+}
 function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
 async function ensureFastMonitor(owner){
  if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED',scheduled:false};
@@ -764,7 +774,7 @@ async function runFastMonitorAlarm(owner){
   if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED'};
   const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
   // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
-  if(state.lastTickAt&&now-state.lastTickAt<5000){if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);return compactFastMonitor(state);}
+  if(state.lastTickAt&&now-state.lastTickAt<5000){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
   state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
   try{
@@ -793,6 +803,8 @@ async function runFastMonitorAlarm(owner){
    // Review requests are independent of flow collection. A book cooldown must not freeze model work.
    try{await maintainFastModelReview(owner,state);}catch(e){state.reviewSchedulingError=String(e?.message||e).slice(0,180);}
    while(state.trades?.length&&jsonUtf8Size(JSON.stringify(state))>90000)state.trades.shift();
+   const next=nextFastAlarmAt(state);state.nextAlarmAt=new Date(next).toISOString();
+   if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);
    await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
    if(owner.publicRecords)await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
   }
@@ -1266,7 +1278,7 @@ function adaptiveAssessmentBase(seed,asset,btc) {
   if(!Number.isFinite(price)||!genuineExecutionQuote(asset.ticker))return {...result,failedGate:"CURRENT_OKX_EXECUTION_QUOTE_MISSING"};
   if(!Number.isFinite(target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_MISSING_NO_PROJECTED_TARGET"};
   if(long?price>=target:price<=target)return {...result,failedGate:"FIRST_REALISTIC_TARGET_ALREADY_PASSED"};
-  const stop=stopOutsideNearbyStructuralPool(seed.direction,seed.stopLoss,asset,seed.atr),costPct=estimatedCandidateCost(asset),netRR=planNetRR({direction:seed.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
+  const stop=stopOutsideNearbyStructuralPool(seed.direction,seed.stopLoss,asset,seed.atr),costPct=estimatedCandidateCost(asset,seed.direction),netRR=planNetRR({direction:seed.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
   const cap=(target+2*stop)/(3*(long?1+costPct/100:1-costPct/100));
   const zone=long?{min:Math.max(seed.entryZone.min,stop+1e-8),max:Math.min(seed.entryZone.max,cap)}:{min:Math.max(seed.entryZone.min,cap),max:Math.min(seed.entryZone.max,stop-1e-8)};
   const rrQualifiedEntryZone=zone.min<=zone.max?zone:null,pricing={entry:price,entryReference:"DIRECTIONAL_ASK_OR_BID",stopLoss:stop,target,estimatedRoundTripCostPct:costPct,netRR,rrQualifiedEntryZone};
@@ -1274,9 +1286,11 @@ function adaptiveAssessmentBase(seed,asset,btc) {
   return {...result,...pricing,state:"CANDIDATE_FOR_REVIEW",failedGate:null,candidate:{...seed,...pricing,candleAt:p.candleAt,openNowAllowed:false,
     validationStatus:"NEW_RESEARCH_ROUTE_NO_VERIFIED_WIN_RATE",reviewRequired:["FRESH_NEWS","ACTUAL_COSTS"],adaptiveEvidence:seed}};
 }
-function estimatedCandidateCost(asset) {
+function estimatedCandidateCost(asset,direction) {
   // A conservative engineering floor, not the user's actual exchange fee tier.
-  const funding=Math.max(0,finite(asset?.derivatives?.funding?.fundingRatePct,0));
+  // Parsers expose ratePct. Charge the paying side; never credit assumed receipts.
+  const rate=finite(asset?.derivatives?.funding?.ratePct,0);
+  const funding=Math.max(0,direction==='LONG'?rate:direction==='SHORT'?-rate:Math.abs(rate));
   return Math.max(0.15,0.10+0.04+funding);
 }
 function monitorPage() {
@@ -1488,7 +1502,7 @@ function opportunityAssessmentBase(seed,asset,btc) {
 
   if(!Number.isFinite(target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_MISSING"};
   const stopLoss=stopOutsideNearbyStructuralPool(direction,progress.stopLoss,asset,seed.atr);
-  const costPct=estimatedCandidateCost(asset),netRR=planNetRR({direction,stopLoss,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
+  const costPct=estimatedCandidateCost(asset,direction),netRR=planNetRR({direction,stopLoss,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
   const cap=(target+MIN_NET_RR*stopLoss)/((1+MIN_NET_RR)*(long?1+costPct/100:1-costPct/100));
   const epsilon=Math.max(price*1e-10,1e-10);
   const zone=long?{min:Math.max(seed.entryZone.min,stopLoss+epsilon),max:Math.min(seed.entryZone.max,cap)}
@@ -1748,11 +1762,12 @@ function discoverRangeReversalBase(asset, btc) {
   if (!Number.isFinite(price) || (long ? price >= midpoint : price <= midpoint)) return null;
   if (trendAgainst(direction, btc?.timeframes?.["4h"]) && trendAgainst(direction, btc?.timeframes?.["1h"])) return null;
   const submodel = outsideCloseIndex >= 0 ? "C2" : "C1";
-  const plan = { direction, stopLoss, takeProfits: [{ price: midpoint }], estimatedRoundTripCostPct: 0.15 };
+  const costPct=estimatedCandidateCost(asset,direction);
+  const plan = { direction, stopLoss, takeProfits: [{ price: midpoint }], estimatedRoundTripCostPct: costPct };
   const netRR = planNetRR(plan, price);
   if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.B)) return null;
   return {
-    model: "C", submodel, direction, boundary, entry:price,estimatedRoundTripCostPct:0.15,stopLoss, target: midpoint, netRR,
+    model: "C", submodel, direction, boundary, entry:price,estimatedRoundTripCostPct:costPct,stopLoss, target: midpoint, netRR,
     candleAt: latest.ts,
     entryZone: long ? { min: lower, max: Math.min(midpoint, lower + 0.25 * (upper - lower)) } : { min: Math.max(midpoint, upper - 0.25 * (upper - lower)), max: upper },
     evidence: { reentered, structureShift, event: submodel === "C2" ? "FAILED_BREAKOUT_REENTERED" : "SWEEP_RECLAIMED" },
@@ -6993,7 +7008,7 @@ export default {
       }
       if (request.method === "POST" && path === "/scanner/test") {
         try {
-          const notification = await sendBark(env, { title: "✅ Crypto Alpha 提醒测试成功", body: "Bark、Worker 和扫描提醒线路已经连通。", level: "timeSensitive" });
+          const notification = await sendBark(env, { title: "Crypto Alpha 通信测试｜非交易信号", body: "这是一条通信测试通知。手机显示此条仅证明这次测试送达；候选生成、定时扫描和其他提醒需要分别验收。", level: "timeSensitive" });
           return json({ status: "ok", notification });
         } catch (error) { return json({ error: "BARK_TEST_FAILED", message: error?.message || String(error) }, 503); }
       }

@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+ops-report.json
+ops-report.md
+test-results/
+.env
+.env.*
+.dev.vars
+.dev.vars.*
