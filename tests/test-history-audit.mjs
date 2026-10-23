@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {projectHistory,runHistory} from '../ops/history-audit.mjs';
+const secret='DO_NOT_PUBLISH_THIS',config={accountId:'fixture-account',worker:'fixture-worker'};
+const input={events:{count:2,events:[{$metadata:{service:config.worker,url:'https://example.test/?key='+secret,statusCode:503,duration:7,error:secret},timestamp:1,source:{secret,message:'MARKET_RESPONSE_BUDGET_EXCEEDED'}},{$metadata:{service:'unrelated-worker'},timestamp:2,source:secret}]}};
+const out=projectHistory(input,config.worker);assert.equal(out.matchedRows,1);assert.equal(out.events[0].endpoint,'MARKET');assert.equal(out.events[0].httpStatus,503);assert.deepEqual(out.events[0].knownErrorCodes,['MARKET_RESPONSE_BUDGET_EXCEEDED']);assert.ok(!JSON.stringify(out).includes(secret));assert.ok(!JSON.stringify(out).includes('unrelated-worker'));
+const requests=[];const fake=async(url,req)=>{requests.push({url,req});return Response.json({success:true,result:url.endsWith('/keys')?[{key:'$metadata.service',type:'string'}]:input});};
+assert.equal((await runHistory(fake,config,secret)).status,'HISTORICAL_QUERY_COMPLETED');assert.equal(requests.length,2);const q=JSON.parse(requests[1].req.body);assert.equal(q.parameters.filters[0].value,config.worker);assert.equal(q.timeframe.to-q.timeframe.from,120000);assert.equal(q.limit,1000);assert.equal(requests[1].req.redirect,'error');
+let calls=0;const absent=await runHistory(async()=>{calls++;return Response.json({success:true,result:[]});},config,secret);assert.equal(calls,1);assert.equal(absent.status,'SERVICE_FIELD_NOT_AVAILABLE');
+await assert.rejects(runHistory(async()=>new Response(secret,{status:403}),config,secret),/TELEMETRY_HTTP_403/);
+console.log('PASS historical query target, time bounds, missing-field guard, HTTP errors and private-log projection');
