@@ -4,6 +4,7 @@ import {spawn,execFileSync} from 'node:child_process';import assert from 'node:a
 const bin=process.argv[2];if(!bin)throw Error('Pass actual workerd binary');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'alpha-contention-runtime-'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
+const expectedBuild=source.match(/const BUILD\s*=\s*"([^"]+)"/)[1];
 fs.writeFileSync(path.join(dir,'app.mjs'),`const RealDate=globalThis.Date;class Date extends RealDate {}export function setClock(n){}\n`+source);
 fs.writeFileSync(path.join(dir,'entry.mjs'),`
 import app,{setClock,ScannerState as BaseScannerState} from './app.mjs';
@@ -96,7 +97,7 @@ try{
   if(Date.now()>=nextManual){await call('/?view=market&recheck=true');contexts++;nextManual=Date.now()+4000;}
   const s=(await call('/?view=fast')).body.fastMonitor;
   const receipts=[s.fullReview,s.fullReview?.lastSharedCycle,s.fullReview?.lastCompletedReview].filter(Boolean);
-  const fresh=receipts.some(r=>r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady===true&&r.producerBuild==='crypto-alpha-worker-v27.6.2-owner-local-dispatch'&&Date.parse(r.completedAt||r.lastCompletedAt)>failedAt);
+  const fresh=receipts.some(r=>r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady===true&&r.producerBuild===expectedBuild&&Date.parse(r.completedAt||r.lastCompletedAt)>failedAt);
   return s.status==='partial'&&fresh?s:null;
  },80000);
  backgroundReviewObserved=true;originalDeadline=duringFailure.flowRetryAt;assert.ok(originalDeadline);
@@ -105,14 +106,14 @@ try{
  assert.equal(recovered.samplingHealthy,true);assert.equal(recovered.flowHealthy,true);assert.ok(recovered.actualLastGapSeconds<15);assert.ok(contexts>=3);checks.push('normal manual refreshes cannot extend the circuit; actual alarms resume successful flow after expiry');
  assert.equal(backgroundReviewObserved,true,JSON.stringify({recovered,failed}));checks.push('active research completes a shared eight-model review while executed-flow collection is still cooling');
  const status=(await call('/scanner/status')).body;assert.ok(status.observations.some(o=>o.observationId===obs.observationId));assert.equal(status.activePlan,null);assert.equal(status.diagnostics.pendingPushes,0);checks.push('the same research survives cooldown and recovery without creating an execution plan');
- assert.equal(status.backendIdentity.matched,true);assert.equal(status.fastMonitor.stateOwnerBuild,'crypto-alpha-worker-v27.6.2-owner-local-dispatch');assert.equal(typeof status.fastMonitor.quoteHealthy,'boolean');assert.equal(typeof status.fastMonitor.flowHealthy,'boolean');checks.push('actual owner build, contract and all three health flags are visible in the native response');
+ assert.equal(status.backendIdentity.matched,true);assert.equal(status.fastMonitor.stateOwnerBuild,expectedBuild);assert.equal(typeof status.fastMonitor.quoteHealthy,'boolean');assert.equal(typeof status.fastMonitor.flowHealthy,'boolean');checks.push('actual owner build, contract and all three health flags are visible in the native response');
  const previousCompletion=Date.parse(status.heartbeat.lastSuccessfulCycleAt),cronStartedAt=Date.now();
  const cron=await call('/__fixture/cron');assert.equal(cron.body.handled,true);
  // The scheduled entry can share an existing lease, and a native alarm can start
  // the next cycle before this read. Neither "handled" nor "running" proves a
  // new success: wait for an independently observed, strictly newer completion.
  const afterCron=await until(async()=>{const s=(await call('/scanner/status')).body,finished=Date.parse(s.heartbeat?.lastSuccessfulCycleAt);return finished>=cronStartedAt&&finished>previousCompletion?s:null;},20000);
- assert.equal(afterCron.heartbeat.producerBuild,'crypto-alpha-worker-v27.6.2-owner-local-dispatch');assert.ok(['completed','running'].includes(afterCron.heartbeat.status));checks.push('scheduled entry shares the owner-local scanner and a strictly new successful heartbeat is observed');
+ assert.equal(afterCron.heartbeat.producerBuild,expectedBuild);assert.ok(['completed','running'].includes(afterCron.heartbeat.status));checks.push('scheduled entry shares the owner-local scanner and a strictly new successful heartbeat is observed');
  assert.equal((await call('/__fixture/forbidden')).body.calls,0);checks.push('native alarms, depth-rejection fault injection, forced refreshes and scheduled cycles make zero owner self-namespace fetch calls');
  const pushes=(await call('/__fixture/control',{})).body.pushes;assert.equal(pushes.length,0);checks.push('ordinary research touches and degraded-flow history do not generate spurious push messages');
  console.log(JSON.stringify({runtime:execFileSync(bin,['--version'],{encoding:'utf8'}).trim(),realDurableObject:true,nativeAlarms:true,concurrentManualRefreshes:contexts,observedLastGapSeconds:recovered.actualLastGapSeconds,checks,passed:checks.length,failed:0,externalUpstreams:'LOCAL_FIXTURES_ONLY',selfNamespaceFetchPolicy:'THROW_SYNTHETIC_DEPTH_ERROR',productionDepthErrorReplayed:false,productionDeploymentVerified:false,realDeviceDeliveryVerified:false},null,2));

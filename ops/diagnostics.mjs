@@ -61,11 +61,16 @@ export function summarizeReadContext(market,news){
 export async function requestJson(fetcher,url,headers={}){
   let r;
   try{r=await fetcher(url,{method:'GET',redirect:'error',cache:'no-store',headers:{accept:'application/json',...headers},signal:AbortSignal.timeout(15000)});}catch{throw new OpsError('REQUEST_FAILED');}
-  if(!r.ok)throw new OpsError('HTTP_'+r.status);
   const reader=r.body?.getReader();let size=0,parts=[];
-  if(!reader)throw new OpsError('EMPTY_RESPONSE');
+  if(!reader)throw new OpsError(r.ok?'EMPTY_RESPONSE':'HTTP_'+r.status);
   for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>1048576){await reader.cancel();throw new OpsError('RESPONSE_TOO_LARGE');}parts.push(Buffer.from(value));}
-  try{return JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new OpsError('INVALID_JSON');}
+  let parsed;try{parsed=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{if(r.ok)throw new OpsError('INVALID_JSON');}
+  if(!r.ok){
+    const e=new OpsError('HTTP_'+r.status),reason=parsed?.error?.code||parsed?.error;
+    if(['MARKET_RESPONSE_BUDGET_EXCEEDED','MARKET_RESPONSE_DEADLINE','MARKET_SNAPSHOT_FAILED','NEWS_CACHE_READ_FAILED','PUBLIC_MARKET_COORDINATOR_FAILED'].includes(reason))e.reason=reason;
+    throw e;
+  }
+  return parsed;
 }
 
 export function summarizeSample(fast,status,now=Date.now()){

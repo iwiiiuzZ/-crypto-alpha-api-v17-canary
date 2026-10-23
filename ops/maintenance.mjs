@@ -4,10 +4,12 @@ import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,asse
 
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
-const build=source.match(/const BUILD\s*=\s*"([^"]+)"/)?.[1];
-if(!build)throw new Error('LOCAL_BUILD_MISSING');
+const sourceBuild=source.match(/const BUILD\s*=\s*"([^"]+)"/)?.[1];
+if(!sourceBuild)throw new Error('LOCAL_BUILD_MISSING');
+// An unmerged maintenance candidate can audit the explicitly pinned old deployment.
+const build=process.env.EXPECTED_DEPLOYED_BUILD||sourceBuild;
 const token=process.env.CLOUDFLARE_API_TOKEN,scanner=process.env.SCANNER_TOKEN;
-const failures=[],samples=[],report={generatedAt:new Date().toISOString(),expectedBuild:build,mode:'READ_ONLY',errors:failures};
+const failures=[],samples=[],report={generatedAt:new Date().toISOString(),sourceBuild,expectedBuild:build,sourceIsDeploymentCandidate:sourceBuild!==build,mode:'READ_ONLY',errors:failures};
 const code=e=>e instanceof OpsError?e.code:'INTERNAL_DIAGNOSTIC_ERROR';
 try{report.cloudflare=await cloudflareSnapshot(fetch,config,token);}catch(e){failures.push({stage:'cloudflare',code:code(e)});}
 if(!scanner)failures.push({stage:'scanner',code:'MISSING_SCANNER_TOKEN'});
@@ -35,11 +37,10 @@ report.assessment=assessSamples(samples,{...config,build});
 // Maintenance-branch audit only: foreground market/news context is read AFTER
 // the autonomous window and never counted as its successful background work.
 if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){
-  try{
-    const [market,news]=await Promise.all([requestJson(fetch,config.origin+'/'),requestJson(fetch,config.origin+'/?view=news')]);
-    report.foregroundContext=summarizeReadContext(market,news);
-    report.newsBatchComparison=compareNewsBatches(samples.at(-1),report.foregroundContext);
-  }catch(e){report.foregroundContext={error:code(e),evidenceScope:'FOREGROUND_READ_ONLY'};}
+  const context=await Promise.allSettled([requestJson(fetch,config.origin+'/'),requestJson(fetch,config.origin+'/?view=news')]);
+  report.foregroundContext=summarizeReadContext(context[0].value,context[1].value);
+  report.foregroundContext.errors=context.flatMap((r,i)=>r.status==='rejected'?[{endpoint:i===0?'market':'news',code:code(r.reason),reason:r.reason.reason||null}]:[]);
+  report.newsBatchComparison=compareNewsBatches(samples.at(-1),report.foregroundContext);
   try{report.buildConfiguration=await cloudflareBuildSnapshot(fetch,config,token);}
   catch(e){report.buildConfiguration={error:code(e)};}
 }
