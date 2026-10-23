@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {setTimeout as delay} from 'node:timers/promises';
-import {requestJson,summarizeSample,assessSamples,cloudflareSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
+import {requestJson,summarizeSample,summarizeReadContext,assessSamples,cloudflareSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
@@ -12,7 +12,7 @@ const code=e=>e instanceof OpsError?e.code:'INTERNAL_DIAGNOSTIC_ERROR';
 try{report.cloudflare=await cloudflareSnapshot(fetch,config,token);}catch(e){failures.push({stage:'cloudflare',code:code(e)});}
 if(!scanner)failures.push({stage:'scanner',code:'MISSING_SCANNER_TOKEN'});
 // Deliberately never call scanner/run, scanner/test, plan, cancel, or force-refresh.
-// The only production HTTP operations in this job are the following two GETs.
+// The autonomous observation window uses only these two GETs.
 if(token&&scanner){
   let began=Date.now();
   for(const offset of [0,25000,85000]){
@@ -32,6 +32,14 @@ if(token&&scanner&&!failures.length){
 }
 report.samples=samples;
 report.assessment=assessSamples(samples,{...config,build});
+// Maintenance-branch audit only: foreground market/news context is read AFTER
+// the autonomous window and never counted as its successful background work.
+if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){
+  try{
+    const [market,news]=await Promise.all([requestJson(fetch,config.origin+'/'),requestJson(fetch,config.origin+'/?view=news')]);
+    report.foregroundContext=summarizeReadContext(market,news);
+  }catch(e){report.foregroundContext={error:code(e),evidenceScope:'FOREGROUND_READ_ONLY'};}
+}
 const ok=!failures.length&&report.cloudflare?.bindingMatches&&report.cloudflare?.singleVersion&&report.assessment.operationalPassed;
 report.result=ok?'OPERATIONAL_WINDOW_PASSED_WITH_LIMITS':failures.some(e=>e.code.startsWith('MISSING_'))?'AUTHORIZATION_REQUIRED':'DEGRADED';
 const output=safeOutput(report,[token,scanner]);

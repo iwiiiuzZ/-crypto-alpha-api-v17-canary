@@ -66,14 +66,21 @@ export default {async fetch(req){const u=new URL(req.url);counts[u.hostname]=(co
 }};`);
 fs.writeFileSync(path.join(dir,'config.capnp'),`using W=import "/workerd/workerd.capnp";const config:W.Config=(services=[
  (name="main",worker=(compatibilityDate="2026-08-22",globalOutbound="upstream",modules=[(name="entry.mjs",esModule=embed "entry.mjs"),(name="app.mjs",esModule=embed "app.mjs")],
- durableObjectNamespaces=[(className="ScannerState",uniqueKey="isolated-consolidated-runtime-fixture")],durableObjectStorage=(inMemory=void),
+ durableObjectNamespaces=[(className="ScannerState",uniqueKey="isolated-consolidated-runtime-fixture")],durableObjectStorage=(localDisk="storage"),
  bindings=[(name="SCANNER_STATE",durableObjectNamespace=(className="ScannerState")),(name="SCANNER_TOKEN",text="fixture-scanner"),(name="FAST_MONITOR_ENABLED",text="false"),(name="BARK_DEVICE_KEY",text="fixture-device"),(name="JIN10_MCP_TOKEN",text="fixture-news")])),
+ (name="storage",disk=(path="${dir}/state",writable=true)),
  (name="upstream",worker=(compatibilityDate="2026-08-22",modules=[(name="upstream.mjs",esModule=embed "upstream.mjs")]))
 ],sockets=[(name="http",address="127.0.0.1:0",http=(),service="main")]);`);
-const child=spawn(bin,['serve',path.join(dir,'config.capnp'),'--control-fd=3'],{stdio:['ignore','ignore','pipe','pipe']});let stderr='';child.stderr.on('data',b=>stderr+=b);const checks=[];
-try{
+fs.mkdirSync(path.join(dir,'state'));
+let child,base,stderr='';const checks=[];
+async function startRuntime(){
+ child=spawn(bin,['serve',path.join(dir,'config.capnp'),'--control-fd=3'],{stdio:['ignore','ignore','pipe','pipe']});child.stderr.on('data',b=>stderr+=b);
  const port=await new Promise((resolve,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('Runtime start '+stderr)),8000);child.on('exit',c=>{clearTimeout(timer);reject(Error('Runtime exit '+c+' '+stderr));});child.stdio[3].on('data',b=>{text+=b;for(const l of text.split('\n'))try{const j=JSON.parse(l);if(j.port){clearTimeout(timer);resolve(j.port);}}catch{}});});
- const base='http://127.0.0.1:'+port;
+ base='http://127.0.0.1:'+port;
+}
+async function restartRuntime(){await new Promise(resolve=>{child.once('exit',resolve);child.kill('SIGKILL');});await startRuntime();}
+try{
+ await startRuntime();
  async function call(p,body,auth=true){const r=await fetch(base+p,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(auth?{authorization:'Bearer fixture-scanner'}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(40000)});return {http:r.status,body:await r.json()};}
  let now=Date.now();await call('/__fixture/control',{now,blsFail:true});
  assert.equal((await call('/scanner/status',undefined,false)).http,401);checks.push('private records reject missing authentication');
@@ -89,9 +96,17 @@ try{
  const saved=await call('/scanner/plan',obs);assert.equal(saved.http,200,JSON.stringify(saved.body));checks.push('authenticated observation persists in actual Durable Object');
  await call('/__fixture/control',{barkFail:true});const scan=await call('/scanner/run',{});assert.equal(scan.http,200,JSON.stringify(scan.body));
  let status=(await call('/scanner/status')).body;assert.equal(status.diagnostics.stateReadSucceeded,true);assert.ok(status.diagnostics.pendingObservationPushes>=1,JSON.stringify(status));assert.equal(status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION').failures,1);assert.equal(status.notificationAudit.recentAttempts.at(-1).outcome,'FAILED');assert.equal(status.notificationAudit.recentAttempts.at(-1).eventId,obs.observationId);checks.push('real failed push remains pending with a persistent correlated failure audit');
+ await restartRuntime();await call('/__fixture/control',{now,barkFail:true});
+ status=(await call('/scanner/status')).body;
+ assert.ok(status.diagnostics.pendingObservationPushes>=1);assert.equal(status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION').failures,1);
+ checks.push('abrupt process restart preserves the failed attempt and pending observation on disk');
  now+=121000;await call('/__fixture/control',{now,barkFail:false});await call('/scanner/run',{});status=(await call('/scanner/status')).body;
  assert.equal(status.diagnostics.pendingObservationPushes,0,JSON.stringify(status));assert.equal(status.diagnostics.heartbeatHealthy,true);assert.equal(status.discovery.newsStatus.sources.JIN10.httpStatus,200);checks.push('retry after virtual-clock backoff succeeds and heartbeat plus news consumption persist');
  const pushState=(await call('/__fixture/control',{})).body;assert.equal(pushState.pushes.length,1);assert.equal(pushState.pushes[0].isArchive,'1');const audit=status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION');assert.equal(audit.accepted,1);assert.equal(audit.failures,1);assert.equal(audit.attempts,2);assert.equal(status.notificationAudit.deviceReceiptVerified,false);checks.push('actual provider attempts, failed retry, archive request and acceptance remain distinct from device receipt');await call('/scanner/run',{});assert.equal((await call('/__fixture/control',{})).body.pushes.length,1);checks.push('no duplicate stage push on repeated scan');
+ await restartRuntime();await call('/__fixture/control',{now,barkFail:false});await call('/scanner/run',{});
+ assert.equal((await call('/__fixture/control',{})).body.pushes.length,0);
+ status=(await call('/scanner/status')).body;assert.equal(status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION').accepted,1);
+ checks.push('abrupt process restart preserves accepted-stage deduplication without a second notification');
  const cancelled=await call('/scanner/cancel',{scope:'OBSERVATION',observationId:obs.observationId});assert.equal(cancelled.http,200);status=(await call('/scanner/status')).body;assert.ok(!status.observations.some(r=>r.observationId===obs.observationId));checks.push('targeted cancellation does not erase persistent history');
  // Quotes fail with 429, then recover; the record must survive both phases.
  const retained={...obs,observationId:'runtime-retained',sourceAnalysisAt:new Date(now).toISOString(),expiresAt:new Date(now+900000).toISOString()};assert.equal((await call('/scanner/plan',retained)).http,200);

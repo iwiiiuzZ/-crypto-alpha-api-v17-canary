@@ -24,7 +24,10 @@ export function summarizeCandidateChain(status){
         state:enumCode(r?.state),reason:enumCode(d?.reason||r?.reason),progress:enumCode(d?.modelProgress),
         swingReason:enumCode(d?.swingReason),pushStatus:enumCode(d?.currentStagePushStatus),
         technicalCardPresent:card?true:Object.hasOwn(r||{},'preparedTrade')?false:null,
-        executionPermission:enumCode(card?.executionPermission),decisionAvailable:!!d};
+        executionPermission:enumCode(card?.executionPermission),decisionAvailable:!!d,
+        structureReady:typeof d?.structureReady==='boolean'?d.structureReady:null,
+        technicalCandidatePresent:typeof d?.technicalCandidatePresent==='boolean'?d.technicalCandidatePresent:null,
+        triggerConfirmed:typeof d?.triggerAt==='string'&&Number.isFinite(at(d.triggerAt))};
       const key=JSON.stringify(row);groups.set(key,{...row,count:(groups.get(key)?.count||0)+1});
     }
     return [...groups.values()];
@@ -39,6 +42,19 @@ export function summarizeCandidateChain(status){
     recentAttemptStages:attempts.map(a=>({kind:enumCode(a.kind),stage:enumCode(a.stage),outcome:enumCode(a.outcome),attemptedAt:stamp(a.attemptedAt),completedAt:stamp(a.completedAt)})),
     pendingByKind:Object.fromEntries(['Observation','News','Dynamic','Plan','Fast','Progress'].map(k=>[k,number(status?.diagnostics?.['pending'+k+'Pushes'])])),
     preparedNotificationLiveVerified:false,deviceReceiptVerified:false};
+}
+
+export function summarizeReadContext(market,news){
+ const sources=news?.newsContext?.sources||{};
+ return {marketGeneratedAt:stamp(market?.generatedAt),decisionState:word(market?.decisionState),
+  structure:['ETHUSDT','BTCUSDT'].flatMap(symbol=>['15m','1h','4h'].map(tf=>{
+   const t=market?.assets?.[symbol]?.timeframes?.[tf],q=t?.quality||{};
+   return {symbol,timeframe:tf,status:word(t?.status),source:word(t?.source),qualityPassed:q.passed===true,
+    count:number(t?.candleCount),newestClosedAt:stamp(q.newestClosedCandleAt),expectedClosedAt:stamp(q.expectedLastClosedStart),continuityRatio:number(q.continuityRatio),nonZeroVolumeRatio:number(q.nonZeroVolumeRatio),collectionAgeSeconds:number(t?.coordinator?.collectionAgeSeconds)};
+  })),
+  models:(market?.assets?.ETHUSDT?.opportunityEngine?.models||[]).map(m=>({model:word(m.submodel),state:word(m.state),failedGate:enumCode(m.failedGate),swingState:word(m.swingAssessment?.state),swingReason:enumCode(m.swingAssessment?.reason)})),
+  newsCheckedAt:stamp(news?.newsContext?.checkedAt),newsSources:Object.entries(sources).filter(([k])=>['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'].includes(k)).map(([source,v])=>({source,status:word(v.status),httpStatus:number(v.httpStatus),fetchedAt:stamp(v.fetchedAt),publishedAt:stamp(v.latestPublishedAt),retryAt:stamp(v.nextAttemptAt),lastAttemptAt:stamp(v.lastAttemptAt),cacheState:word(v.cacheState)})),
+  evidenceScope:'FOREGROUND_READ_AFTER_AUTONOMOUS_WINDOW_NOT_BACKGROUND_PROOF'};
 }
 
 export async function requestJson(fetcher,url,headers={}){

@@ -89,6 +89,17 @@ try{
  await call('/__fixture/control',{flowFail:true});let nextManual=0,originalDeadline=null,failedAt=null,backgroundReviewObserved=false,contexts=0;
  const failed=await until(async()=>{if(Date.now()>=nextManual){await call('/?view=market&recheck=true');contexts++;nextManual=Date.now()+4000;}const s=(await call('/?view=fast')).body.fastMonitor;if(s.status==='partial'){failedAt=Date.parse(s.lastAttemptAt);originalDeadline=s.flowRetryAt;return s;}return null;},20000);
  assert.equal(failed.quoteHealthy,true);assert.equal(failed.flowHealthy,false);assert.equal(failed.lastSuccessAt,first.lastSuccessAt);assert.ok(originalDeadline);assert.ok(failed.feedDiagnostics.some(d=>d.httpStatus===429));checks.push('depth/trade HTTP429 leaves a separate genuine fresh quote and honest degraded flow state');
+ // Keep the upstream fault active until an independently completed review is
+ // observed during degradation. A 30s review throttle and a 30s cooldown can
+ // otherwise race; removing the fault immediately cannot prove this property.
+ const duringFailure=await until(async()=>{
+  if(Date.now()>=nextManual){await call('/?view=market&recheck=true');contexts++;nextManual=Date.now()+4000;}
+  const s=(await call('/?view=fast')).body.fastMonitor;
+  const receipts=[s.fullReview,s.fullReview?.lastSharedCycle,s.fullReview?.lastCompletedReview].filter(Boolean);
+  const fresh=receipts.some(r=>r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady===true&&r.producerBuild==='crypto-alpha-worker-v27.6.2-owner-local-dispatch'&&Date.parse(r.completedAt||r.lastCompletedAt)>failedAt);
+  return s.status==='partial'&&fresh?s:null;
+ },80000);
+ backgroundReviewObserved=true;originalDeadline=duringFailure.flowRetryAt;assert.ok(originalDeadline);
  await call('/__fixture/control',{flowFail:false});
  const recovered=await until(async()=>{if(Date.now()>=nextManual){const m=await call('/?view=market&recheck=true');assert.equal(m.http,200);contexts++;nextManual=Date.now()+4000;}const s=(await call('/?view=fast')).body.fastMonitor;if(s.fullReview?.modelDataReady&&Date.parse(s.fullReview.lastCompletedAt)>failedAt&&s.status==='partial')backgroundReviewObserved=true;if(s.status==='partial'&&s.flowRetryAt)assert.equal(s.flowRetryAt,originalDeadline,'passive/manual queries must not slide cooldown');return s.status==='ok'&&Date.parse(s.lastSuccessAt)>Date.parse(first.lastSuccessAt)?s:null;});
  assert.equal(recovered.samplingHealthy,true);assert.equal(recovered.flowHealthy,true);assert.ok(recovered.actualLastGapSeconds<15);assert.ok(contexts>=3);checks.push('normal manual refreshes cannot extend the circuit; actual alarms resume successful flow after expiry');
