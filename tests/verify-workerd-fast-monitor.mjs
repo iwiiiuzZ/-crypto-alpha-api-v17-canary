@@ -54,7 +54,7 @@ export default {async fetch(req){now=Date.now();const u=new URL(req.url);counts[
   else if(p.endsWith('/tickers'))data=['ETH-USDT-SWAP','BTC-USDT-SWAP','ETH-USDT','BTC-USDT'].map(tick);
   else if(p.endsWith('ticker'))data=[tick(inst)];
   else if(p.includes('books'))data=[{ts:String(now+(++bookCounter)),seqId:String(bookCounter),bids:[[String(price-.01),'1000','0','1']],asks:[[String(price+.01),'1000','0','1']]}];
-  else if(p.endsWith('trades'))data=Array.from({length:20},(_,i)=>({instId:inst,ts:String(now-i*100),px:String(price),sz:'2000',side:'buy',tradeId:String(now*1000+i)}));
+  else if(p.endsWith('trades'))data=Array.from({length:20},(_,i)=>({instId:inst,ts:String(now-2500-i*100),px:String(price),sz:'2000',side:'buy',tradeId:String(now*1000+i)}));
   else if(p.endsWith('mark-price'))data=['ETH-USDT-SWAP','BTC-USDT-SWAP'].map(id=>({instId:id,markPx:String(id.startsWith('BTC')?80000:quote),ts:String(now)}));
   else if(p.includes('index-tickers'))data=['ETH-USDT','BTC-USDT'].map(id=>({instId:id,idxPx:String(id.startsWith('BTC')?80000:quote),ts:String(now)}));
   else if(p.endsWith('open-interest'))data=['ETH-USDT-SWAP','BTC-USDT-SWAP'].map(id=>({instId:id,oi:'100000',oiCcy:'1000',oiUsd:'10000000',ts:String(now)}));
@@ -75,11 +75,11 @@ const child=spawn(bin,['serve',path.join(dir,'config.capnp'),'--control-fd=3'],{
 try{
  const port=await new Promise((resolve,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('Runtime start '+stderr)),8000);child.on('exit',c=>{clearTimeout(timer);reject(Error('Runtime exit '+c+' '+stderr));});child.stdio[3].on('data',b=>{text+=b;for(const l of text.split('\n'))try{const j=JSON.parse(l);if(j.port){clearTimeout(timer);resolve(j.port);}}catch{}});});
  const base='http://127.0.0.1:'+port;
- async function call(p,body){const r=await fetch(base+p,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',authorization:'Bearer fixture-scanner'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});return {http:r.status,body:await r.json()};}
+ async function call(p,body){const r=await fetch(base+p,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',authorization:'Bearer fixture-scanner'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});const result={http:r.status,body:await r.json()};if(p==='/?view=fast'&&result.body.fastMonitor?.status==='ok'){assert.equal(result.body.fastMonitor.quoteHealthy,true,'2.5-second-old exchange trades must remain fresh between native ticks');}return result;}
  async function until(fn,timeout=50000){const end=Date.now()+timeout;let value;while(Date.now()<end){value=await fn();if(value)return value;await new Promise(r=>setTimeout(r,1000));}throw Error('Alarm wait timeout '+JSON.stringify(await call('/?view=fast'))+' '+stderr);}
  const first=await call('/');assert.equal(first.http,200,JSON.stringify(first.body));assert.equal(first.body.assets.ETHUSDT.ticker.last,2400);checks.push('production market request bootstraps the existing Durable Object alarm');
  let status=await until(async()=>{const r=(await call('/?view=fast')).body.fastMonitor;return r?.status==='ok'?r:null;},15000);
- assert.equal(status.executionQuote.last,2400);assert.equal(status.samplingHealthy,true);assert.ok(status.nextAlarmAt);checks.push('native alarm fired and fetched independently timestamped OKX trade and book');
+ assert.equal(status.executionQuote.last,2400);assert.equal(status.samplingHealthy,true);assert.ok(status.nextAlarmAt);checks.push('native alarm fired with 2.5-second-old trades; all later healthy-state polls enforce the original ten-second quote limit');
  const initial=status.lastSuccessAt;
  await call('/__fixture/control',{quote:2440,barkFail:true});
  // Only a read-only status endpoint is polled after this point. No market query or scanner/run is invoked.

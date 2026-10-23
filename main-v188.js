@@ -557,6 +557,16 @@ const SCANNER_REVIEW_REQUEST_KEY='scanner:review-request:v2761';
 const SCANNER_CYCLE_RESULT_KEY='scanner:last-cycle-result:v2761';
 const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
 const FAST_INTERVAL_MS=10000;
+function nextFastAlarmAt(state,now=Date.now()){
+ const anchor=Number.isFinite(state.lastTickAt)?state.lastTickAt:now;
+ const quote=state.executionQuote,times=[quote?.exchangeTimestamp,quote?.lastTradeTimestamp,quote?.bookTimestamp].map(x=>Date.parse(x)).filter(Number.isFinite);
+ // Keep the ten-second maximum cadence, but account for age already present
+ // in an exchange sample. Leave one second for the next fetch, never poll
+ // more often than five seconds, and never extend an upstream cooldown.
+ const expiry=times.length?Math.min(...times)+9000:Infinity;
+ const deadline=state.status==='ok'?Math.min(anchor+FAST_INTERVAL_MS,expiry):anchor+FAST_INTERVAL_MS;
+ return Math.max(now+1000,anchor+5000,deadline);
+}
 function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
 async function ensureFastMonitor(owner){
  if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED',scheduled:false};
@@ -764,7 +774,7 @@ async function runFastMonitorAlarm(owner){
   if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED'};
   const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
   // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
-  if(state.lastTickAt&&now-state.lastTickAt<5000){if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);return compactFastMonitor(state);}
+  if(state.lastTickAt&&now-state.lastTickAt<5000){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
   state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
   try{
@@ -793,6 +803,8 @@ async function runFastMonitorAlarm(owner){
    // Review requests are independent of flow collection. A book cooldown must not freeze model work.
    try{await maintainFastModelReview(owner,state);}catch(e){state.reviewSchedulingError=String(e?.message||e).slice(0,180);}
    while(state.trades?.length&&jsonUtf8Size(JSON.stringify(state))>90000)state.trades.shift();
+   const next=nextFastAlarmAt(state);state.nextAlarmAt=new Date(next).toISOString();
+   if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);
    await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
    if(owner.publicRecords)await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
   }
