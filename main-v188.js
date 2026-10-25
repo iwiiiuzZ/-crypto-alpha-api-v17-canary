@@ -2328,7 +2328,7 @@ const inflight = new Map();
 const upstreamCooldowns = new Map();
 const sharedCooldownChecks = new Map();
 const sharedCooldownInflight = new Map();
-let manualSnapshotWork = null;
+const manualSnapshotWork = new Map();
 let lastManualRequestAt = 0;
 let structureRefreshWork = null;
 
@@ -6740,7 +6740,8 @@ function marketSnapshotResponse(snapshot) {
 
 async function handleSnapshot(request, env, ctx) {
   lastManualRequestAt = Date.now();
-  if (!manualSnapshotWork) {
+  const mode=new URL(request.url).searchParams.get("recheck")==="true"?"recheck":"normal";
+  if (!manualSnapshotWork.has(mode)) {
     // Keep one shared refresh even if an individual request reaches its response deadline.
     // Share only inert data. A Response body belongs to its originating request
     // in workerd; cloning it from another handler fails or locks the stream.
@@ -6748,13 +6749,13 @@ async function handleSnapshot(request, env, ctx) {
     const work=buildManualResponse(request,env,ctx).then(async response=>({
       body:await response.text(),status:response.status,statusText:response.statusText,headers:[...response.headers],
     }));
-    manualSnapshotWork=work;
-    work.finally(()=>{if(manualSnapshotWork===work)manualSnapshotWork=null;}).catch(()=>{});
+    manualSnapshotWork.set(mode,work);
+    work.finally(()=>{if(manualSnapshotWork.get(mode)===work)manualSnapshotWork.delete(mode);}).catch(()=>{});
     if(ctx?.waitUntil)ctx.waitUntil(work.then(()=>{},()=>{}));
   }
   let timer;
   try {
-    const result=await Promise.race([manualSnapshotWork,new Promise(resolve=>{
+    const result=await Promise.race([manualSnapshotWork.get(mode),new Promise(resolve=>{
       timer=setTimeout(()=>resolve(null),35000);
     })]);
     if(result===null)return marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD");

@@ -11,5 +11,9 @@ export function expectedResponseIsolation(old){
   '    }));');
  once('timer=setTimeout(()=>resolve(marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD")),35000);','timer=setTimeout(()=>resolve(null),35000);');
  once('    return result.clone();','    if(result===null)return marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD");\n    return new Response(result.body,{status:result.status,statusText:result.statusText,headers:result.headers});');
+ once('  if (!manualSnapshotWork) {','  const mode=new URL(request.url).searchParams.get("recheck")==="true"?"recheck":"normal";\n  if (!manualSnapshotWork.has(mode)) {');
+ once('    manualSnapshotWork=work;','    manualSnapshotWork.set(mode,work);');
+ once('work.finally(()=>{if(manualSnapshotWork===work)manualSnapshotWork=null;})','work.finally(()=>{if(manualSnapshotWork.get(mode)===work)manualSnapshotWork.delete(mode);})');
+ once('Promise.race([manualSnapshotWork,new Promise(resolve=>{','Promise.race([manualSnapshotWork.get(mode),new Promise(resolve=>{');
  return old;
 }
