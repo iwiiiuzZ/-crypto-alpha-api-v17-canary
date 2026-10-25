@@ -1,0 +1,25 @@
+name: Ten minute candidate observation
+on:
+  push:
+    branches: ['ops/soak-candidate']
+    paths: ['ops/soak-monitor.mjs', 'tests/test-soak-monitor.mjs', '.github/workflows/soak-monitor.yml']
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - run: node tests/test-soak-monitor.mjs
+      - name: Read independent samples with no manual scan or force refresh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: node ops/soak-monitor.mjs
