@@ -9,6 +9,17 @@ const enumCode=v=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{0,119}$/.test(v)?v:null;
 const age=(v,now)=>Number.isFinite(at(v))?(now-at(v))/1000:null;
 const fresh=(v,now,max)=>{const a=age(v,now);return a!==null&&a>=-5&&a<=max;};
 const NEWS_IDS=['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'];
+const FAST_FEEDS={'/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP':'CONTRACT',
+ '/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500':'TRADES',
+ '/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400':'BOOK'};
+export function summarizeFastFailures(f={}){
+ return {status:['ok','partial','degraded'].includes(f.status)?f.status:null,
+  lastAttemptAt:stamp(f.lastAttemptAt),flowRetryAt:stamp(f.flowRetryAt),failureCount:number(f.failureCount),
+  feeds:(Array.isArray(f.feedDiagnostics)?f.feedDiagnostics:[]).map(r=>({feed:FAST_FEEDS[r.path]||'OTHER',
+   state:['live','cache','cooldown','stale-on-error','unavailable'].includes(r.state)?r.state:null,
+   httpStatus:Number.isInteger(r.httpStatus)&&r.httpStatus>=100&&r.httpStatus<=599?r.httpStatus:null,
+   localCooldown:r.localCooldown===true,retryAt:stamp(r.retryAt),upstreamFailedAt:stamp(r.upstreamFailedAt)}))};
+}
 export class OpsError extends Error {constructor(code){super(code);this.code=code;}}
 
 // Public CI logs contain aggregate stages only: never prices, IDs, messages or secrets.
@@ -80,7 +91,7 @@ export function summarizeSample(fast,status,now=Date.now()){
   return {readAt:new Date(now).toISOString(),build:word(fast?.build),apiVersion:word(fast?.apiVersion),
     identity:{frontendBuild:word(identity.frontendBuild),stateOwnerBuild:word(identity.stateOwnerBuild),stateOwnerContract:word(identity.stateOwnerContract),matched:identity.matched===true},
     health:{sampling:f.samplingHealthy===true,quote:f.quoteHealthy===true,flow:f.flowHealthy===true,lastSuccessAt:stamp(f.lastSuccessAt),lastTradeAt:stamp(f.executionQuote?.lastTradeTimestamp),bookAt:stamp(f.executionQuote?.bookTimestamp),dataAgeSeconds:number(f.dataAgeSeconds),gapSeconds:number(f.actualLastGapSeconds)},
-    receipts,
+    failures:summarizeFastFailures(f),receipts,
     scanner:{build:word(status?.build),stateReadSucceeded:d.stateReadSucceeded===true,identityMatched:status?.backendIdentity?.matched===true,status:word(status?.heartbeat?.status),producerBuild:word(status?.heartbeat?.producerBuild),lastCompletedAt:stamp(status?.heartbeat?.lastCompletedAt),lastSuccessfulCycleAt:stamp(status?.heartbeat?.lastSuccessfulCycleAt),newsConsumedAt:stamp(d.newsConsumption?.consumedAt),pendingPushes:number(d.pendingPushes)},
     notifications:{auditStatus:word(status?.notificationAudit?.status),channels:(status?.notificationAudit?.channels||[]).filter(c=>kinds.has(c.kind)).map(c=>({kind:c.kind,attempts:number(c.attempts),accepted:number(c.accepted),failures:number(c.failures)})),deviceReceiptVerified:false},
     consumedNewsSources:NEWS_IDS.filter(k=>status?.discovery?.newsStatus?.sources?.[k]).map(source=>({source,status:word(status.discovery.newsStatus.sources[source].status),fetchedAt:stamp(status.discovery.newsStatus.sources[source].fetchedAt)})),
