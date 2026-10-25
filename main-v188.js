@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-acceptance-candidate";
+const BUILD = "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -560,11 +560,19 @@ const FAST_INTERVAL_MS=10000;
 function nextFastAlarmAt(state,now=Date.now()){
  const anchor=Number.isFinite(state.lastTickAt)?state.lastTickAt:now;
  const quote=state.executionQuote,times=[quote?.exchangeTimestamp,quote?.lastTradeTimestamp,quote?.bookTimestamp].map(x=>Date.parse(x)).filter(Number.isFinite);
- // Keep the ten-second maximum cadence, but account for age already present
- // in an exchange sample. Leave one second for the next fetch, never poll
- // more often than five seconds, and never extend an upstream cooldown.
+ // Full samples and independent ticker quotes keep the same ten-second
+ // freshness limit. Flow cooldowns do not postpone a quote refresh.
  const expiry=times.length?Math.min(...times)+9000:Infinity;
- const deadline=state.status==='ok'?Math.min(anchor+FAST_INTERVAL_MS,expiry):anchor+FAST_INTERVAL_MS;
+ const quoteDue=['ok','partial'].includes(state.status)?expiry:Infinity;
+ let deadline=Math.min(anchor+FAST_INTERVAL_MS,quoteDue);
+ const retry=Number(state.nextFlowAttemptAt);
+ // Wake at a cooldown ending before the next tick. If a failed-flow tick
+ // would fall just before that deadline, align it instead of skipping the
+ // feed and waiting another full interval. Never delay an earlier quote.
+ if(Number.isFinite(retry)&&retry>now){
+  if(retry<=deadline)deadline=retry;
+  else if(retry-deadline<=1000&&retry<=quoteDue)deadline=retry;
+ }
  return Math.max(now+1000,anchor+5000,deadline);
 }
 function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
@@ -6734,7 +6742,12 @@ async function handleSnapshot(request, env, ctx) {
   lastManualRequestAt = Date.now();
   if (!manualSnapshotWork) {
     // Keep one shared refresh even if an individual request reaches its response deadline.
-    const work=buildManualResponse(request,env,ctx);
+    // Share only inert data. A Response body belongs to its originating request
+    // in workerd; cloning it from another handler fails or locks the stream.
+    // Consume it in the creating handler, then build a fresh Response per caller.
+    const work=buildManualResponse(request,env,ctx).then(async response=>({
+      body:await response.text(),status:response.status,statusText:response.statusText,headers:[...response.headers],
+    }));
     manualSnapshotWork=work;
     work.finally(()=>{if(manualSnapshotWork===work)manualSnapshotWork=null;}).catch(()=>{});
     if(ctx?.waitUntil)ctx.waitUntil(work.then(()=>{},()=>{}));
@@ -6742,9 +6755,10 @@ async function handleSnapshot(request, env, ctx) {
   let timer;
   try {
     const result=await Promise.race([manualSnapshotWork,new Promise(resolve=>{
-      timer=setTimeout(()=>resolve(marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD")),35000);
+      timer=setTimeout(()=>resolve(null),35000);
     })]);
-    return result.clone();
+    if(result===null)return marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD");
+    return new Response(result.body,{status:result.status,statusText:result.statusText,headers:result.headers});
   }catch{return marketFailureResponse("MARKET_SNAPSHOT_FAILED","SNAPSHOT_BUILD");}
   finally{clearTimeout(timer);}
 }
