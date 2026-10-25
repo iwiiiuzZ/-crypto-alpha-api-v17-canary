@@ -1,0 +1,35 @@
+name: Engineering candidate deployment and verification
+on:
+  push:
+    branches: ['ops/candidate-verification']
+    paths: ['ops/candidate-preflight.mjs', '.github/workflows/candidate-verification.yml']
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Require audited baseline, namespace, source and configured build gate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node ops/candidate-preflight.mjs
+      - name: Run all regressions before deploying with preserved variables
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy:checked
+      - name: Verify the candidate with new autonomous samples
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+          INCLUDE_READ_CONTEXT: '1'
+        run: npm run ops:diagnose
