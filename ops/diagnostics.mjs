@@ -56,9 +56,16 @@ export function summarizeCandidateChain(status){
     preparedNotificationLiveVerified:false,deviceReceiptVerified:false};
 }
 
+export function summarizeResponseBudget(body){
+ const t=body?.transportDiagnostics||{},s=t.attemptedSectionUtf8Bytes||{};
+ return {originalUtf8Bytes:number(t.originalUtf8Bytes),transferredUtf8Bytes:number(t.transferredUtf8Bytes),attemptedCompactedUtf8Bytes:number(t.attemptedCompactedUtf8Bytes),
+  compacted:t.compacted===true,modelAssessmentsTransferredInFull:t.modelAssessmentsTransferredInFull===true,
+  referenceCount:t.references&&typeof t.references==='object'?Object.keys(t.references).length:0,
+  sections:{newsContext:number(s.newsContext),analysisContract:number(s.analysisContract),assets:Object.fromEntries(['ETHUSDT','BTCUSDT'].map(symbol=>[symbol,Object.fromEntries(['timeframes','opportunityEngine','crossVenueLiquidity','publicOrderflow','capitalFlow','liquidityRisk'].map(key=>[key,number(s.assets?.[symbol]?.[key])]))]))}};
+}
 export function summarizeReadContext(market,news){
  const sources=news?.newsContext?.sources||{};
- return {marketGeneratedAt:stamp(market?.generatedAt),decisionState:word(market?.decisionState),
+ return {marketGeneratedAt:stamp(market?.generatedAt),decisionState:word(market?.decisionState),marketTransport:summarizeResponseBudget(market),
   structure:['ETHUSDT','BTCUSDT'].flatMap(symbol=>['15m','1h','4h'].map(tf=>{
    const t=market?.assets?.[symbol]?.timeframes?.[tf],q=t?.quality||{};
    return {symbol,timeframe:tf,status:word(t?.status),source:word(t?.source),qualityPassed:q.passed===true,
@@ -79,6 +86,7 @@ export async function requestJson(fetcher,url,headers={}){
   if(!r.ok){
     const e=new OpsError('HTTP_'+r.status),reason=parsed?.error?.code||parsed?.error;
     if(['MARKET_RESPONSE_BUDGET_EXCEEDED','MARKET_RESPONSE_DEADLINE','MARKET_SNAPSHOT_FAILED','NEWS_CACHE_READ_FAILED','PUBLIC_MARKET_COORDINATOR_FAILED'].includes(reason))e.reason=reason;
+    if(reason==='MARKET_RESPONSE_BUDGET_EXCEEDED')e.responseBudget=summarizeResponseBudget(parsed);
     throw e;
   }
   return parsed;

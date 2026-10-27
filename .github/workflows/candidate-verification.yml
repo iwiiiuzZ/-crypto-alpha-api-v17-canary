@@ -11,7 +11,7 @@ concurrency:
 jobs:
   candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -24,10 +24,23 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node ops/candidate-preflight.mjs
       - name: Run all regressions before deploying with preserved variables
+        id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run deploy:checked
-      - name: Verify the candidate with new autonomous samples
+      - name: Record bounded identity propagation separately from acceptance
+        id: convergence
+        env:
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: node ops/wait-for-identity.mjs
+      - name: Fixed ten-minute autonomous observation with every failure retained
+        id: soak
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: node ops/soak-monitor.mjs
+      - name: Independent short observation and foreground context after soak
+        if: always() && steps.deploy.outcome == 'success' && steps.convergence.outcome == 'success' 
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}

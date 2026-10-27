@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {requestJson,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
+import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
 import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
 import fs from 'node:fs';
 const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
@@ -58,4 +58,9 @@ await test('deployment protects target, namespace, migrations and account',()=>{
  assert.equal(fs.existsSync(wranglerCLI()),true);
 });
 await test('feed failure diagnostics distinguish a retained upstream failure from local cooldown without exposing URLs or errors',()=>{const f=summarizeFastFailures({status:'degraded',failureCount:3,lastError:'private-token',flowRetryAt:iso(start+30000),feedDiagnostics:[{path:'/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500',state:'cooldown',httpStatus:429,localCooldown:true,retryAt:iso(start+30000),upstreamFailedAt:iso(start),error:'private-token'},{path:'https://private-token.invalid/?key=secret',state:'private-token',httpStatus:999}]});assert.equal(f.feeds[0].feed,'TRADES');assert.equal(f.feeds[0].upstreamFailedAt,iso(start));assert.equal(f.feeds[0].localCooldown,true);assert.equal(f.feeds[1].feed,'OTHER');assert.equal(f.feeds[1].state,null);assert.equal(f.feeds[1].httpStatus,null);assert.ok(!JSON.stringify(f).includes('private-token'));});
+await test('response budget diagnostics expose sizes only, on both success and explicit budget failure',async()=>{
+ const body={error:{code:'MARKET_RESPONSE_BUDGET_EXCEEDED'},transportDiagnostics:{originalUtf8Bytes:121171,attemptedCompactedUtf8Bytes:92628,privateToken:'do-not-print',references:{'private-price': 'private-id'},attemptedSectionUtf8Bytes:{newsContext:4000,assets:{ETHUSDT:{opportunityEngine:21000,capitalFlow:'private-token',unknown:12345}}}}};
+ const d=summarizeResponseBudget(body);assert.equal(d.originalUtf8Bytes,121171);assert.equal(d.sections.assets.ETHUSDT.opportunityEngine,21000);assert.equal(d.sections.assets.ETHUSDT.capitalFlow,null);assert.equal(d.referenceCount,1);assert.ok(!/private|unknown|do-not-print/.test(JSON.stringify(d)));
+ try{await requestJson(async()=>Response.json(body,{status:503}),'https://fixture.invalid/');assert.fail('Expected failure');}catch(e){assert.equal(e.reason,'MARKET_RESPONSE_BUDGET_EXCEEDED');assert.deepEqual(e.responseBudget,d);}
+});
 console.log(JSON.stringify({passed,failed:0,mode:'LOCAL_FIXTURES_ONLY'}));
