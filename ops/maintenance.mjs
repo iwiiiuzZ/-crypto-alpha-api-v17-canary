@@ -39,7 +39,10 @@ report.assessment=assessSamples(samples,{...config,build});
 if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){
   const context=await Promise.allSettled([requestJson(fetch,config.origin+'/'),requestJson(fetch,config.origin+'/?view=news')]);
   report.foregroundContext=summarizeReadContext(context[0].value,context[1].value);
-  report.foregroundContext.errors=context.flatMap((r,i)=>r.status==='rejected'?[{endpoint:i===0?'market':'news',code:code(r.reason),reason:r.reason.reason||null}]:[]);
+  report.foregroundContext.errors=context.flatMap((r,i)=>r.status==='rejected'?[{endpoint:i===0?'market':'news',code:code(r.reason),reason:r.reason.reason||null,responseBudget:r.reason.responseBudget||null}]:[]);
+  // A requested market/news read that failed must fail this audit, even when
+  // the independent background observation window passed.
+  failures.push(...report.foregroundContext.errors.map(e=>({stage:'foreground-'+e.endpoint,code:e.code,reason:e.reason})));
   report.newsBatchComparison=compareNewsBatches(samples.at(-1),report.foregroundContext);
   try{report.buildConfiguration=await cloudflareBuildSnapshot(fetch,config,token);}
   catch(e){report.buildConfiguration={error:code(e)};}

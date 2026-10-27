@@ -6647,6 +6647,41 @@ function marketFailureResponse(code,stage) {
 function jsonUtf8Size(text) {
   let bytes=0;for(const c of text){const n=c.codePointAt(0);bytes+=n<=0x7f?1:n<=0x7ff?2:n<=0xffff?3:4;}return bytes;
 }
+function referenceRepeatedMarketEvidence(out) {
+  const canonical=new Map();let count=0;
+  const children=(v,visit)=>{for(const [k,x] of Object.entries(v))if(/^[A-Za-z0-9_]+$/.test(k))visit(k,x);};
+  const seed=(v,path)=>{
+    if(!v||typeof v!=="object"||Object.hasOwn(v,"sameAs"))return;
+    const text=JSON.stringify(v);if(jsonUtf8Size(text)>=512&&!canonical.has(text))canonical.set(text,path);
+    children(v,(k,x)=>seed(x,path+"."+k));
+  };
+  // These decision-bearing sections remain inline and unchanged. References
+  // elsewhere can point at them, but can never replace their contents.
+  for(const symbol of ["ETHUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(!a)continue;
+    for(const key of ["opportunityEngine","timeframes","ticker"])seed(a[key],"assets."+symbol+"."+key);
+  }
+  seed(out.newsContext?.sources,"newsContext.sources");seed(out.newsContext?.recentRiskHeadlines,"newsContext.recentRiskHeadlines");
+  const walk=(parent,key,path)=>{
+    const v=parent[key];if(!v||typeof v!=="object"||Object.hasOwn(v,"sameAs"))return;
+    const text=JSON.stringify(v),target=canonical.get(text),reference={sameAs:target};
+    if(target&&target!==path&&jsonUtf8Size(text)>jsonUtf8Size(JSON.stringify(reference))+jsonUtf8Size(JSON.stringify({[path]:target}))+96){
+      parent[key]=reference;out.transportDiagnostics.references[path]=target;count++;return;
+    }
+    if(jsonUtf8Size(text)>=512&&!target)canonical.set(text,path);
+    children(v,(k)=>walk(v,k,path+"."+k));
+  };
+  // Only known response modules participate; unknown extensions still fail
+  // closed when oversized. No values are rounded, truncated or discarded.
+  const modules=["spotMarket","derivatives","capitalFlow","executionLiquidity","liquidationRiskProxy","liquidityRisk","estimatedLiquidationPressureZones","largeParticipantProxy","crossVenueLiquidity","publicOrderflow","effortVsResult","rangeContext","marketRegimeRouter","dynamicContext","dataGaps","holdingProfile"];
+  for(const symbol of ["ETHUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(a)for(const key of modules)walk(a,key,"assets."+symbol+"."+key);}
+  if(out.newsContext)walk(out.newsContext,"headlines","newsContext.headlines");
+  return count;
+}
+function marketResponseSectionBytes(out) {
+  const size=v=>v===undefined?0:jsonUtf8Size(JSON.stringify(v));
+  return {newsContext:size(out.newsContext),analysisContract:size(out.analysisContract),
+    assets:Object.fromEntries(["ETHUSDT","BTCUSDT"].map(symbol=>[symbol,Object.fromEntries(["timeframes","opportunityEngine","crossVenueLiquidity","publicOrderflow","capitalFlow","liquidityRisk"].map(key=>[key,size(out.assets?.[symbol]?.[key])]))]))};
+}
 function boundedMarketSnapshot(snapshot) {
   const original=JSON.stringify(snapshot),budget=90000;
   const meta={responseMode:"BOUNDED_MARKET_V27_1_2",originalCharacters:original.length,originalUtf8Bytes:jsonUtf8Size(original),maximumUtf8Bytes:budget,
@@ -6718,13 +6753,14 @@ function boundedMarketSnapshot(snapshot) {
       note("NON_RISK_HEADLINE_PREVIEW_FULL_LIST_IN_NEWS_VIEW");
     }
   }
+  if(!fits()&&referenceRepeatedMarketEvidence(out))note("EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS");
   if(!fits()){
     return {status:"error",build:snapshot.build,apiVersion:snapshot.apiVersion,generatedAt:snapshot.generatedAt,
       decisionState:"TRANSPORT_ERROR",error:{code:"MARKET_RESPONSE_BUDGET_EXCEEDED",retryable:true},
       assets:Object.fromEntries(Object.keys(ASSETS).map(k=>{const a=snapshot.assets?.[k]||{},t=a.ticker||{},ticker={};for(const n of ["status","source","priceType","last","bid","ask","exchangeTimestamp","error"]){const v=t[n];if(typeof v==="string")ticker[n]=v.slice(0,200);else if(typeof v==="number")ticker[n]=v;}return [k,{symbol:k,ticker}];})),
       coverage:{executionPriceReady:snapshot.coverage?.executionPriceReady===true,fullAnalysisTransferred:false},
       transportDiagnostics:{...meta,compacted:true,rawSnapshotTransferredInFull:false,decisionAnalysisTransferred:false,modelAssessmentsTransferredInFull:false,
-        attemptedCompactedUtf8Bytes:measure().bytes,omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
+        attemptedCompactedUtf8Bytes:measure().bytes,attemptedSectionUtf8Bytes:marketResponseSectionBytes(out),omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
   }
   // Include actual serialized size, not merely the size of the original snapshot.
   for(let i=0;i<4;i++){
