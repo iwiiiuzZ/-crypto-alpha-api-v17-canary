@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2";
+const BUILD = "crypto-alpha-worker-v27.6.3-acceptance-candidate-r3";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -557,12 +557,16 @@ const SCANNER_REVIEW_REQUEST_KEY='scanner:review-request:v2761';
 const SCANNER_CYCLE_RESULT_KEY='scanner:last-cycle-result:v2761';
 const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
 const FAST_INTERVAL_MS=10000;
+const FAST_QUOTE_REFRESH_RESERVE_MS=3000;
+const FAST_MIN_INTERVAL_MS=2500;
 function nextFastAlarmAt(state,now=Date.now()){
  const anchor=Number.isFinite(state.lastTickAt)?state.lastTickAt:now;
  const quote=state.executionQuote,times=[quote?.exchangeTimestamp,quote?.lastTradeTimestamp,quote?.bookTimestamp].map(x=>Date.parse(x)).filter(Number.isFinite);
  // Full samples and independent ticker quotes keep the same ten-second
  // freshness limit. Flow cooldowns do not postpone a quote refresh.
- const expiry=times.length?Math.min(...times)+9000:Infinity;
+ // Start before expiry by the 2500ms feed timeout plus 500ms scheduling margin.
+ // Scheduling at age nine left just one second for a still-valid slow response.
+ const expiry=times.length?Math.min(...times)+10000-FAST_QUOTE_REFRESH_RESERVE_MS:Infinity;
  const quoteDue=['ok','partial'].includes(state.status)?expiry:Infinity;
  let deadline=Math.min(anchor+FAST_INTERVAL_MS,quoteDue);
  const retry=Number(state.nextFlowAttemptAt);
@@ -573,7 +577,7 @@ function nextFastAlarmAt(state,now=Date.now()){
   if(retry<=deadline)deadline=retry;
   else if(retry-deadline<=1000&&retry<=quoteDue)deadline=retry;
  }
- return Math.max(now+1000,anchor+5000,deadline);
+ return Math.max(now+1000,anchor+FAST_MIN_INTERVAL_MS,deadline);
 }
 function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
 async function ensureFastMonitor(owner){
@@ -782,7 +786,7 @@ async function runFastMonitorAlarm(owner){
   if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED'};
   const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
   // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
-  if(state.lastTickAt&&now-state.lastTickAt<5000){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
+  if(state.lastTickAt&&now-state.lastTickAt<FAST_MIN_INTERVAL_MS){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
   state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
   try{

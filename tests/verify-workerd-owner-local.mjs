@@ -21,9 +21,9 @@ export default {async fetch(req,env,ctx){const u=new URL(req.url);
  return app.fetch(req,env,ctx);
 }};`);
 fs.writeFileSync(path.join(dir,'upstream.mjs'),`
-let now=Date.now(),barkFail=false,quoteFail=false,newsFail=false,blsFail=false,pushes=[],quote=2400,bookCounter=0,flowFail=false;const counts={};
+let now=Date.now(),barkFail=false,quoteFail=false,newsFail=false,blsFail=false,pushes=[],quote=2400,bookCounter=0,flowFail=false;const counts={},flowRejections=[];
 export default {async fetch(req){now=Date.now();const u=new URL(req.url);counts[u.hostname]=(counts[u.hostname]||0)+1;
- if(u.hostname==='fixtures.invalid'){const b=await req.json();if(b.now)now=b.now;if(b.barkFail!==undefined)barkFail=b.barkFail;if(b.quoteFail!==undefined)quoteFail=b.quoteFail;if(b.newsFail!==undefined)newsFail=b.newsFail;if(b.blsFail!==undefined)blsFail=b.blsFail;if(b.quote)quote=b.quote;if(b.flowFail!==undefined)flowFail=b.flowFail;return Response.json({now,pushes,counts});}
+ if(u.hostname==='fixtures.invalid'){const b=await req.json();if(b.now)now=b.now;if(b.barkFail!==undefined)barkFail=b.barkFail;if(b.quoteFail!==undefined)quoteFail=b.quoteFail;if(b.newsFail!==undefined)newsFail=b.newsFail;if(b.blsFail!==undefined)blsFail=b.blsFail;if(b.quote)quote=b.quote;if(b.flowFail!==undefined)flowFail=b.flowFail;return Response.json({now,pushes,counts,flowRejections});}
  if(u.hostname==='api.day.app'){const b=await req.json();if(barkFail)return Response.json({code:500},{status:503});pushes.push({title:b.title,body:b.body});return Response.json({code:200});}
  if(u.hostname==='mcp.jin10.com'){if(newsFail)return new Response('temporary upstream error',{status:503});const b=await req.json();if(req.headers.get('authorization')!=='Bearer fixture-news')return new Response('denied',{status:401});let result={};
   if(b.method==='initialize')result={protocolVersion:'2025-03-26',capabilities:{tools:{}}};if(b.method==='notifications/initialized')return new Response(null,{status:202});
@@ -56,7 +56,7 @@ export default {async fetch(req){now=Date.now();const u=new URL(req.url);counts[
  }
  if(u.hostname.includes('okx')){const p=u.pathname,inst=u.searchParams.get('instId')||'ETH-USDT-SWAP',btc=inst.startsWith('BTC'),price=btc?80000:quote;
   const tick=id=>({instId:id,last:String(id.startsWith('BTC')?80000:quote),bidPx:String((id.startsWith('BTC')?80000:quote)-.01),askPx:String((id.startsWith('BTC')?80000:quote)+.01),ts:String(now),open24h:String(price),high24h:String(price*1.02),low24h:String(price*.98),vol24h:'10000',volCcy24h:'1000000'});
-  if((quoteFail&&/tickers|ticker$|trades$|books/.test(p))||(flowFail&&/trades$|books/.test(p)))return Response.json({code:'50011',data:[]},{status:429});
+  if((quoteFail&&/tickers|ticker$|trades$|books/.test(p))||(flowFail&&/trades$|books/.test(p))){flowRejections.push({at:Date.now(),path:p});return Response.json({code:'50011',data:[]},{status:429});}
   let data=[];
   if(p.endsWith('/instruments'))data=[{instId:inst,ctType:'linear',ctVal:'0.1',ctValCcy:'ETH',settleCcy:'USDT',ctMult:'1'}];
   else if(p.endsWith('/tickers'))data=['ETH-USDT-SWAP','BTC-USDT-SWAP','ETH-USDT','BTC-USDT'].map(tick);
@@ -101,8 +101,17 @@ try{
   return s.status==='partial'&&fresh?s:null;
  },80000);
  backgroundReviewObserved=true;originalDeadline=duringFailure.flowRetryAt;assert.ok(originalDeadline);
- await call('/__fixture/control',{flowFail:false});
- const recovered=await until(async()=>{if(Date.now()>=nextManual){const m=await call('/?view=market&recheck=true');assert.equal(m.http,200);contexts++;nextManual=Date.now()+4000;}const s=(await call('/?view=fast')).body.fastMonitor;if(s.fullReview?.modelDataReady&&Date.parse(s.fullReview.lastCompletedAt)>failedAt&&s.status==='partial')backgroundReviewObserved=true;if(s.status==='partial'&&s.flowRetryAt)assert.equal(s.flowRetryAt,originalDeadline,'passive/manual queries must not slide cooldown');return s.status==='ok'&&Date.parse(s.lastSuccessAt)>Date.parse(first.lastSuccessAt)?s:null;});
+ const stopped=(await call('/__fixture/control',{flowFail:false})).body;
+ // A scanner can see a new real rejection after circuit expiry before the
+ // fast status publishes it. Permit a changed deadline only with the actual
+ // fixture's post-expiry rejection; passive reads can never justify it.
+ function unchangedOrProvenRejection(s){
+  if(s.status!=='partial'||!s.flowRetryAt||s.flowRetryAt===originalDeadline)return;
+  const before=Date.parse(originalDeadline),after=Date.parse(s.flowRetryAt);
+  assert.ok(stopped.flowRejections.some(r=>r.at>=before&&r.at<=stopped.now&&Math.abs(after-r.at-30000)<=1000),'cooldown changed without a new post-expiry upstream rejection');
+  originalDeadline=s.flowRetryAt;
+ }
+ const recovered=await until(async()=>{if(Date.now()>=nextManual){const m=await call('/?view=market&recheck=true');assert.equal(m.http,200);contexts++;nextManual=Date.now()+4000;}const s=(await call('/?view=fast')).body.fastMonitor;if(s.fullReview?.modelDataReady&&Date.parse(s.fullReview.lastCompletedAt)>failedAt&&s.status==='partial')backgroundReviewObserved=true;unchangedOrProvenRejection(s);return s.status==='ok'&&Date.parse(s.lastSuccessAt)>Date.parse(first.lastSuccessAt)?s:null;});
  assert.equal(recovered.samplingHealthy,true);assert.equal(recovered.flowHealthy,true);assert.ok(recovered.actualLastGapSeconds<15);assert.ok(contexts>=3);checks.push('normal manual refreshes cannot extend the circuit; actual alarms resume successful flow after expiry');
  assert.equal(backgroundReviewObserved,true,JSON.stringify({recovered,failed}));checks.push('active research completes a shared eight-model review while executed-flow collection is still cooling');
  const status=(await call('/scanner/status')).body;assert.ok(status.observations.some(o=>o.observationId===obs.observationId));assert.equal(status.activePlan,null);assert.equal(status.diagnostics.pendingPushes,0);checks.push('the same research survives cooldown and recovery without creating an execution plan');

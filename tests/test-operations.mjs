@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
+import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
 import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
 import fs from 'node:fs';
 const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
@@ -62,5 +62,16 @@ await test('response budget diagnostics expose sizes only, on both success and e
  const body={error:{code:'MARKET_RESPONSE_BUDGET_EXCEEDED'},transportDiagnostics:{originalUtf8Bytes:121171,attemptedCompactedUtf8Bytes:92628,privateToken:'do-not-print',references:{'private-price': 'private-id'},attemptedSectionUtf8Bytes:{newsContext:4000,assets:{ETHUSDT:{opportunityEngine:21000,capitalFlow:'private-token',unknown:12345}}}}};
  const d=summarizeResponseBudget(body);assert.equal(d.originalUtf8Bytes,121171);assert.equal(d.sections.assets.ETHUSDT.opportunityEngine,21000);assert.equal(d.sections.assets.ETHUSDT.capitalFlow,null);assert.equal(d.referenceCount,1);assert.ok(!/private|unknown|do-not-print/.test(JSON.stringify(d)));
  try{await requestJson(async()=>Response.json(body,{status:503}),'https://fixture.invalid/');assert.fail('Expected failure');}catch(e){assert.equal(e.reason,'MARKET_RESPONSE_BUDGET_EXCEEDED');assert.deepEqual(e.responseBudget,d);}
+});
+await test('news follow-up reads later scanner batches and distinguishes exact matches from newer successful batches',async()=>{
+ const context={newsSources:[{source:'JIN10',status:'ok',fetchedAt:iso(start)},{source:'BLS_CPI',status:'unavailable',fetchedAt:iso(start-60000)}]};
+ for(const mode of['exact','newer','old','wrong-owner']){
+  let clock=start,reads=0;
+  const r=await observeNewsConsumption(async()=>{reads++;return {build:'current',backendIdentity:{matched:true,stateOwnerBuild:mode==='wrong-owner'?'old':'current'},heartbeat:{},diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(clock)}},discovery:{newsStatus:{sources:{JIN10:{status:'ok',fetchedAt:iso(mode==='old'?start-1000:mode==='newer'?start+1000:start)}}}}};},context,'current',{now:()=>clock,wait:async ms=>{clock+=ms;}});
+  assert.equal(r.passed,['exact','newer'].includes(mode));assert.equal(reads,r.passed?1:3);
+  assert.deepEqual(r.expectedSuccessfulSources,['JIN10']);assert.equal(r.observations[0].comparisons[0].verified,mode!=='old'&&mode!=='newer');
+  assert.equal(r.observations[0].comparisons[0].newerSuccessfulBatchConsumed,mode==='newer');
+  assert.equal(clock-start,r.passed?15000:75000);
+ }
 });
 console.log(JSON.stringify({passed,failed:0,mode:'LOCAL_FIXTURES_ONLY'}));
