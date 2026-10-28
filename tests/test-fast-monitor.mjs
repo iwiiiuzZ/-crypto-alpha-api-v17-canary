@@ -13,13 +13,24 @@ await test('already-aged exchange samples schedule a refresh before their unchan
  const{f,x}=setup(),a=owner(f),parts=feeds(f),start=f.now();
  for(const trade of parts.trades.rows)trade.ts=String(Number(trade.ts)-2200);
  stubFeeds(f,parts);await x.runFastMonitorAlarm(a.o);
- assert.equal(a.alarm(),start+6800);
- f.advance(1000);await x.runFastMonitorAlarm(a.o);assert.equal(a.alarm(),start+6800,'duplicate delivery must not postpone refresh');
+ assert.equal(a.alarm(),start+4800);
+ f.advance(1000);await x.runFastMonitorAlarm(a.o);assert.equal(a.alarm(),start+4800,'duplicate delivery must not postpone refresh');
  const old=a.db.get(x.FAST_MONITOR_KEY);f.advance(7300);
  assert.equal(x.compactFastMonitor(old).quoteHealthy,false,'old sample still expires honestly');
  const degraded={...old,status:'partial',lastTickAt:f.now(),nextFlowAttemptAt:f.now()+30000};
- assert.equal(x.nextFastAlarmAt(degraded),f.now()+5000,'partial quotes refresh independently of the flow cooldown');
+ assert.equal(x.nextFastAlarmAt(degraded),f.now()+2500,'partial quotes refresh independently of the flow cooldown');
  assert.equal(degraded.nextFlowAttemptAt,f.now()+30000);
+});
+
+await test('an already-aged shared trade leaves time for a slow valid book response instead of hitting the old five-second floor',async()=>{
+ const{f,x}=setup(),a=owner(f),parts=feeds(f),start=f.now();
+ for(const t of parts.trades.rows)t.ts=String(Number(t.ts)-3500);
+ stubFeeds(f,parts);await x.runFastMonitorAlarm(a.o);
+ const old=a.db.get(x.FAST_MONITOR_KEY),due=a.alarm();
+ assert.ok(due-start>=2500&&due-start<5000);
+ f.advance(due-start+1800);
+ assert.equal(x.compactFastMonitor(old).quoteHealthy,true,'the old quote remains valid until a bounded slow replacement can arrive');
+ f.advance(2000);assert.equal(x.compactFastMonitor(old).quoteHealthy,false,'no relaxed freshness after updates stop');
 });
 
 await test('cooldown boundary wakes at the retry time without delaying a fresher quote',()=>{
@@ -32,7 +43,7 @@ await test('cooldown boundary wakes at the retry time without delaying a fresher
  assert.equal(x.nextFastAlarmAt({status:'degraded',lastTickAt:now,nextFlowAttemptAt:now+7000}),now+7000);
  assert.equal(x.nextFastAlarmAt({status:'degraded',lastTickAt:now,nextFlowAttemptAt:now+30000}),now+10000);
  const partial={status:'partial',lastTickAt:now,nextFlowAttemptAt:now+7200,executionQuote:{exchangeTimestamp:new Date(now-2000).toISOString()}};
- assert.equal(x.nextFastAlarmAt(partial),now+7000,'do not postpone the independent quote to wait for flow');
+ assert.equal(x.nextFastAlarmAt(partial),now+5000,'do not postpone the independent quote to wait for flow');
  assert.equal(x.nextFastAlarmAt({...partial,lastTickAt:now-5000,nextFlowAttemptAt:now+500}),now+1000,'past-due and near-due alarms are bounded');
 });
 await test('independent ticker advances during flow cooldown and full feeds resume only at expiry',async()=>{
@@ -64,7 +75,7 @@ await test('a sampling outage resets the window instead of inventing persistent 
 await test('small changes, short samples, poor dominance and stale records do not create large flow signals',()=>{const{f,x}=setup(),base={newRecords:30,seconds:45,sampledRecords:40,buyUsdt:800000,sellUsdt:0,dominantShare:1,direction:'BUY',priceChangeUsd:20};for(const override of[{priceChangeUsd:5},{seconds:20},{dominantShare:.6},{newRecords:0},{buyUsdt:1000},{priceChangeUsd:-20}])assert.equal(x.fastMaterialEvent({...base,...override},2400,5).eligible,false);assert.equal(x.fastMaterialEvent(base,2400,30).eligible,false);assert.equal(x.fastMaterialEvent(base,2400,5).standaloneEntryPermission,false);});
 await test('quick monitoring requires configuration and preserves an already scheduled earlier alarm',async()=>{const{f,x}=setup(),a=owner(f,f.now()+5000);assert.equal(x.fastMonitorConfigured(a.o.env),true);assert.equal((await x.ensureFastMonitor(a.o)).scheduled,true);assert.equal(a.alarm(),f.now()+5000);a.o.env={...a.o.env,FAST_MONITOR_ENABLED:'false'};assert.equal((await x.ensureFastMonitor(a.o)).scheduled,false);delete a.o.env.FAST_MONITOR_ENABLED;a.o.ctx.storage.getAlarm=undefined;assert.equal((await x.ensureFastMonitor(a.o)).status,'ALARM_API_UNAVAILABLE');});
 await test('expired alarm is rearmed and does not depend on another chat query',async()=>{const{f,x}=setup(),a=owner(f,f.now()-31000);await x.ensureFastMonitor(a.o);assert.equal(a.alarm(),f.now()+1000);});
-await test('alarm obtains independent actual trade and book times and schedules its next tick',async()=>{const{f,x}=setup(),a=owner(f);stubFeeds(f,feeds(f));const r=await x.runFastMonitorAlarm(a.o);await Promise.all(a.work);assert.equal(r.status,'ok');assert.equal(r.samplingHealthy,true);assert.ok(r.executionQuote.lastTradeTimestamp);assert.ok(r.executionQuote.bookTimestamp);assert.equal(a.alarm(),f.now()+9000);assert.equal(r.openNowAllowed,false);assert.equal(r.continuousCoverageVerified,false);assert.ok(!JSON.stringify(r).includes('synthetic-key'));assert.ok(!Object.hasOwn(r,'trades'));});
+await test('alarm obtains independent actual trade and book times and schedules its next tick',async()=>{const{f,x}=setup(),a=owner(f);stubFeeds(f,feeds(f));const r=await x.runFastMonitorAlarm(a.o);await Promise.all(a.work);assert.equal(r.status,'ok');assert.equal(r.samplingHealthy,true);assert.ok(r.executionQuote.lastTradeTimestamp);assert.ok(r.executionQuote.bookTimestamp);assert.equal(a.alarm(),f.now()+7000);assert.equal(r.openNowAllowed,false);assert.equal(r.continuousCoverageVerified,false);assert.ok(!JSON.stringify(r).includes('synthetic-key'));assert.ok(!Object.hasOwn(r,'trades'));});
 await test('duplicate alarm delivery cannot duplicate a sample or a push',async()=>{const{f,x}=setup(),a=owner(f);stubFeeds(f,feeds(f));await x.runFastMonitorAlarm(a.o);const before=a.db.get(x.FAST_MONITOR_KEY);await x.runFastMonitorAlarm(a.o);assert.equal(a.db.get(x.FAST_MONITOR_KEY).window.sampledRecords,before.window.sampledRecords);assert.equal(f.pushes.length,0);});
 await test('stale, crossed and mismatched trade-book samples are degraded, never fresh',async()=>{for(const kind of['stale','crossed','mismatch']){const{f,x}=setup(),a=owner(f),parts=feeds(f);if(kind==='stale'){parts.book.rows[0].ts=String(f.now()-11000);}if(kind==='crossed')parts.book.rows[0].bids[0][0]='2500';if(kind==='mismatch')parts.trades.rows.forEach(t=>t.px='2500');stubFeeds(f,parts);const r=await x.runFastMonitorAlarm(a.o);assert.equal(r.status,'degraded',kind);assert.equal(r.samplingHealthy,false);assert.equal(f.pushes.length,0);assert.ok(a.alarm()>f.now());}});
 await test('repeated failures back off but preserve the old success timestamp honestly',async()=>{const{f,x}=setup(),a=owner(f);stubFeeds(f,feeds(f));await x.runFastMonitorAlarm(a.o);const old=a.db.get(x.FAST_MONITOR_KEY).lastSuccessAt;for(let i=0;i<3;i++){f.advance(10000);stubFeeds(f,{meta:{error:'UPSTREAM_RATE_LIMIT_COOLDOWN'},book:{},trades:{}});await x.runFastMonitorAlarm(a.o);}const r=x.compactFastMonitor(a.db.get(x.FAST_MONITOR_KEY));assert.equal(r.failureCount,3);assert.equal(r.lastSuccessAt,old);assert.equal(r.samplingHealthy,false);assert.equal(a.alarm(),f.now()+10000);assert.equal(a.db.get(x.FAST_MONITOR_KEY).nextFlowAttemptAt,f.now()+30000);f.advance(30000);stubFeeds(f,feeds(f));assert.equal((await x.runFastMonitorAlarm(a.o)).status,'ok');});

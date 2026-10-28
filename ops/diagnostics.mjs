@@ -14,7 +14,7 @@ const FAST_FEEDS={'/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP
  '/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400':'BOOK'};
 export function summarizeFastFailures(f={}){
  return {status:['ok','partial','degraded'].includes(f.status)?f.status:null,
-  lastAttemptAt:stamp(f.lastAttemptAt),flowRetryAt:stamp(f.flowRetryAt),failureCount:number(f.failureCount),
+  lastAttemptAt:stamp(f.lastAttemptAt),nextAlarmAt:stamp(f.nextAlarmAt),flowRetryAt:stamp(f.flowRetryAt),failureCount:number(f.failureCount),
   feeds:(Array.isArray(f.feedDiagnostics)?f.feedDiagnostics:[]).map(r=>({feed:FAST_FEEDS[r.path]||'OTHER',
    state:['live','cache','cooldown','stale-on-error','unavailable'].includes(r.state)?r.state:null,
    httpStatus:Number.isInteger(r.httpStatus)&&r.httpStatus>=100&&r.httpStatus<=599?r.httpStatus:null,
@@ -113,6 +113,27 @@ export function compareNewsBatches(sample,context){
       verified:s.status==='ok'&&consumed?.status==='ok'&&!!s.fetchedAt&&consumed.fetchedAt===s.fetchedAt&&at(sample.scanner.newsConsumedAt)>=at(s.fetchedAt),
       meaning:consumed?'EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON':'SOURCE_DETAILS_NOT_RETURNED'};
   });
+}
+
+// Context is captured before these status reads. This prevents comparing a
+// newly fetched batch only with the scanner state from BEFORE that fetch.
+export async function observeNewsConsumption(readStatus,context,expectedBuild,{wait=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now}={}){
+ const began=now(),observations=[];
+ const expected=(context?.newsSources||[]).filter(s=>s.status==='ok'&&Number.isFinite(at(s.fetchedAt)));
+ for(const offset of[15000,45000,75000]){
+  await wait(Math.max(0,began+offset-now()));
+  const status=await readStatus(),sample=summarizeSample({},status,now());
+  const identity=status?.build===expectedBuild&&status?.backendIdentity?.matched===true&&status?.backendIdentity?.stateOwnerBuild===expectedBuild;
+  const comparisons=compareNewsBatches(sample,context).map(c=>{
+   const consumed=sample.consumedNewsSources.find(s=>s.source===c.source);
+   const newer=expected.some(s=>s.source===c.source)&&consumed?.status==='ok'&&at(c.consumedBatchAt)>at(c.observedBatchAt)&&at(sample.scanner.newsConsumedAt)>=at(c.consumedBatchAt);
+   return {...c,newerSuccessfulBatchConsumed:!!newer};
+  });
+  const passed=identity&&sample.scanner.stateReadSucceeded&&expected.length>0&&expected.every(s=>comparisons.some(c=>c.source===s.source&&(c.verified||c.newerSuccessfulBatchConsumed)));
+  observations.push({readAt:sample.readAt,identityMatched:identity,newsConsumedAt:sample.scanner.newsConsumedAt,comparisons,passed});
+  if(passed)break;
+ }
+ return {scope:'STATUS_ONLY_AFTER_FOREGROUND_CONTEXT_NO_MANUAL_SCAN',expectedSuccessfulSources:expected.map(s=>s.source),observations,passed:observations.at(-1)?.passed===true};
 }
 
 // Read build configuration without exposing commands, environment variables,

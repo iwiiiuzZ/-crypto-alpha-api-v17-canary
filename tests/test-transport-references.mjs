@@ -39,10 +39,32 @@ const rejected=plain(x.boundedMarketSnapshot(impossible));assert.equal(rejected.
 const diagnostic=JSON.stringify(rejected.transportDiagnostics.attemptedSectionUtf8Bytes);
 assert.ok(!diagnostic.includes('2400.123456789'));assert.ok(!diagnostic.includes('保留完整证据'));assert.ok(rejected.transportDiagnostics.attemptedSectionUtf8Bytes.assets.ETHUSDT.opportunityEngine>0);
 
+// Reproduce transport pressure with non-risk titles while preserving the
+// independent risk/event/source evidence and the full input news snapshot.
+let previewVerified=false;
+for(let pad=0;pad<=50000;pad+=1000){
+ const input=JSON.parse(fs.readFileSync(new URL('./fixtures/full-market-synthetic.json',import.meta.url),'utf8'));
+ input.newsContext.headlines=Array.from({length:4},(_,i)=>({id:'fixture-'+i,title:'普通行情新闻'.repeat(250),riskTags:[],publishedAt:'2026-10-27T10:33:00Z'}));
+ input.newsContext.recentRiskHeadlines=[{title:'风险事件原文不得裁剪',riskTags:['POLICY'],publishedAt:'2026-10-27T10:33:00Z'}];
+ input.newsContext.upcomingEvents=[{eventAt:'2026-10-28T12:30:00Z',highImpact:true}];
+ input.uniquePadding='x'.repeat(pad);
+ const original=JSON.stringify(input),result=plain(x.boundedMarketSnapshot(input));
+ if(result.transportDiagnostics?.omitted?.includes('GENERAL_HEADLINE_PREVIEW_DEFERRED_TO_NEWS_VIEW')){
+  assert.ok(size(result)<=90000);assert.equal(JSON.stringify(input),original);
+  assert.deepEqual(result.newsContext.headlines,[]);assert.equal(result.newsContext.headlinePreview.returned,0);assert.equal(result.newsContext.headlinePreview.available,4);assert.equal(result.newsContext.headlinePreview.completeView,'news');
+  for(const key of ['recentRiskHeadlines','upcomingEvents','eventWindow','sources'])assert.deepEqual(result.newsContext[key],input.newsContext[key]);
+  assert.deepEqual(result.assets.ETHUSDT.opportunityEngine.models,input.assets.ETHUSDT.opportunityEngine.models);
+  previewVerified=true;break;
+ }
+}
+assert.equal(previewVerified,true,'The pressure fixture must exercise deferred preview');
+
 // Only one pressure-stage insertion and size-only failure diagnostics change
 // the established projector. Every other line remains exactly the baseline.
 const original=fs.readFileSync(new URL('./baselines/r2-bounded-market-function.txt',import.meta.url),'utf8');
 const actual=x.boundedMarketSnapshot.toString();
-const restored=actual.replace('  if(!fits()&&referenceRepeatedMarketEvidence(out))note("EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS");\n','').replace('attemptedSectionUtf8Bytes:marketResponseSectionBytes(out),','');
+const previewStage=actual.slice(actual.indexOf('  if(!fits()){\n    // The full news list'),actual.indexOf('  if(!fits()&&referenceRepeatedMarketEvidence'));
+assert.ok(previewStage.includes('GENERAL_HEADLINE_PREVIEW_DEFERRED_TO_NEWS_VIEW'));
+const restored=actual.replace(previewStage,'').replace('  if(!fits()&&referenceRepeatedMarketEvidence(out))note("EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS");\n','').replace('attemptedSectionUtf8Bytes:marketResponseSectionBytes(out),','');
 assert.equal(restored,original);
 console.log(JSON.stringify({passed:true,scope:'LOSSLESS_TRANSPORT_FIXTURES_NOT_PRODUCTION',beforeBytes:size(full),afterBytes:size(bounded),modelEvidencePreserved:true}));

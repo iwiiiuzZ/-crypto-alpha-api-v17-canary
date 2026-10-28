@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {setTimeout as delay} from 'node:timers/promises';
-import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
+import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
@@ -44,6 +44,12 @@ if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){
   // the independent background observation window passed.
   failures.push(...report.foregroundContext.errors.map(e=>({stage:'foreground-'+e.endpoint,code:e.code,reason:e.reason})));
   report.newsBatchComparison=compareNewsBatches(samples.at(-1),report.foregroundContext);
+  if(context[1].status==='fulfilled'){
+    try{
+      report.newsConsumptionFollowup=await observeNewsConsumption(()=>requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),report.foregroundContext,build);
+      if(!report.newsConsumptionFollowup.passed)failures.push({stage:'news-consumption-followup',code:'NEW_SOURCE_BATCH_NOT_VERIFIED'});
+    }catch(e){failures.push({stage:'news-consumption-followup',code:code(e)});}
+  }
   try{report.buildConfiguration=await cloudflareBuildSnapshot(fetch,config,token);}
   catch(e){report.buildConfiguration={error:code(e)};}
 }

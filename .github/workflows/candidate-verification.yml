@@ -46,3 +46,6 @@ jobs:
           SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
           INCLUDE_READ_CONTEXT: '1'
         run: npm run ops:diagnose
+      - name: Repeated foreground response-budget check, separate from autonomous observation
+        if: always() && steps.deploy.outcome == 'success' && steps.convergence.outcome == 'success'
+        run: node ops/response-budget-audit.mjs
