@@ -1,0 +1,24 @@
+name: Explicitly authorized single communication check
+on:
+  push:
+    branches: ['ops/communication-verification']
+    paths: ['.github/workflows/communication-verification.yml', 'ops/communication-verification.mjs']
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  communication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Single test request and matching persistent service receipt
+        env:
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+          AUTHORIZED_SINGLE_TEST: 'yes'
+        run: node ops/communication-verification.mjs

@@ -1,0 +1,198 @@
+{
+  "mode": "ISOLATED_FIXTURES_ONLY",
+  "productionVerified": false,
+  "suites": [
+    {
+      "suite": "test-transport-references.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-deployment-convergence.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-soak-monitor.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-operations.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-cost-contract.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-course-engine.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-rate-protection.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-fast-monitor.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-monitor-coordination.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-owner-local-dispatch.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-push-observability.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-consolidated-cross-module.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-consolidated-preservation.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-final-swing-liquidity.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-market-envelope.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-multivenue-linkage.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-public-orderflow.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-regime-submodels.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-resilience.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-response-parser.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v20-range.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v22-1-repair.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v22-durable-structure.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v22-integration.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v23-lifecycle.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v23-preservation.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v24-models.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v25-reliability.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v26-1-data-access.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v26-actionable.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v27-adaptive-news.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v27-news-integration.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v27-news-transport.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-full-system.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-fast-monitor.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-owner-local.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-news-runtime.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-monitor-contention.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-owner-identity.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-response-isolation.mjs",
+      "passed": true
+    }
+  ],
+  "sourceCommit": "d99bb8867261fa3ad543600288fa8ff42e688e8a",
+  "sourceSha256": "4f9c0ae7a01f4438d41f9d85a9cbdac2f4fe132f0add311b095309bcbc8a7f6e",
+  "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r3",
+  "cloudRuns": [
+    {
+      "run": 40619304013,
+      "job": 122589153192,
+      "conclusion": "success",
+      "passedSuites": 40
+    },
+    {
+      "run": 40619300114,
+      "job": 122589141378,
+      "conclusion": "success",
+      "passedSuites": 40
+    }
+  ],
+  "productionAcceptance": "SEPARATE_PENDING_RUN_40619896961",
+  "strategyProfitabilityVerified": false,
+  "deviceReceiptVerified": false,
+  "supplementalRecovery": {
+    "passed": true,
+    "scope": "NATIVE_LOCAL_ROLLBACK_AND_REAPPLY_WITH_SAME_SQLITE_STATE",
+    "versions": [
+      "crypto-alpha-worker-v27.6.3-acceptance-candidate-r3",
+      "crypto-alpha-worker-v27.6.2-owner-local-dispatch",
+      "crypto-alpha-worker-v27.6.3-acceptance-candidate-r3"
+    ],
+    "observationAndPendingPushAndAuditPreserved": true,
+    "unauthorizedReadRejected": true,
+    "productionRollbackExecuted": false
+  }
+}
