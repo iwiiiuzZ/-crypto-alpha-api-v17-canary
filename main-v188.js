@@ -6757,6 +6757,16 @@ function boundedMarketSnapshot(snapshot) {
       note("NON_RISK_HEADLINE_PREVIEW_FULL_LIST_IN_NEWS_VIEW");
     }
   }
+  if(!fits()){
+    // The full news list remains available through view=news. Keep every
+    // risk headline, event window and source audit inline; only defer the
+    // optional general-title preview when it would block the whole market.
+    const n=out.newsContext;
+    if(Array.isArray(n?.headlines)&&n.headlines.length){
+      n.headlinePreview={available:n.headlinePreview?.available??n.headlines.length,returned:0,completeView:"news"};
+      n.headlines=[];note("GENERAL_HEADLINE_PREVIEW_DEFERRED_TO_NEWS_VIEW");
+    }
+  }
   if(!fits()&&referenceRepeatedMarketEvidence(out))note("EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS");
   if(!fits()){
     return {status:"error",build:snapshot.build,apiVersion:snapshot.apiVersion,generatedAt:snapshot.generatedAt,
