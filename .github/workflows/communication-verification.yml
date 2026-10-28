@@ -1,3 +1,4 @@
+# User explicitly authorized one non-trading Bark communication test on 2026-10-28.
 name: Explicitly authorized single communication check
 on:
   push:
