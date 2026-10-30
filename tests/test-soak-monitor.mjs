@@ -8,6 +8,24 @@ assert.equal(assessSoak(rows,expected,metadata,metadata).passed,true);
 for(const change of [r=>r[15].health.quote=false,r=>r[15].scanner.status='degraded',r=>r[15].scanner.lastSuccessfulCycleAt=iso(start-300000),r=>r[15].receipts[0].producerBuild='old',r=>r[15].identity.matched=false,r=>r.splice(12,3)]){
  const copy=structuredClone(rows);change(copy);assert.equal(assessSoak(copy,expected,metadata,metadata).passed,false);
 }
+// A stale but still <180s heartbeat used to pass the older soak gate.
+for(const field of ['scanner','receipts']){
+ const copy=structuredClone(rows);
+ for(let i=12;i<=21;i++){
+  if(field==='scanner')copy[i].scanner.lastSuccessfulCycleAt=copy[11].scanner.lastSuccessfulCycleAt;
+  else copy[i].receipts[0].completedAt=copy[11].receipts[0].completedAt;
+ }
+ const result=assessSoak(copy,expected,metadata,metadata);
+ assert.equal(result.passed,false);
+ assert.equal(result.gates[field==='scanner'?'heartbeatProgresses':'modelReviewProgresses'],false);
+}
+// Progress must never move backwards, even if every individual timestamp is fresh.
+for(const field of ['scanner','receipts']){
+ const copy=structuredClone(rows);
+ if(field==='scanner')copy[20].scanner.lastSuccessfulCycleAt=copy[18].scanner.lastSuccessfulCycleAt;
+ else copy[20].receipts[0].completedAt=copy[18].receipts[0].completedAt;
+ assert.equal(assessSoak(copy,expected,metadata,metadata).passed,false);
+}
 assert.equal(assessSoak(rows,expected,metadata,{...metadata,deploymentId:'changed'}).passed,false);
 assert.equal(assessSoak(rows,expected,metadata,{...metadata,binding:{namespaceFingerprint:'other'}}).passed,false);
 assert.equal(assessSoak(rows.slice(0,3),expected,metadata,metadata).passed,false);
