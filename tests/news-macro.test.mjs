@@ -114,3 +114,25 @@ test("official Treasury daily yields have dates, changes and explicit non-live c
  assert.equal(context.treasuryDaily.live,false);
  assert.throws(()=>parseTreasuryDailyCsv('Date,"2 Yr","10 Yr"\n10/01/2026,4.6,4.9',now),/STALE/);
 });
+
+test("Treasury official daily 2Y/10Y parser labels observations as non-intraday",()=>{
+  const now=Date.UTC(2026,9,30,12);
+  const csv='Date,"1 Mo","2 Yr","10 Yr"\n10/29/2026,4.06,4.61,4.98\n10/28/2026,4.07,4.67,5.05\n';
+  const parsed=parseTreasuryDailyCsv(csv,now);
+  assert.equal(parsed.asOf,"2026-10-29");
+  assert.equal(parsed.yield2yPct,4.61);
+  assert.equal(parsed.yield10yPct,4.98);
+  assert.equal(parsed.change2yBp,-6);
+  assert.equal(parsed.change10yBp,-7);
+  assert.equal(parsed.cadence,"OFFICIAL_DAILY");
+  assert.equal(parsed.intraday,false);
+  assert.equal(parsed.tradeDirection,null);
+  assert.match(treasuryDailyUrl(now),/2026/);
+});
+test("Treasury daily parser rejects stale, future, invalid and missing observations",()=>{
+  const now=Date.UTC(2026,9,30,12);
+  assert.throws(()=>parseTreasuryDailyCsv('Date,"2 Yr","10 Yr"\n10/01/2026,4.2,4.3\n',now),/STALE_OR_MISSING/);
+  assert.throws(()=>parseTreasuryDailyCsv('Date,"2 Yr","10 Yr"\n11/15/2026,4.2,4.3\n',now),/STALE_OR_MISSING/);
+  assert.throws(()=>parseTreasuryDailyCsv('Date,"2 Yr","10 Yr"\n10/29/2026,NaN,4.3\n',now),/STALE_OR_MISSING/);
+  assert.throws(()=>parseTreasuryDailyCsv('Date,"2 Yr"\n10/29/2026,4.2\n',now),/COLUMNS_MISSING/);
+});
