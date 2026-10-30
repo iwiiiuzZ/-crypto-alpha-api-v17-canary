@@ -13,8 +13,9 @@ const pubDate=new Date().toUTCString();
 const item=(title,url,source)=>newsItem({title,url,pubDate},source,fetchedAt);
 
 test("syntax and expected official-source inventory",()=>{
-  assert.equal(NEWS_SOURCES.length,8);
-  assert.equal(new Set(NEWS_SOURCES.map(x=>x.id)).size,8);
+  assert.equal(NEWS_SOURCES.length,9);
+  assert.equal(new Set(NEWS_SOURCES.map(x=>x.id)).size,9);
+  assert(NEWS_SOURCES.some(x=>x.id==="BLS_PPI"&&x.url==="https://www.bls.gov/feed/ppi.rss"));
   assert(NEWS_SOURCES.some(x=>x.id==="BEA_RELEASES"&&x.url==="https://apps.bea.gov/rss/rss.xml"));
   assert(NEWS_SOURCES.some(x=>x.id==="BOJ_RELEASES"&&x.url==="https://www.boj.or.jp/en/rss/whatsnew.xml"));
   assert.match(NEWS_PARSER_REVISION,/macro-news/);
@@ -68,7 +69,7 @@ test("source status is independently reported; unavailable BOJ is not success",(
   let records={BEA_RELEASES:{status:"ok",fetchedAt,items:[]},
     BOJ_RELEASES:{status:"unavailable",fetchedAt:null,items:[],reason:"SOURCE_HTTP_ERROR"}};
   let summary=newsContextSummary(records);
-  assert.equal(summary.expectedSourceCount,10);
+  assert.equal(summary.expectedSourceCount,11);
   assert.equal(summary.coverage.BOJ,"OFFICIAL_RSS_UNAVAILABLE");
   records.BOJ_RELEASES={status:"ok",fetchedAt,items:[]};
   summary=newsContextSummary(records);
