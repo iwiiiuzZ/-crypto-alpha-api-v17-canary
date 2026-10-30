@@ -1,0 +1,19 @@
+name: Crypto Alpha macro news regression
+on:
+  push:
+    branches: [ "fix/macro-news-bea-boj-20261030" ]
+  pull_request:
+    paths:
+      - "main-v188.js"
+      - "tests/**"
+      - ".github/workflows/macro-news-regression.yml"
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run built-in Node.js regression tests
+        run: node --test tests/macro-news.test.cjs
