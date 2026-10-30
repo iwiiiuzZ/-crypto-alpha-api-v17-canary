@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-acceptance-candidate-r3";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r4";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
