@@ -19,6 +19,13 @@ test("syntax and expected official-source inventory",()=>{
   assert(NEWS_SOURCES.some(x=>x.id==="BOJ_RELEASES"&&x.url==="https://www.boj.or.jp/en/rss/whatsnew.xml"));
   assert.match(NEWS_PARSER_REVISION,/macro-news/);
 });
+test("BLS CPI acronym-only headlines are relevant macro events",()=>{
+  const record=item("CPI for All Urban Consumers (CPI-U) rises 0.3 percent",
+    "https://www.bls.gov/news.release/cpi.htm","BLS_CPI");
+  assert(record?.relevant);
+  assert(record.riskTags.includes("MACRO_EVENT_REVIEW"));
+  assert.equal(record.tradeDirection,null);
+});
 test("PCE and personal income/outlays are relevant macro events",()=>{
   const record=item("Personal Income and Outlays: Core PCE Price Index rises",
     "https://www.bea.gov/news/2026/personal-income-and-outlays","BEA_RELEASES");
