@@ -30,3 +30,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: GET public health / diagnostics / OpenAPI only
         run: node tests/live-readonly-smoke.mjs
+
+  official-source-readonly-probe:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe BEA, BOJ and BLS official RSS without secrets
+        run: node tests/official-news-live-probe.mjs
