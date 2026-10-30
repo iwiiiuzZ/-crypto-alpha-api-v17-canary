@@ -19,3 +19,14 @@ jobs:
         run: node --check main-v188.js
       - name: Run isolated unit tests (no live endpoints or secrets)
         run: node --test tests/news-macro.test.mjs
+
+  live-readonly-probe:
+    runs-on: ubuntu-latest
+    needs: verify-news-source
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: GET public health / diagnostics / OpenAPI only
+        run: node tests/live-readonly-smoke.mjs
