@@ -917,6 +917,7 @@ const NEWS_SOURCES = [
   {id:"FED_PRESS",url:"https://www.federalreserve.gov/feeds/press_all.xml",seconds:180},
   {id:"FED_SPEECH",url:"https://www.federalreserve.gov/feeds/speeches.xml",seconds:180},
   {id:"BLS_CPI",url:"https://www.bls.gov/feed/cpi.rss",seconds:300},
+  {id:"BLS_PPI",url:"https://www.bls.gov/feed/ppi.rss",seconds:300},
   {id:"BLS_EMPLOYMENT",url:"https://www.bls.gov/feed/empsit.rss",seconds:300},
   {id:"BLS_CALENDAR",url:"https://www.bls.gov/schedule/news_release/bls.ics",seconds:3600,calendar:true},
 ];
@@ -1136,7 +1137,7 @@ function newsContextSummary(records,now=Date.now()) {
   const recent=headlines.filter(i=>i.transportFresh&&i.ageSeconds<=900);
   const events=Object.values(records).filter(v=>v.status==="ok"&&now-Date.parse(v.fetchedAt)<=7200000).flatMap(v=>v.events||[]);
   return {status:Object.values(sources).some(v=>v.status==="ok"&&v.transportAgeSeconds>=0&&v.transportAgeSeconds<=300)?"PARTIAL_VERIFIED_FEEDS":"UNAVAILABLE",
-    checkedAt:new Date(now).toISOString(),sources,sourceCount:Object.keys(sources).length,expectedSourceCount:10,
+    checkedAt:new Date(now).toISOString(),sources,sourceCount:Object.keys(sources).length,expectedSourceCount:11,
     parserAudit:{expectedRevision:NEWS_PARSER_REVISION,
       obsoleteSources:Object.entries(sources).filter(([,v])=>v.parserRevision!==NEWS_PARSER_REVISION).map(([k])=>k),
       missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id),"NYFED_CALENDAR"].filter(k=>!sources[k]),
