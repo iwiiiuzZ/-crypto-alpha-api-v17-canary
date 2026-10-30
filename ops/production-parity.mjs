@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
 export const DEPLOYED_R4={
  build:'crypto-alpha-worker-v27.6.3-macro-r4',
  sourceCommit:'2dff0194d8',
@@ -16,7 +17,7 @@ export function assessSourceParity({candidateCommit,actualBuild,actualDeployment
  return {passed:Object.values(gates).every(Boolean),gates,sourceMismatch:!sameCommit,
   interpretation:'SOURCE_PARITY_REQUIRED_BEFORE_PRODUCTION_RELEASE_CLAIM'};
 }
-if(process.argv[1]&&process.argv[1].endsWith('production-parity.mjs')){
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const manifest=JSON.parse(readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
  const result=assessSourceParity({candidateCommit:process.env.GITHUB_SHA,actualBuild:process.env.ACTUAL_PRODUCTION_BUILD,actualDeploymentId:process.env.ACTUAL_PRODUCTION_DEPLOYMENT_ID,manifest});
  console.log(JSON.stringify(result));if(!result.passed)process.exitCode=1;
