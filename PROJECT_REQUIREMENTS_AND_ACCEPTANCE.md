@@ -35,3 +35,10 @@ Updated 2026-10-30. This is a consolidated working contract recovered from previ
 4. Demonstrate fresh headline ingestion and scanner consumption with timestamps (not just reachable feed), price response and no old-cache reuse.
 5. Validate per-minute scanner, real notification retry/queue, observation triggers, no repeats, failure handling, clean version identities, UI GPT Action installation and no unauthorized signal/account mutation.
 6. Full multi-cycle production regression and package-based final acceptance. Unit tests in the branch do not satisfy these gates.
+
+## Critical source-of-truth divergence confirmed 2026-10-30
+- Read-only production GET checks via GitHub Actions run [40996803289](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/40996803289) returned: `/health` HTTP 200 with `build=crypto-alpha-worker-v27.6.3-acceptance-candidate-r3`, `apiVersion=7.6.0`, scanner configured; `/?view=diagnostics` HTTP 200 with scannerStateBinding=BOUND; `/openapi.json` HTTP 200 and 4 operations.
+- GitHub `main` still reports `crypto-alpha-worker-v27.6.2-owner-local-dispatch`, API 7.6.0. The live V27.6.3-r3 source code has NOT been recovered and must be treated as authoritative where newer than repository baseline; **DO NOT merge/redeploy this branch over r3** until full source parity and newest fixes are reconciled.
+- The live-readonly-probe failed its explicit v27.6.2 build-equality check because the actual live worker is *newer*, not because the endpoint was down. Code-only regression passed. Durable Object owner build and contract were not verified by these public GETs.
+- Historical project notes say BOJ RSS had already parsed 45 items on 2026-10-29 in another workspace; our branch changes were prepared against an older GitHub source and must not be counted as shipping the live fix. BLS 403, full macro feeds, notification closed loop and GPT saved install remain unresolved.
+- Old asset titled `Crypto_Alpha_V27_6_2_BackendFix(1).zip` exists in Project Library, but raw-byte materialization was denied here. Do not fabricate/recreate newest r3 source from a zip that cannot be read.
