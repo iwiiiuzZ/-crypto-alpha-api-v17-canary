@@ -1,3 +1,6 @@
+import {readFileSync} from "node:fs";
+const source=readFileSync(new URL("../main-v188.js",import.meta.url),"utf8").replace(/^export\s+(default\s+)?/gm,(_,d)=>d?"const exported = ":"");
+const {parseNewsXml}=new Function(source+";return {parseNewsXml};")();
 // Read-only official-source probe. Does not access Cloudflare secrets or private state.
 // HTTP 200 does NOT imply freshness, parse success, or scanner consumption.
 const feeds=[
@@ -12,8 +15,9 @@ for(const feed of feeds){
     const res=await fetch(feed.url,{headers:{"User-Agent":"CryptoAlphaSourceHealth/1.0 (+read-only validation)","Accept":"application/rss+xml, application/xml, text/xml;q=0.9"},redirect:"manual",signal:AbortSignal.timeout(12000)});
     const body=await res.text(),isFeed=/<rss\b|<feed\b/i.test(body.slice(0,1500));
     const itemCount=(body.match(/<item\b|<entry\b/gi)||[]).length;
-    const success=res.ok&&isFeed&&itemCount>0;
-    console.log(JSON.stringify({source:feed.id,httpStatus:res.status,redirected:res.status>=300&&res.status<400,feedSyntax:isFeed,itemCount,success,contentBytes:body.length}));
+    const parsed=res.ok&&isFeed?parseNewsXml(body,feed.id,new Date().toISOString()):[];
+    const success=res.ok&&isFeed&&itemCount>0&&parsed.length>0;
+    console.log(JSON.stringify({source:feed.id,httpStatus:res.status,redirected:res.status>=300&&res.status<400,feedSyntax:isFeed,itemCount,parsedItems:parsed.length,relevantItems:parsed.filter(x=>x.relevant).length,success,contentBytes:body.length}));
     if(!success)fail++;
   }catch(e){fail++;console.log(JSON.stringify({source:feed.id,success:false,error:String(e.message).slice(0,160)}))}
 }
