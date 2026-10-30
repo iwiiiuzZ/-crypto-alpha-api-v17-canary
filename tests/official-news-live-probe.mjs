@@ -26,9 +26,9 @@ for(const feed of feeds){
 try{
  const url='https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all?type=daily_treasury_yield_curve&field_tdr_date_value=2026&page&_format=csv';
  const res=await fetch(url,{headers:{accept:'text/csv'},redirect:'manual',signal:AbortSignal.timeout(12000)});
- const body=await res.text(),rows=body.trim().split(/\\r?\\n/);
+ const body=await res.text(),rows=body.trim().split(/\r?\n/);
  const header=rows[0]||'';
- const success=res.ok&&rows.length>2&&/2\\s*Yr/i.test(header)&&/10\\s*Yr/i.test(header);
+ const success=res.ok&&rows.length>2&&/2\s*Yr/i.test(header)&&/10\s*Yr/i.test(header);
  console.log(JSON.stringify({source:'US_TREASURY_YIELD_DAILY',httpStatus:res.status,redirected:res.status>=300&&res.status<400,success,rowCount:rows.length,header:header.slice(0,450),lastRow:rows.at(-1)?.slice(0,240),contentBytes:body.length}));
  if(!success)fail++;
 }catch(e){fail++;console.log(JSON.stringify({source:'US_TREASURY_YIELD_DAILY',success:false,error:String(e.message).slice(0,160)}));}
