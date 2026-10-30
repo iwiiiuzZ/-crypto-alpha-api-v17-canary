@@ -7,6 +7,7 @@ const feeds=[
   {id:"BEA_RELEASES",url:"https://apps.bea.gov/rss/rss.xml"},
   {id:"BOJ_RELEASES",url:"https://www.boj.or.jp/en/rss/whatsnew.xml"},
   {id:"BLS_CPI",url:"https://www.bls.gov/feed/cpi.rss"},
+  {id:"BLS_PPI",url:"https://www.bls.gov/feed/ppi.rss"},
   {id:"BLS_EMPLOYMENT",url:"https://www.bls.gov/feed/empsit.rss"}
 ];
 let fail=0;
