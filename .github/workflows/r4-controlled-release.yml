@@ -41,7 +41,7 @@ jobs:
           set -o pipefail
           node ops/soak-monitor.mjs | tee r4-production-soak.log
       - name: Restore pinned r3 version if deployment or acceptance failed
-        if: failure() && steps.deploy.outcome == 'success'
+        if: failure() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
         env:
           ROLLBACK_VERSION: 0ce31eb2-d0d7-4a64-82b2-fcc846bc2f73
         run: node ops/rollback.mjs
