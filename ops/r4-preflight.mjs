@@ -27,7 +27,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
  const manifest=JSON.parse(fs.readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
  const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url));
- const sourceBlobSha=createHash('sha1').update(Buffer.from('blob '+source.length+'\\0')).update(source).digest('hex');
+ const sourceBlobSha=createHash('sha1').update(Buffer.from('blob '+source.length)).update(Buffer.from([0])).update(source).digest('hex');
  const token=process.env.CLOUDFLARE_API_TOKEN,scanner=process.env.SCANNER_TOKEN;
  if(!token||!scanner)throw new OpsError('PREFLIGHT_CREDENTIALS_REQUIRED');
  const [cloudflare,fast,status]=await Promise.all([
