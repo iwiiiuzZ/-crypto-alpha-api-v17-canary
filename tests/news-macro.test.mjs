@@ -6,8 +6,8 @@ import { readFileSync } from "node:fs";
 // Removing ESM exports affects only this isolated Node test harness.
 const raw=readFileSync(new URL("../main-v188.js",import.meta.url),"utf8");
 const code=raw.replace(/^export\s+(default\s+)?/gm,(_,def)=>def?"const defaultExport = ":"");
-const {NEWS_SOURCES,newsItem,parseNewsXml,newsContextSummary,NEWS_PARSER_REVISION}=
-  new Function(code+";return {NEWS_SOURCES,newsItem,parseNewsXml,newsContextSummary,NEWS_PARSER_REVISION};")();
+const {NEWS_SOURCES,newsItem,parseNewsXml,newsContextSummary,NEWS_PARSER_REVISION,parseTreasuryDailyCsv,treasuryDailyUrl}=
+  new Function(code+";return {NEWS_SOURCES,newsItem,parseNewsXml,newsContextSummary,NEWS_PARSER_REVISION,parseTreasuryDailyCsv,treasuryDailyUrl};")();
 const fetchedAt=new Date().toISOString();
 const pubDate=new Date().toUTCString();
 const item=(title,url,source)=>newsItem({title,url,pubDate},source,fetchedAt);
@@ -69,7 +69,7 @@ test("source status is independently reported; unavailable BOJ is not success",(
   let records={BEA_RELEASES:{status:"ok",fetchedAt,items:[]},
     BOJ_RELEASES:{status:"unavailable",fetchedAt:null,items:[],reason:"SOURCE_HTTP_ERROR"}};
   let summary=newsContextSummary(records);
-  assert.equal(summary.expectedSourceCount,11);
+  assert.equal(summary.expectedSourceCount,12);
   assert.equal(summary.coverage.BOJ,"OFFICIAL_RSS_UNAVAILABLE");
   records.BOJ_RELEASES={status:"ok",fetchedAt,items:[]};
   summary=newsContextSummary(records);
