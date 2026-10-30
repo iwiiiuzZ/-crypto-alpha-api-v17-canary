@@ -58,13 +58,13 @@ try{
  const port=await new Promise((resolve,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('Runtime start timeout '+errors)),8000);child.on('exit',c=>{clearTimeout(timer);reject(Error('Runtime exit '+c+' '+errors));});child.stdio[3].on('data',b=>{text+=b;for(const l of text.split('\n')){try{const j=JSON.parse(l);if(j.port){clearTimeout(timer);resolve(j.port);}}catch{}}});});
  const response=await fetch('http://127.0.0.1:'+port,{signal:AbortSignal.timeout(12000)});assert.equal(response.status,200);
  const {legacy,result,scanner,cold,coldReadMs}=await response.json();assert.equal(legacy.rejected,true);assert.match(legacy.message,/Invalid redirect value/);
- assert.deepEqual(Object.keys(result.sources).sort(),['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'].sort());
+ assert.deepEqual(Object.keys(result.sources).sort(),['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'].sort());
  for(const [source,r] of Object.entries(result.sources)){assert.equal(r.status,'ok',source+': '+JSON.stringify(r));assert.equal(r.httpStatus,200);assert.ok(r.fetchedAt);}
  assert.ok(result.sources.JIN10.handshakeAt);assert.ok(result.sources.JIN10.latestPublishedAt);
  assert.equal(cold.reason,'NEWS_CACHE_WARMING');assert.ok(coldReadMs<1000);
  assert.equal(scanner.cachePolicy,'CACHE_FIRST_BACKGROUND_REFRESH');
  for(const id of Object.keys(result.sources)){assert.equal(scanner.sources[id].fetchedAt,result.sources[id].fetchedAt);assert.equal(scanner.sources[id].httpStatus,200);}
- console.log(JSON.stringify({runtime:processVersion,compatibilityDate:'2026-08-22',legacyErrorReproduced:legacy,updatedSourceCount:8,updatedSourcesPassed:8,
+ console.log(JSON.stringify({runtime:processVersion,compatibilityDate:'2026-08-22',legacyErrorReproduced:legacy,updatedSourceCount:10,updatedSourcesPassed:10,
   coldCacheReadMs:coldReadMs,scannerAndDirectSourceTimestampsMatch:true,actualScannerStateInternalRouteVerified:true,
   result:'PASS',actualProductionNetworkVerified:false,actualJin10AuthorizationVerified:false,upstreams:'LOCAL_FIXTURES_ONLY'},null,2));
 }finally{child.kill('SIGTERM');fs.rmSync(dir,{recursive:true,force:true});}
