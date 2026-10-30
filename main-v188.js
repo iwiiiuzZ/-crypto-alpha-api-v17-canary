@@ -918,11 +918,11 @@ function newsItem(item,source,fetchedAt) {
     if(u.protocol==="https:"&&!u.username&&!u.password)url=u.href;}catch{}
   if(!title||!publishedAt||!url)return null;
   const text=title+" "+newsText(item.content,200);
-  const relevant=/ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|personal income|personal consumption expenditures|\bPCE\b|\bPPI\b|jobless claims|initial claims|unemployment claims|treasury yields?|\bDXY\b|dollar index|interest rate|bank of japan|\bBOJ\b|monetary policy|policy board|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|美元指数|个人消费支出|初请失业金|失业救济|日本央行|日本銀行|日銀|货币政策|金融政策|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
+  const relevant=/gross domestic product|\bGDP\b|statement on monetary policy|outlook for economic activity and prices|change in the guideline for money market operations|ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|personal income|personal consumption expenditures|\bPCE\b|\bPPI\b|jobless claims|initial claims|unemployment claims|treasury yields?|\bDXY\b|dollar index|interest rate|bank of japan|\bBOJ\b|monetary policy|policy board|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|美元指数|个人消费支出|初请失业金|失业救济|日本央行|日本銀行|日銀|货币政策|金融政策|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
   const riskTags=[];
   if(/hack|exploit|halt.{0,15}withdraw|withdraw.{0,15}halt|停提|黑客|攻击|宕机/i.test(text))riskTags.push("EXCHANGE_SECURITY_REVIEW");
-  if(/FOMC|federal funds|rate decision|consumer price|producer price|inflation|payroll|employment situation|personal income|personal consumption expenditures|\bPCE\b|\bPPI\b|initial claims|jobless claims|unemployment claims|议息|利率决议|通胀|个人消费支出|初请失业金|失业救济|CPI|非农/i.test(text))riskTags.push("MACRO_EVENT_REVIEW");
-  if(/bank of japan|\bBOJ\b|monetary policy|policy board|日本央行|日本銀行|日銀|货币政策|金融政策/i.test(text))riskTags.push("CENTRAL_BANK_POLICY_REVIEW");
+  if(/gross domestic product|\bGDP\b|FOMC|federal funds|rate decision|consumer price|producer price|inflation|payroll|employment situation|personal income|personal consumption expenditures|\bPCE\b|\bPPI\b|initial claims|jobless claims|unemployment claims|议息|利率决议|通胀|个人消费支出|初请失业金|失业救济|CPI|非农/i.test(text))riskTags.push("MACRO_EVENT_REVIEW");
+  if(/statement on monetary policy|outlook for economic activity and prices|change in the guideline for money market operations|bank of japan|\bBOJ\b|monetary policy|policy board|日本央行|日本銀行|日銀|货币政策|金融政策/i.test(text))riskTags.push("CENTRAL_BANK_POLICY_REVIEW");
   if(/treasury yields?|\bDXY\b|dollar index|美元指数|国债收益率/i.test(text))riskTags.push("USD_YIELD_RISK_REVIEW");
   if(/war|missile|hormuz|战争|导弹|霍尔木兹/i.test(text))riskTags.push("GEOPOLITICAL_REVIEW");
   return {id:String(item.id||url).slice(0,240),source,title,url,publishedAt,firstSeenAt:fetchedAt,fetchedAt,
@@ -931,7 +931,7 @@ function newsItem(item,source,fetchedAt) {
 }
 function parseNewsXml(text,source,fetchedAt) {
   if(/<!DOCTYPE|<!ENTITY/i.test(text))throw new Error("UNSUPPORTED_XML_DECLARATION");
-  if(!/<(?:rss|feed)\b/i.test(text))throw new Error("NOT_A_NEWS_FEED");
+  if(!/<(?:rss|feed|rdf:RDF)\b/i.test(text))throw new Error("NOT_A_NEWS_FEED");
   const tag=(block,name)=>block.match(new RegExp("<"+name+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+name+">","i"))?.[1];
   const blocks=[...text.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)].slice(0,60);
   const rejectedReasons={missingTitle:0,invalidPublicationTime:0,invalidLink:0};
