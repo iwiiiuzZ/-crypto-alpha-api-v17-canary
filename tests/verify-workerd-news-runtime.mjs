@@ -38,6 +38,7 @@ export default {async fetch(req){const u=new URL(req.url),now=new Date().toISOSt
   const match=u.pathname.match(/i-([a-z]{3})([0-9]{2})/),month=short.indexOf(match[1]),year=2000+Number(match[2]);
   return new Response('<h1>Economic Indicators Calendar</h1><div>'+names[month]+' '+year+'</div><table><td><div>01<br><a href="https://www.bls.gov/news.release/empsit.htm">Employment Situation</a><br>(08:30)</div></td></table>');
  }
+ if(u.hostname==='home.treasury.gov')return new Response('Date,"2 Yr","10 Yr"\\n'+new Date().toLocaleDateString('en-US',{timeZone:'UTC',month:'2-digit',day:'2-digit',year:'numeric'})+',4.61,4.98\\n');
  if(u.pathname.endsWith('.ics'))return new Response('BEGIN:VCALENDAR\\nEND:VCALENDAR');
  return new Response('<rss><channel><item><title>ETH runtime fixture</title><link>https://example.org/runtime-fixture</link><pubDate>'+new Date().toUTCString()+'</pubDate></item></channel></rss>');
 }};`);
@@ -58,13 +59,13 @@ try{
  const port=await new Promise((resolve,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('Runtime start timeout '+errors)),8000);child.on('exit',c=>{clearTimeout(timer);reject(Error('Runtime exit '+c+' '+errors));});child.stdio[3].on('data',b=>{text+=b;for(const l of text.split('\n')){try{const j=JSON.parse(l);if(j.port){clearTimeout(timer);resolve(j.port);}}catch{}}});});
  const response=await fetch('http://127.0.0.1:'+port,{signal:AbortSignal.timeout(12000)});assert.equal(response.status,200);
  const {legacy,result,scanner,cold,coldReadMs}=await response.json();assert.equal(legacy.rejected,true);assert.match(legacy.message,/Invalid redirect value/);
- assert.deepEqual(Object.keys(result.sources).sort(),['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'].sort());
+ assert.deepEqual(Object.keys(result.sources).sort(),['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','US_TREASURY_YIELD_DAILY','NYFED_CALENDAR'].sort());
  for(const [source,r] of Object.entries(result.sources)){assert.equal(r.status,'ok',source+': '+JSON.stringify(r));assert.equal(r.httpStatus,200);assert.ok(r.fetchedAt);}
  assert.ok(result.sources.JIN10.handshakeAt);assert.ok(result.sources.JIN10.latestPublishedAt);
  assert.equal(cold.reason,'NEWS_CACHE_WARMING');assert.ok(coldReadMs<1000);
  assert.equal(scanner.cachePolicy,'CACHE_FIRST_BACKGROUND_REFRESH');
  for(const id of Object.keys(result.sources)){assert.equal(scanner.sources[id].fetchedAt,result.sources[id].fetchedAt);assert.equal(scanner.sources[id].httpStatus,200);}
- console.log(JSON.stringify({runtime:processVersion,compatibilityDate:'2026-08-22',legacyErrorReproduced:legacy,updatedSourceCount:11,updatedSourcesPassed:11,
+ console.log(JSON.stringify({runtime:processVersion,compatibilityDate:'2026-08-22',legacyErrorReproduced:legacy,updatedSourceCount:12,updatedSourcesPassed:12,
   coldCacheReadMs:coldReadMs,scannerAndDirectSourceTimestampsMatch:true,actualScannerStateInternalRouteVerified:true,
   result:'PASS',actualProductionNetworkVerified:false,actualJin10AuthorizationVerified:false,upstreams:'LOCAL_FIXTURES_ONLY'},null,2));
 }finally{child.kill('SIGTERM');fs.rmSync(dir,{recursive:true,force:true});}
