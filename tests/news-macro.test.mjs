@@ -93,3 +93,24 @@ test("BEA GDP headline is material macro evidence",()=>{
   assert(row?.relevant);
   assert(row.riskTags.includes("MACRO_EVENT_REVIEW"));
 });
+
+
+test("official Treasury daily yields have dates, changes and explicit non-live classification",()=>{
+ const now=Date.parse("2026-10-30T08:00:00Z");
+ const csv='Date,"2 Yr","10 Yr"\n10/29/2026,4.61,4.98\n10/28/2026,4.67,5.05\n';
+ const yields=parseTreasuryDailyCsv(csv,now);
+ assert.equal(yields.asOf,'2026-10-29');
+ assert.equal(yields.yield2yPct,4.61);
+ assert.equal(yields.yield10yPct,4.98);
+ assert.equal(yields.change2yBp,-6);
+ assert.equal(yields.change10yBp,-7);
+ assert.equal(yields.intraday,false);
+ assert.equal(yields.tradeDirection,null);
+ assert.match(treasuryDailyUrl(Date.parse('2027-01-03T00:00:00Z')),/2027\/all/);
+ const context=newsContextSummary({US_TREASURY_YIELD_DAILY:{status:'ok',fetchedAt:new Date(now).toISOString(),yieldCurve:yields}},now);
+ assert.equal(context.coverage.US2Y,'OFFICIAL_DAILY_REFERENCE_NOT_LIVE');
+ assert.equal(context.coverage.US10Y,'OFFICIAL_DAILY_REFERENCE_NOT_LIVE');
+ assert.equal(context.coverage.DXY,'NO_LIVE_QUOTE_CONNECTED');
+ assert.equal(context.treasuryDaily.live,false);
+ assert.throws(()=>parseTreasuryDailyCsv('Date,"2 Yr","10 Yr"\n10/01/2026,4.6,4.9',now),/STALE/);
+});
