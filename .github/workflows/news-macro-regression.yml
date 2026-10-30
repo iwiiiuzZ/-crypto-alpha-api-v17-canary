@@ -1,0 +1,32 @@
+name: Macro news source regression
+on:
+  push:
+    branches:
+      - integration/r3-macro-news-20261030
+  pull_request:
+    paths:
+      - main-v188.js
+      - tests/news-macro.test.mjs
+      - .github/workflows/news-macro-regression.yml
+jobs:
+  verify-news-source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source syntax
+        run: node --check main-v188.js
+      - name: Run isolated unit tests (no live endpoints or secrets)
+        run: node --test tests/news-macro.test.mjs
+
+  live-readonly-probe:
+    runs-on: ubuntu-latest
+    needs: verify-news-source
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: GET public health / diagnostics / OpenAPI only
+        run: node tests/live-readonly-smoke.mjs
