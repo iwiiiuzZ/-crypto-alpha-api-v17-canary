@@ -1,5 +1,11 @@
 # Crypto Alpha Pro Ultimate V27.6.3 — GPT install and release handoff (candidate, NOT FINAL)
 
+## Candidate build identity
+- Candidate source build: `crypto-alpha-worker-v27.6.3-macro-r4`; API `7.6.0`.
+- Current observed production build: `crypto-alpha-worker-v27.6.3-acceptance-candidate-r3` (different source; do not confuse).
+- `ops/release-manifest.json` locks the exact Worker source Git blob SHA. `npm test` rejects drift or build reuse.
+- GitHub CI creates `CryptoAlpha_V27_6_3_R4_CANDIDATE_TESTED.zip` only after complete regression success. This is not a production certificate.
+
 ## Single installation target
 - Cloudflare Worker repository: https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary
 - Reviewed candidate branch: integration/r3-macro-news-20261030
@@ -14,7 +20,7 @@
 ## Mandatory release process
 1. Ensure candidate `npm test` passes both Node unit and native workerd suites, plus macro feed regressions. No weakening or skipping tests to greenlight.
 2. Review exact candidate versus currently live build `crypto-alpha-worker-v27.6.3-acceptance-candidate-r3` and preserve all newer functions. Validate BUILD and backend identity against state owner.
-3. Confirm BLS source errors remain visible (403); live BEA/BOJ successful fetch and parse alone do not prove backend scanner consumed news.
+3. Confirm BLS source errors remain visible when they occur (403 was historically observed, but GitHub egress returned HTTP 200 on 2026-10-30); live BEA/BOJ/BLS fetch and parse alone do not prove backend scanner consumed news.
 4. Confirm actual news publication/fetch/consume timestamps and price response, not cached records. Validate DXY and Treasury yields real-time source separately; otherwise mark unavailable.
 5. Prove 1m scanner heartbeats, dedup, expiry, retries, 3-tier alerts, read-only audit, no fake messages, and no unauthorized order.
 6. Only after approval and actual deployment, verify frontendBuild/stateOwnerBuild/stateOwnerContract/matched, GPT Action import and an end-to-end authenticated read-only operation.
