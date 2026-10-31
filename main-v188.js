@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r4";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -909,7 +909,7 @@ function refreshServedSnapshot(snapshot) {
 // V27: timestamped news transport, separate from execution quotes and signal authority.
 const NEWS_STATE_KEY = "news:context:v27";
 const NEWS_TRANSPORT_REVISION = "27.0.2";
-const NEWS_PARSER_REVISION = "27.6.3-macro-news";
+const NEWS_PARSER_REVISION = "27.6.3-macro-news-r5";
 const NEWS_SOURCES = [
   {id:"BEA_RELEASES",url:"https://apps.bea.gov/rss/rss.xml",seconds:180},
   {id:"BOJ_RELEASES",url:"https://www.boj.or.jp/en/rss/whatsnew.xml",seconds:180},
