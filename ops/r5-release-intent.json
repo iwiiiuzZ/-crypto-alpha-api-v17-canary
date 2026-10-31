@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "6c2dd258cb588eae66e8c5b074ad239b9d02817a",
-  "sourceGitBlobSha": "722a144cfdb3f799cee9cd2ff17f174c11a47c43",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5d",
-  "priorDeploymentId": "0de180ec-7494-4b34-a0fc-8095277148ee",
+  "reviewedCommit": "15efac75766adaf985dade1ff0f806992805e1ba",
+  "sourceGitBlobSha": "092aa22c41dc3da0c7d47856f472a28343e0c764",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5e",
+  "priorDeploymentId": "c1cef5b7-75f0-4636-94ae-19c103195e95",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "Continue the user's authorized engineering repair. 53 complete isolated/native suites passed, including exact R5c late-quote replay, exchange-time-aware bounded flow cache and write-amplification/recovery checks. Strict original 10-second validity, net RR>=2 and eight models preserved. Coalesced normal tick baseline two durable writes; no paid plan or data dependency. Controlled real-source, schema and strict autonomous 10-minute acceptance; guarded rollback to the exact current R4. No artificial signals, test pushes or order execution."
+  "notes": "Continue the user-authorized root-cause repair. All 54 isolated/native regression suites passed locally, including pending/failed/restarted receipt preservation, genuine whole price-pair retry and persistent-failure refusal. Original strict ten-second quote freshness, all-sample heartbeat/model receipts, RR>=2 and eight models unchanged. New last-degraded-cycle facts retained for diagnosis. Current R4 deployment pinned; any failed exact-candidate real-source/10-minute acceptance triggers guarded rollback. No test push, artificial trading signal, order execution, paid data or altered strategy."
 }
