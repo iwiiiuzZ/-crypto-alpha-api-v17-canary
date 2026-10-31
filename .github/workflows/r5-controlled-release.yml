@@ -46,6 +46,19 @@ jobs:
           node ops/soak-monitor.mjs | tee r5-production-soak.log
       - name: Prove per-source recent news batch consumption
         run: node ops/r5-news-consumption-check.mjs
+      - name: Try original official BLS feeds through the independent authorized network
+        id: bls_relay
+        continue-on-error: true
+        env:
+          CRYPTO_ALPHA_WORKER_ORIGIN: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
+        run: |
+          set -o pipefail
+          node ops/official-bls-relay.mjs | tee r5-official-bls-relay.log
+      - name: Reconcile source consumption after the BLS transport attempt
+        if: steps.bls_relay.outcome == 'success'
+        run: node ops/r5-news-consumption-check.mjs
+      - name: Check live schema, all model details, structures and actual alert evidence
+        run: node ops/final-readonly-audit.mjs
       - name: Restore pinned R4 ONLY if failure is traced to the exact R5 deployment
         if: failure() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
         run: node ops/r5-guarded-rollback.mjs
@@ -58,6 +71,8 @@ jobs:
             r5-preflight-evidence.json
             r5-postdeploy-evidence.json
             r5-news-consumption-evidence.json
+            r5-official-bls-relay.log
+            r5-final-readonly-audit.json
             r5-production-soak.log
             r5-rollback-evidence.json
             test-results/summary.json
