@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
-const policy='i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:6,staleSeconds:0}';
+const policy='i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:4,staleSeconds:0}';
 const instances=source.split(policy).length-1;
-assert.equal(instances,2,'both shared market bundle and fast monitor must use the same six-second executed-flow cache policy');
+assert.equal(instances,2,'both shared market bundle and fast monitor must use the same four-second executed-flow cache policy');
 assert.match(source,/const FAST_INTERVAL_MS=10000;/);
 assert.match(source,/if\(old && !force && age>=0 && age<=policy\.freshSeconds\)/);
 assert.match(source,/if\(old && age>=0 && age<=policy\.staleSeconds\)/);
 assert.match(source,/if\(venue\.status!=='ok'\|\|!venue\.tradeFresh\)throw/);
 assert.match(source,/if\(!genuineExecutionQuote\(quote,10\)\)throw/);
-assert(6<10,'flow reuse must stay inside hard 10-second executable freshness');
-console.log('PASS shared OKX trade/book deduplication bounded to six seconds, no stale-on-error execution, hard ten-second quote/flow checks');
+assert(4<10,'flow reuse must stay inside hard 10-second executable freshness');
+console.log('PASS shared OKX trade/book deduplication bounded to four seconds, no stale-on-error execution, hard ten-second quote/flow checks');
