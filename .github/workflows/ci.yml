@@ -33,3 +33,28 @@ jobs:
           path: CryptoAlpha_V27_6_3_R5_CANDIDATE_TESTED.zip
           if-no-files-found: error
           retention-days: 30
+
+  readonly-r5-production-preflight:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Verify immutable candidate against live R4 without modifying production
+        run: node ops/r5-preflight.mjs
+      - name: Preserve redacted read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R5_READONLY_PREFLIGHT
+          path: r5-preflight-evidence.json
+          if-no-files-found: warn
+          retention-days: 30
