@@ -23,7 +23,7 @@ const bulky={
  heartbeat:{status:'completed',producerBuild:'crypto-alpha-worker-v27.6.3-macro-r5',
   lastSuccessfulCycleAt:'2026-10-31T01:50:00Z'},
  backendIdentity:{matched:true},configuration:{},activePlan:null,observationHistory:[],
- observations:[],failureHistory:[],runtime:null,notificationAudit:{recentAttempts:[]},
+ observations:Array.from({length:180},(_,i)=>({observationId:'OBS-'+i,revision:'r1',state:'APPROACHING',submodel:'A1',direction:'LONG',notificationDecision:{reason:'WAIT_FOR_CONFIRMATION',explanation:'x'.repeat(320)}})),failureHistory:[],runtime:null,notificationAudit:{recentAttempts:[]},
  discovery:{newsStatus:{sources:newsStatus.sources,huge:'x'.repeat(45000)}},
  diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:'2026-10-31T01:50:00Z'},
   newsSourceReceipts:receipts}
