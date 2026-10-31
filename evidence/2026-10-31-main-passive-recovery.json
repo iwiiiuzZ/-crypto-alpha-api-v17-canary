@@ -1,0 +1,914 @@
+{
+  "mode": "PASSIVE_POST_MAIN_BUILD_AND_NEW_RELAY_BATCH_NO_FOREGROUND_REFRESH",
+  "mainCommit": "ea07d2ee454c950495bdc1ad574697797b66ae11",
+  "observedAt": "2026-10-31T11:05:33.733Z",
+  "samples": [
+    {
+      "readAt": "2026-10-31T11:04:08.053Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+      "apiVersion": "7.6.0",
+      "identity": {
+        "frontendBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateOwnerContract": "owner-local-dispatch-v1",
+        "matched": true
+      },
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-31T11:04:07.512Z",
+        "lastTradeAt": "2026-10-31T11:04:05.997Z",
+        "bookAt": "2026-10-31T11:04:07.355Z",
+        "dataAgeSeconds": 0.387,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-31T11:04:07.219Z",
+        "nextAlarmAt": "2026-10-31T11:04:09.719Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.293,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:00:34.652Z",
+          "completedAt": "2026-10-31T11:00:34.652Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:03:24.921Z",
+          "completedAt": "2026-10-31T11:03:24.921Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:00:26.004Z",
+          "completedAt": "2026-10-31T11:00:26.004Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:03:24.921Z",
+          "completedAt": "2026-10-31T11:03:24.921Z"
+        }
+      ],
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "lastCompletedAt": "2026-10-31T11:03:24.921Z",
+        "lastSuccessfulCycleAt": "2026-10-31T11:03:24.921Z",
+        "newsConsumedAt": "2026-10-31T11:03:24.921Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": null
+      },
+      "notifications": {
+        "auditStatus": "RECORDED_PROVIDER_ATTEMPTS",
+        "channels": [
+          {
+            "kind": "OBSERVATION",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "NEWS",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "DYNAMIC_PRICE",
+            "attempts": 12,
+            "accepted": 12,
+            "failures": null
+          },
+          {
+            "kind": "PLAN",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "FAST_FLOW",
+            "attempts": 4,
+            "accepted": 4,
+            "failures": null
+          },
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "attempts": 8,
+            "accepted": 8,
+            "failures": null
+          },
+          {
+            "kind": "CONTROL",
+            "attempts": 1,
+            "accepted": 1,
+            "failures": null
+          }
+        ],
+        "deviceReceiptVerified": false
+      },
+      "consumedNewsSources": [
+        {
+          "source": "JIN10",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:02:24.669Z"
+        },
+        {
+          "source": "BEA_RELEASES",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:59:24.010Z"
+        },
+        {
+          "source": "BOJ_RELEASES",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:59:24.101Z"
+        },
+        {
+          "source": "COINDESK",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:02:23.960Z"
+        },
+        {
+          "source": "FED_PRESS",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:00:24.103Z"
+        },
+        {
+          "source": "FED_SPEECH",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:02:23.513Z"
+        },
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.306Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.322Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.332Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.344Z"
+        },
+        {
+          "source": "US_TREASURY_YIELD_DAILY",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T05:41:14.742Z"
+        },
+        {
+          "source": "NYFED_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:45:23.535Z"
+        }
+      ],
+      "candidateChain": {
+        "stateReadSucceeded": true,
+        "detailsOmitted": true,
+        "activeCount": 0,
+        "returnedHistoryCount": 0,
+        "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+        "active": [],
+        "history": [],
+        "activePlanPresent": false,
+        "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+        "auditUpdatedAt": "2026-10-31T01:31:30.630Z",
+        "retainedAttempts": 25,
+        "recentAttemptStages": [
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "stage": "TECHNICAL_PROGRESS",
+            "outcome": "PROVIDER_ACCEPTED",
+            "attemptedAt": "2026-10-30T15:21:29.376Z",
+            "completedAt": "2026-10-30T15:21:30.443Z"
+          },
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "stage": "TECHNICAL_PROGRESS",
+            "outcome": "PROVIDER_ACCEPTED",
+            "attemptedAt": "2026-10-31T01:31:29.574Z",
+            "completedAt": "2026-10-31T01:31:30.630Z"
+          }
+        ],
+        "pendingByKind": {
+          "Observation": 0,
+          "News": 0,
+          "Dynamic": 0,
+          "Plan": 0,
+          "Fast": 0,
+          "Progress": 0
+        },
+        "preparedNotificationLiveVerified": false,
+        "deviceReceiptVerified": false
+      }
+    },
+    {
+      "readAt": "2026-10-31T11:04:33.344Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+      "apiVersion": "7.6.0",
+      "identity": {
+        "frontendBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateOwnerContract": "owner-local-dispatch-v1",
+        "matched": true
+      },
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-31T11:04:32.519Z",
+        "lastTradeAt": "2026-10-31T11:04:29.854Z",
+        "bookAt": "2026-10-31T11:04:32.355Z",
+        "dataAgeSeconds": 0.604,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-31T11:04:32.219Z",
+        "nextAlarmAt": "2026-10-31T11:04:34.719Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.3,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:00:34.652Z",
+          "completedAt": "2026-10-31T11:00:34.652Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:04:24.952Z",
+          "completedAt": "2026-10-31T11:04:24.952Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:00:26.004Z",
+          "completedAt": "2026-10-31T11:00:26.004Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:04:24.952Z",
+          "completedAt": "2026-10-31T11:04:24.952Z"
+        }
+      ],
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "lastCompletedAt": "2026-10-31T11:04:24.952Z",
+        "lastSuccessfulCycleAt": "2026-10-31T11:04:24.952Z",
+        "newsConsumedAt": "2026-10-31T11:04:24.952Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": null
+      },
+      "notifications": {
+        "auditStatus": "RECORDED_PROVIDER_ATTEMPTS",
+        "channels": [
+          {
+            "kind": "OBSERVATION",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "NEWS",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "DYNAMIC_PRICE",
+            "attempts": 12,
+            "accepted": 12,
+            "failures": null
+          },
+          {
+            "kind": "PLAN",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "FAST_FLOW",
+            "attempts": 4,
+            "accepted": 4,
+            "failures": null
+          },
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "attempts": 8,
+            "accepted": 8,
+            "failures": null
+          },
+          {
+            "kind": "CONTROL",
+            "attempts": 1,
+            "accepted": 1,
+            "failures": null
+          }
+        ],
+        "deviceReceiptVerified": false
+      },
+      "consumedNewsSources": [
+        {
+          "source": "JIN10",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:24.793Z"
+        },
+        {
+          "source": "BEA_RELEASES",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:23.790Z"
+        },
+        {
+          "source": "BOJ_RELEASES",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:23.950Z"
+        },
+        {
+          "source": "COINDESK",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:24.205Z"
+        },
+        {
+          "source": "FED_PRESS",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:00:24.103Z"
+        },
+        {
+          "source": "FED_SPEECH",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:02:23.513Z"
+        },
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.306Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.322Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.332Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.344Z"
+        },
+        {
+          "source": "US_TREASURY_YIELD_DAILY",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T05:41:14.742Z"
+        },
+        {
+          "source": "NYFED_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:45:23.535Z"
+        }
+      ],
+      "candidateChain": {
+        "stateReadSucceeded": true,
+        "detailsOmitted": true,
+        "activeCount": 0,
+        "returnedHistoryCount": 0,
+        "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+        "active": [],
+        "history": [],
+        "activePlanPresent": false,
+        "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+        "auditUpdatedAt": "2026-10-31T01:31:30.630Z",
+        "retainedAttempts": 25,
+        "recentAttemptStages": [
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "stage": "TECHNICAL_PROGRESS",
+            "outcome": "PROVIDER_ACCEPTED",
+            "attemptedAt": "2026-10-30T15:21:29.376Z",
+            "completedAt": "2026-10-30T15:21:30.443Z"
+          },
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "stage": "TECHNICAL_PROGRESS",
+            "outcome": "PROVIDER_ACCEPTED",
+            "attemptedAt": "2026-10-31T01:31:29.574Z",
+            "completedAt": "2026-10-31T01:31:30.630Z"
+          }
+        ],
+        "pendingByKind": {
+          "Observation": 0,
+          "News": 0,
+          "Dynamic": 0,
+          "Plan": 0,
+          "Fast": 0,
+          "Progress": 0
+        },
+        "preparedNotificationLiveVerified": false,
+        "deviceReceiptVerified": false
+      }
+    },
+    {
+      "readAt": "2026-10-31T11:05:33.298Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+      "apiVersion": "7.6.0",
+      "identity": {
+        "frontendBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateOwnerContract": "owner-local-dispatch-v1",
+        "matched": true
+      },
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-31T11:05:32.515Z",
+        "lastTradeAt": "2026-10-31T11:05:29.284Z",
+        "bookAt": "2026-10-31T11:05:32.355Z",
+        "dataAgeSeconds": 0.648,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-31T11:05:32.219Z",
+        "nextAlarmAt": "2026-10-31T11:05:34.719Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.296,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:00:34.652Z",
+          "completedAt": "2026-10-31T11:00:34.652Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:05:25.299Z",
+          "completedAt": "2026-10-31T11:05:25.299Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:00:26.004Z",
+          "completedAt": "2026-10-31T11:00:26.004Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-31T11:05:25.299Z",
+          "completedAt": "2026-10-31T11:05:25.299Z"
+        }
+      ],
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+        "lastCompletedAt": "2026-10-31T11:05:25.299Z",
+        "lastSuccessfulCycleAt": "2026-10-31T11:05:25.299Z",
+        "newsConsumedAt": "2026-10-31T11:05:25.299Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": null
+      },
+      "notifications": {
+        "auditStatus": "RECORDED_PROVIDER_ATTEMPTS",
+        "channels": [
+          {
+            "kind": "OBSERVATION",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "NEWS",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "DYNAMIC_PRICE",
+            "attempts": 12,
+            "accepted": 12,
+            "failures": null
+          },
+          {
+            "kind": "PLAN",
+            "attempts": 0,
+            "accepted": 0,
+            "failures": 0
+          },
+          {
+            "kind": "FAST_FLOW",
+            "attempts": 4,
+            "accepted": 4,
+            "failures": null
+          },
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "attempts": 8,
+            "accepted": 8,
+            "failures": null
+          },
+          {
+            "kind": "CONTROL",
+            "attempts": 1,
+            "accepted": 1,
+            "failures": null
+          }
+        ],
+        "deviceReceiptVerified": false
+      },
+      "consumedNewsSources": [
+        {
+          "source": "JIN10",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:24.793Z"
+        },
+        {
+          "source": "BEA_RELEASES",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:23.790Z"
+        },
+        {
+          "source": "BOJ_RELEASES",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:23.950Z"
+        },
+        {
+          "source": "COINDESK",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:03:24.205Z"
+        },
+        {
+          "source": "FED_PRESS",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:04:23.499Z"
+        },
+        {
+          "source": "FED_SPEECH",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T11:02:23.513Z"
+        },
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.306Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.322Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.332Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:55:39.344Z"
+        },
+        {
+          "source": "US_TREASURY_YIELD_DAILY",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T05:41:14.742Z"
+        },
+        {
+          "source": "NYFED_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-10-31T10:45:23.535Z"
+        }
+      ],
+      "candidateChain": {
+        "stateReadSucceeded": true,
+        "detailsOmitted": true,
+        "activeCount": 0,
+        "returnedHistoryCount": 0,
+        "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+        "active": [],
+        "history": [],
+        "activePlanPresent": false,
+        "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+        "auditUpdatedAt": "2026-10-31T01:31:30.630Z",
+        "retainedAttempts": 25,
+        "recentAttemptStages": [
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "stage": "TECHNICAL_PROGRESS",
+            "outcome": "PROVIDER_ACCEPTED",
+            "attemptedAt": "2026-10-30T15:21:29.376Z",
+            "completedAt": "2026-10-30T15:21:30.443Z"
+          },
+          {
+            "kind": "OPPORTUNITY_PROGRESS",
+            "stage": "TECHNICAL_PROGRESS",
+            "outcome": "PROVIDER_ACCEPTED",
+            "attemptedAt": "2026-10-31T01:31:29.574Z",
+            "completedAt": "2026-10-31T01:31:30.630Z"
+          }
+        ],
+        "pendingByKind": {
+          "Observation": 0,
+          "News": 0,
+          "Dynamic": 0,
+          "Plan": 0,
+          "Fast": 0,
+          "Progress": 0
+        },
+        "preparedNotificationLiveVerified": false,
+        "deviceReceiptVerified": false
+      }
+    }
+  ],
+  "cloudflare": {
+    "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+    "deployedAt": "2026-10-31T10:16:55.913Z",
+    "versions": [
+      {
+        "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "buildConfiguration": {
+    "worker": "crypto-alpha-api-v17-canary",
+    "triggers": [
+      {
+        "id": "f38ad0bf-3347-440b-98f0-b3a5b6e9fc77",
+        "includesMain": false,
+        "excludesMain": true,
+        "exactMainOnly": false,
+        "rootDirectoryMatches": true,
+        "checkedDeployCommand": false,
+        "standardWranglerDeploy": false,
+        "buildCommandPresent": false
+      },
+      {
+        "id": "5827726d-2dc7-4544-ab7e-08a1169dcb20",
+        "includesMain": true,
+        "excludesMain": false,
+        "exactMainOnly": true,
+        "rootDirectoryMatches": true,
+        "checkedDeployCommand": true,
+        "standardWranglerDeploy": false,
+        "buildCommandPresent": false
+      }
+    ]
+  },
+  "assessment": {
+    "gates": {
+      "observationWindow": true,
+      "versionIdentity": true,
+      "independentHealth": true,
+      "autonomousSamples": true,
+      "minuteScanner": true,
+      "newEightModelReview": true,
+      "newsConsumer": true
+    },
+    "operationalPassed": true,
+    "failedGates": [],
+    "limits": {
+      "coverage": "SAMPLED_WINDOW_NOT_LONG_TERM_STABILITY",
+      "latestNewsBatchConsumed": "NOT_INDEPENDENTLY_VERIFIED",
+      "pushRetryRecovery": "NOT_PROVEN_BY_EMPTY_QUEUES",
+      "deviceReceipt": "NOT_VERIFIED",
+      "tradingOpportunity": "NOT_INFERRED_FROM_SYSTEM_HEALTH"
+    }
+  },
+  "requiredNewsCoverage": {
+    "passed": true,
+    "rows": [
+      {
+        "source": "JIN10",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T11:03:24.793Z",
+        "current": true
+      },
+      {
+        "source": "BEA_RELEASES",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T11:03:23.790Z",
+        "current": true
+      },
+      {
+        "source": "BOJ_RELEASES",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T11:03:23.950Z",
+        "current": true
+      },
+      {
+        "source": "COINDESK",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T11:03:24.205Z",
+        "current": true
+      },
+      {
+        "source": "FED_PRESS",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T11:04:23.499Z",
+        "current": true
+      },
+      {
+        "source": "FED_SPEECH",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T11:02:23.513Z",
+        "current": true
+      },
+      {
+        "source": "BLS_CPI",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T10:55:39.306Z",
+        "current": true
+      },
+      {
+        "source": "BLS_PPI",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T10:55:39.322Z",
+        "current": true
+      },
+      {
+        "source": "BLS_EMPLOYMENT",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T10:55:39.332Z",
+        "current": true
+      },
+      {
+        "source": "BLS_CALENDAR",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T10:55:39.344Z",
+        "current": true
+      },
+      {
+        "source": "US_TREASURY_YIELD_DAILY",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T05:41:14.742Z",
+        "current": true
+      },
+      {
+        "source": "NYFED_CALENDAR",
+        "status": "ok",
+        "fetchedAt": "2026-10-31T10:45:23.535Z",
+        "current": true
+      }
+    ],
+    "scope": "REQUIRED_SOURCE_CONSUMPTION_AVAILABILITY_NOT_PUBLICATION_RECENCY_OR_PROFIT"
+  },
+  "newMainRelayConsumed": true,
+  "exactDeployment": true,
+  "passed": true,
+  "finalDeliveryAccepted": false
+}
