@@ -8,7 +8,7 @@ export const R4_BASELINE={
  deploymentId:'f18315e1-0726-4d3d-9f5e-4011f7770b5d',
  namespaceFingerprint:'aedfbcd14cd1'
 };
-export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5';
+export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5b';
 
 export function assessR5Preflight({manifest,sourceGitBlobSha,cloudflare,fast,status,now=Date.now()}){
  const ident=fast?.backendIdentity||{},scanId=status?.backendIdentity||{};
