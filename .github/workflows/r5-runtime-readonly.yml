@@ -90,11 +90,16 @@ jobs:
           import fs from 'node:fs';
           import {requestJson,summarizeReadContext,observeNewsConsumption,safeOutput} from './ops/diagnostics.mjs';
           const config=JSON.parse(fs.readFileSync('ops/config.json','utf8')),scanner=process.env.SCANNER_TOKEN;
+          await requestJson(fetch,config.origin+'/?view=news');
+          await new Promise(r=>setTimeout(r,16000));
           const news=await requestJson(fetch,config.origin+'/?view=news'),context=summarizeReadContext(null,news);
           const followup=await observeNewsConsumption(()=>requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),context,'crypto-alpha-worker-v27.6.3-macro-r5e');
           const evidence={scope:'REAL_OFFICIAL_SOURCE_AND_BATCH_CONSUMPTION_NOT_TRADING_OR_DEVICE_PROOF',observedAt:new Date().toISOString(),newsSources:context.newsSources,followup,finalDeliveryAccepted:false};
           const output=safeOutput(evidence,[scanner]);fs.writeFileSync('corrected-bls-consumption.json',output);console.log(output);
-          if(!followup.passed)process.exitCode=1;
+          const bls=['BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR'];
+          const blsAllConsumed=bls.every(id=>context.newsSources.some(s=>s.source===id&&s.status==='ok')&&followup.observations.at(-1)?.comparisons.some(c=>c.source===id&&(c.verified||c.newerSuccessfulBatchConsumed)));
+          console.log(JSON.stringify({result:'CORRECTED_BLS_FOUR_SOURCES_ACTUALLY_CONSUMED',passed:blsAllConsumed}));
+          if(!followup.passed||!blsAllConsumed)process.exitCode=1;
           NODE
       - name: Preserve current real evidence
         if: always()
