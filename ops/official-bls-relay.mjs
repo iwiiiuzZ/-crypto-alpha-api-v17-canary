@@ -14,7 +14,7 @@ export function validOfficialBlSResponse({url,text,contentType,source}){
  return correct&&typeof text==='string'&&text.length>50&&text.length<=180000&&
     (isCalendar?/BEGIN:VCALENDAR/.test(text)&&/END:VCALENDAR/.test(text):/<(?:rss|feed|rdf:RDF)\b/i.test(text)&&/<item\b/i.test(text));
 }
-export async function collectBlsSources(fetcher=fetch,now=Date.now()){
+export async function collectBlsSources(fetcher=fetch,now=Date.now){
  const sources=[],failures=[];
  for(const {id,url} of BLS_FEEDS){
   try{
