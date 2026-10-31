@@ -75,6 +75,27 @@ jobs:
           const out={scope:'OFFICIAL_SOURCE_FEASIBILITY_ONLY_NOT_CONNECTED_TO_PRODUCTION',observedAt:new Date().toISOString(),rows};
           fs.writeFileSync('official-macro-alternatives.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));
           NODE
+      - name: Validate original official BLS feed transport and authorized ingestion without test signals
+        continue-on-error: true
+        env:
+          CRYPTO_ALPHA_WORKER_ORIGIN: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
+          EXPECTED_RELAY_BUILD: crypto-alpha-worker-v27.6.3-macro-r5e
+        run: |
+          set -o pipefail
+          node ops/official-bls-relay.mjs | tee corrected-official-bls-relay.log
+      - name: Verify actual corrected BLS source consumption
+        continue-on-error: true
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {requestJson,summarizeReadContext,observeNewsConsumption,safeOutput} from './ops/diagnostics.mjs';
+          const config=JSON.parse(fs.readFileSync('ops/config.json','utf8')),scanner=process.env.SCANNER_TOKEN;
+          const news=await requestJson(fetch,config.origin+'/?view=news'),context=summarizeReadContext(null,news);
+          const followup=await observeNewsConsumption(()=>requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),context,'crypto-alpha-worker-v27.6.3-macro-r5e');
+          const evidence={scope:'REAL_OFFICIAL_SOURCE_AND_BATCH_CONSUMPTION_NOT_TRADING_OR_DEVICE_PROOF',observedAt:new Date().toISOString(),newsSources:context.newsSources,followup,finalDeliveryAccepted:false};
+          const output=safeOutput(evidence,[scanner]);fs.writeFileSync('corrected-bls-consumption.json',output);console.log(output);
+          if(!followup.passed)process.exitCode=1;
+          NODE
       - name: Preserve current real evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -83,4 +104,6 @@ jobs:
           path: |
             r5-runtime-readonly-evidence.json
             official-macro-alternatives.json
+            corrected-official-bls-relay.log
+            corrected-bls-consumption.json
           retention-days: 30
