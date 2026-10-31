@@ -35,7 +35,7 @@ jobs:
           retention-days: 30
 
   readonly-r5-production-preflight:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031') || (github.event_name == 'pull_request' && github.head_ref == 'integration/r5-freeze-candidate-20261031' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
