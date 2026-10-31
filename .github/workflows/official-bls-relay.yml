@@ -31,3 +31,5 @@ jobs:
 # R5 first-production-source-proof: run same official-source collector on deployment day.
 
 # Reverify official BLS RSS transport with validated content-type and User-Agent.
+
+# Verify Atom entry support for BLS official RSS after R5 deployment.
