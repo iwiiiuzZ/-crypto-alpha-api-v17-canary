@@ -8,7 +8,8 @@ export function assessR5GuardedRollback({before,post,current,liveBuild}){
     current?.versions?.[0]?.id===before?.priorVersionId&&current?.singleVersion===true;
  const expectedCurrent=post?.build===R5_BUILD&&current?.deploymentId===post?.deploymentId&&
     current?.versions?.[0]?.id===post?.versionId&&current?.singleVersion===true;
- const canRollback=before?.build===R5_BUILD&&before?.priorDeploymentId===R4_BASELINE.deploymentId&&
+ const validPriorVersion=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(before?.priorVersionId||'');
+ const canRollback=validPriorVersion&&post?.priorVersionId===before?.priorVersionId&&post?.priorDeploymentId===before?.priorDeploymentId&&before?.build===R5_BUILD&&before?.priorDeploymentId===R4_BASELINE.deploymentId&&
     before?.namespaceFingerprint===R4_BASELINE.namespaceFingerprint&&
     current?.bindingMatches===true&&current?.binding?.namespaceFingerprint===R4_BASELINE.namespaceFingerprint&&
     expectedCurrent&&liveBuild===R5_BUILD;
