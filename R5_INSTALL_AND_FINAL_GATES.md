@@ -5,7 +5,7 @@
 ## 交付身份（只对应唯一源代码）
 
 - 源码分支：`integration/r5-freeze-candidate-20261031`
-- Worker 构建：`crypto-alpha-worker-v27.6.3-macro-r5`
+- Worker 构建：`crypto-alpha-worker-v27.6.3-macro-r5b`
 - 接口协议：`7.6.0`；状态拥有者协议：`owner-local-dispatch-v1`
 - Wrangler 唯一入口：`main-v188.js`
 - 文件精确源码 SHA：见 `ops/release-manifest.json`，经 `test-release-identity.mjs` 强制核对。
