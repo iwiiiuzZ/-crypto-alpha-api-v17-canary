@@ -16,5 +16,11 @@ assert.equal(manifest.apiVersion,apiVersion);
 assert.equal(manifest.stateOwnerContract,stateContract);
 assert.notEqual(build,manifest.priorLiveBuild,'Changed candidate must never impersonate currently deployed build');
 assert.equal(build,'crypto-alpha-worker-v27.6.3-macro-r5f');
-assert.equal(manifest.status,'CANDIDATE_NOT_DEPLOYED');
+assert.ok(['CANDIDATE_NOT_DEPLOYED','DEPLOYED_AWAITING_FINAL_ACCEPTANCE'].includes(manifest.status));
+if(manifest.status==='DEPLOYED_AWAITING_FINAL_ACCEPTANCE'){
+ const baseline=JSON.parse(fs.readFileSync(new URL('../ops/production-baseline.json',import.meta.url),'utf8'));
+ assert.equal(baseline.build,build);assert.equal(baseline.sourceGitBlobSha,gitBlob);
+ assert.equal(baseline.autonomousWindowPassed,true);assert.equal(baseline.blsFourSourceConsumptionVerified,true);
+ assert.equal(baseline.finalDeliveryAccepted,false,'pending GPT acceptance is not stable final acceptance');
+}
 console.log('PASS candidate unique-build identity and immutable source lock',JSON.stringify({build,sourceGitBlobSha:gitBlob}));

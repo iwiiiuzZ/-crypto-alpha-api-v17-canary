@@ -1,6 +1,6 @@
 """Assemble privately held GPT assets with the exact tested repository.
 
-python3 ops/assemble-delivery.py ORIGINAL_ZIP OUTPUT_DIRECTORY
+python3 ops/assemble-delivery.py ORIGINAL_ZIP OUTPUT_DIRECTORY [PRIVATE_ADDITIONS_DIRECTORY]
 Never uploads original asset content to the public source repository.
 Default status is ASSEMBLED_NOT_FINAL; production and installation evidence
 must be reviewed separately before a final deliverable can be named as such.
@@ -15,10 +15,13 @@ from zipfile import ZipFile
 
 root = Path(__file__).resolve().parents[1]
 original, output = map(lambda p: Path(p).resolve(), sys.argv[1:3])
+private_additions = Path(sys.argv[3]).resolve() if len(sys.argv) > 3 else None
 if output == root or root in output.parents:
     raise SystemExit('PRIVATE_DELIVERY_MUST_REMAIN_OUTSIDE_PUBLIC_REPOSITORY')
 if output.exists():
     raise SystemExit('OUTPUT_ALREADY_EXISTS_NO_OVERWRITE')
+if private_additions and (private_additions == root or root in private_additions.parents or not private_additions.is_dir()):
+    raise SystemExit('PRIVATE_ADDITIONS_MUST_BE_AN_EXTERNAL_DIRECTORY')
 
 assets = {
     '02_INSTRUCTIONS/CRYPTO_ALPHA_V27_INSTRUCTIONS.txt': 'd1142d19864d75d449a07119b29df7894517630a1ee59c35086db7cb6fec7750',
@@ -81,12 +84,29 @@ assert len((output / '02_INSTRUCTIONS/OPENING_UNDER_500.txt').read_text()) <= 50
 for name in assets:
     if name != '02_INSTRUCTIONS/FULL_OPENING_MESSAGE.txt':
         assert sha256((output / name).read_bytes()) == assets[name]
+additional_assets = {}
+if private_additions:
+    for p in sorted(private_additions.rglob('*')):
+        if p.is_symlink():
+            raise SystemExit('PRIVATE_ADDITION_SYMLINK_NOT_ALLOWED')
+        if not p.is_file():
+            continue
+        relative = p.relative_to(private_additions)
+        if not relative.parts or relative.parts[0] != '03_KNOWLEDGE' or p.suffix != '.md':
+            raise SystemExit('PRIVATE_ADDITION_MUST_BE_KNOWLEDGE_MARKDOWN')
+        target = output / relative
+        if target.exists():
+            raise SystemExit('PRIVATE_ADDITION_CANNOT_REPLACE_ORIGINAL_ASSET')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(p, target)
+        additional_assets[relative.as_posix()] = sha256(p.read_bytes())
 subprocess.run(['node', str(root / 'ops/verify-delivery-package.mjs'), str(output), manifest['build']], cwd=root, check=True)
 receipt = {
     'status': 'ASSEMBLED_NOT_FINAL',
     'build': manifest['build'], 'sourceGitBlobSha': blob,
     'inheritedOriginalSha256': sha256(original.read_bytes()),
     'originalAssets': assets,
+    'additionalPrivateAssets': additional_assets,
     'changesToOriginalAssets': {'02_INSTRUCTIONS/FULL_OPENING_MESSAGE.txt': 'EXPECTED_BUILD_IDENTIFIER_ONLY'},
     'regressionSuites': len(summary['suites']),
     'productionAcceptancePassed': False, 'gptInstalledVerified': False,

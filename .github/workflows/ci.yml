@@ -17,20 +17,21 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm test
-      - name: Package candidate only after complete regression passes
-        if: success() && (github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031' || (github.event_name == 'pull_request' && github.head_ref == 'integration/r5-freeze-candidate-20261031'))
+      - name: Package exact tested backend, evidence and recovery tools
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031' || (github.event_name == 'pull_request' && github.head_ref == 'integration/r5-freeze-candidate-20261031'))
         run: |
-          mkdir -p release/ops release/tests
-          cp main-v188.js wrangler.jsonc package.json package-lock.json GPT_OPENING_V27_6_3_CANDIDATE.txt V27_6_3_INSTALL_AND_RELEASE.md PROJECT_REQUIREMENTS_AND_ACCEPTANCE.md ACCEPTANCE.md RELEASE_READINESS.md R5_INSTALL_AND_FINAL_GATES.md RESEARCH_AND_VALIDATION_2026-10-30.md USER_ACCEPTANCE.md REGRESSION_SCOPE.md release/
-          cp -R ops/. release/ops/
-          cp -R tests/. release/tests/
-          (cd release && zip -qr ../CryptoAlpha_V27_6_3_R5_CANDIDATE_TESTED.zip .)
-      - name: Retain tested candidate for download (not production)
-        if: success() && (github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031' || (github.event_name == 'pull_request' && github.head_ref == 'integration/r5-freeze-candidate-20261031'))
+          mkdir -p release
+          cp main-v188.js wrangler.jsonc package.json package-lock.json GPT_OPENING_V27_6_3_CANDIDATE.txt release/
+          cp ./*.md release/
+          cp -R ops tests docs evidence test-results .github release/
+          rm -rf release/ops/__pycache__
+          (cd release && zip -qr ../CryptoAlpha_Backend_Engineering_Acceptance_20261031.zip .)
+      - name: Retain tested backend for final acceptance; private GPT assets are separate
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/integration/r5-freeze-candidate-20261031' || (github.event_name == 'pull_request' && github.head_ref == 'integration/r5-freeze-candidate-20261031'))
         uses: actions/upload-artifact@v4
         with:
-          name: CryptoAlpha_V27_6_3_R5_CANDIDATE_TESTED
-          path: CryptoAlpha_V27_6_3_R5_CANDIDATE_TESTED.zip
+          name: CryptoAlpha_Backend_Engineering_Acceptance_20261031
+          path: CryptoAlpha_Backend_Engineering_Acceptance_20261031.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -48,13 +49,20 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Verify immutable candidate against live R4 without modifying production
-        run: node ops/r5-preflight.mjs
+      - name: Verify candidate baseline or already deployed exact source without mutation
+        run: |
+          if node --input-type=module -e "import fs from 'node:fs';process.exit(JSON.parse(fs.readFileSync('ops/release-manifest.json','utf8')).status==='DEPLOYED_AWAITING_FINAL_ACCEPTANCE'?0:1)"; then
+            node ops/current-release.mjs
+          else
+            node ops/r5-preflight.mjs
+          fi
       - name: Preserve redacted read-only evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: R5_READONLY_PREFLIGHT
-          path: r5-preflight-evidence.json
+          path: |
+            r5-preflight-evidence.json
+            current-release-evidence.json
           if-no-files-found: warn
           retention-days: 30

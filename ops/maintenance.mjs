@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {setTimeout as delay} from 'node:timers/promises';
-import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
+import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
@@ -34,6 +34,8 @@ if(token&&scanner&&!failures.length){
 }
 report.samples=samples;
 report.assessment=assessSamples(samples,{...config,build});
+report.requiredNewsCoverage=assessNewsReceiptCoverage(samples.at(-1));
+if(!report.requiredNewsCoverage.passed)failures.push({stage:'news-source-consumption',code:'REQUIRED_SOURCE_UNAVAILABLE_OR_STALE'});
 // Maintenance-branch audit only: foreground market/news context is read AFTER
 // the autonomous window and never counted as its successful background work.
 if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){

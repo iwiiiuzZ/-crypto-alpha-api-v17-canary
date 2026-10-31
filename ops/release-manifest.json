@@ -5,5 +5,5 @@
   "entry": "main-v188.js",
   "sourceGitBlobSha": "e34d8e85864fba66cc0a331b77be7c817288242e",
   "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r5e",
-  "status": "CANDIDATE_NOT_DEPLOYED"
+  "status": "DEPLOYED_AWAITING_FINAL_ACCEPTANCE"
 }

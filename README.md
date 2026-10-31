@@ -1,3 +1,5 @@
+当前工程部署为R5f，55套回归及37点十分钟生产窗口通过、12源含BLS四源实际消费。最终GPT保存配置及自然准备事件闭环仍单列未验证；完整当前状态见[本次验收](docs/LATEST_RUNTIME_AND_ACCEPTANCE_20261031.md)，不是旧候选或已完成最终冻结的声明。
+
 # Crypto Alpha Pro Ultimate
 
 本仓库接续原交易系统研发。唯一入口为 `main-v188.js`；当前源码身份见 `ops/release-manifest.json`，实际部署须另看生产证据。

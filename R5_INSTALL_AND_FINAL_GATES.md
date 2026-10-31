@@ -2,7 +2,7 @@
 
 此文是操作说明，不是验收证书。唯一源码身份见ops/release-manifest.json，最近实际生产窗口见ops/production-baseline.json；最终GPT配置和准备提醒的状态分别列证据。
 
-当前待验证源码为crypto-alpha-worker-v27.6.3-macro-r5f，API协议7.6.0、状态协议owner-local-dispatch-v1、唯一入口main-v188.js。发布前锁定的上一运行版本为R5e，部署575d0441-9d7b-4db6-86e4-fe62e341613e，版本29fe23fb-12b2-45aa-9cb3-8167d586dada，命名空间指纹aedfbcd14cd1。R5e的37采样、612秒运行门槛已通过，但BLS消费缺陷尚未关闭，不称完整稳定版。
+本次运行源码为crypto-alpha-worker-v27.6.3-macro-r5f，已完成部署及工程验收（完整证据见docs/LATEST_RUNTIME_AND_ACCEPTANCE_20261031.md），API协议7.6.0、状态协议owner-local-dispatch-v1、唯一入口main-v188.js。发布前锁定的上一运行版本为R5e，部署575d0441-9d7b-4db6-86e4-fe62e341613e，版本29fe23fb-12b2-45aa-9cb3-8167d586dada，命名空间指纹aedfbcd14cd1。R5e当时的37采样、612秒运行门槛已通过，但其BLS消费有缺陷；R5f已修复并取得四源及全部12源消费证据，最终GPT验收仍独立保留。
 
 ## 实际入口与安装资产
 
