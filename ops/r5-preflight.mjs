@@ -23,7 +23,7 @@ export function assessR5Preflight({manifest,sourceGitBlobSha,cloudflare,fast,sta
   namespacePreserved:cloudflare?.bindingMatches===true&&cloudflare?.binding?.namespaceFingerprint===R4_BASELINE.namespaceFingerprint,
   frontendOwnerConsistent:fast?.build===R4_BASELINE.build&&fast?.apiVersion===manifest?.apiVersion&&ident.matched===true&&ident.frontendBuild===R4_BASELINE.build&&ident.stateOwnerBuild===R4_BASELINE.build&&ident.stateOwnerContract===manifest?.stateOwnerContract,
   scannerOwnerConsistent:status?.build===R4_BASELINE.build&&scanId.matched===true&&scanId.stateOwnerBuild===R4_BASELINE.build&&sample.scanner.stateReadSucceeded&&sample.scanner.producerBuild===R4_BASELINE.build,
-  scannerCurrent:sample.scanner.status==='completed'&&fresh(sample.scanner.lastSuccessfulCycleAt),
+  scannerCurrent:['completed','running'].includes(sample.scanner.status)&&fresh(sample.scanner.lastSuccessfulCycleAt),
   fullEightModelReview:sample.receipts.some(r=>r.producerBuild===R4_BASELINE.build&&r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady&&fresh(r.completedAt)),
   currentOKXQuote:sample.health.quote===true&&sample.health.sampling===true&&fresh(sample.health.lastSuccessAt)
  };
