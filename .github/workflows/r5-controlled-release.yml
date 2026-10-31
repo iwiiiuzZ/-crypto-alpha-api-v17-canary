@@ -1,0 +1,65 @@
+name: R5 controlled production release and final evidence
+on:
+  push:
+    branches:
+      - integration/r5-freeze-candidate-20261031
+    paths:
+      - ops/r5-release-intent.json
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  r5-controlled-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install reproducible pinned dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify explicit intent with exact prior reviewed commit and source Git blob
+        run: node ops/r5-release-intent-check.mjs
+      - name: Complete isolated and native workerd regression before production action
+        run: npm test
+      - name: Verify current R4 deployment, durable namespace, scanner and OKX quote
+        run: node ops/r5-preflight.mjs
+      - name: Deploy exact tested R5 candidate without deleting existing secrets
+        id: deploy
+        run: npm run deploy:checked
+      - name: Pin active Cloudflare deployment and version UUID
+        run: node ops/r5-postdeploy-snapshot.mjs
+      - name: Verify frontend, durable owner and eight-model producer converge to R5
+        run: node ops/wait-for-identity.mjs
+      - name: Observe ten-minute production scanner and alert audit without artificial trading signals
+        run: |
+          set -o pipefail
+          node ops/soak-monitor.mjs | tee r5-production-soak.log
+      - name: Prove per-source recent news batch consumption
+        run: node ops/r5-news-consumption-check.mjs
+      - name: Restore pinned R4 ONLY if failure is traced to the exact R5 deployment
+        if: failure() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
+        run: node ops/r5-guarded-rollback.mjs
+      - name: Preserve release evidence, including failures and omitted gates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CryptoAlpha_R5_PRODUCTION_ACCEPTANCE_EVIDENCE
+          path: |
+            r5-preflight-evidence.json
+            r5-postdeploy-evidence.json
+            r5-news-consumption-evidence.json
+            r5-production-soak.log
+            r5-rollback-evidence.json
+            test-results/summary.json
+          if-no-files-found: warn
+          retention-days: 30
