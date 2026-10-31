@@ -1,0 +1,11 @@
+{
+  "approved": true,
+  "purpose": "R5_STABLE_PRODUCTION_RELEASE",
+  "reviewedCommit": "9d6137af1fcf10f9d9bc7cee91ee1815c42b4d78",
+  "sourceGitBlobSha": "72c7fdcff7848aae97e5add6e3db22b7713ff55c",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5",
+  "priorDeploymentId": "f18315e1-0726-4d3d-9f5e-4011f7770b5d",
+  "rollbackOnFailure": true,
+  "noOrderExecution": true,
+  "notes": "User explicitly requests completion; source-locked controlled release only after complete CI, live R4 preflight, 10-minute production soak and source consumption audit. Guarded rollback on failure; no automated trading."
+}
