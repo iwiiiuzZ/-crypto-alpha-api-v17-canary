@@ -18,12 +18,12 @@ export async function collectBlsSources(fetcher=fetch,now=Date.now){
  const sources=[],failures=[];
  for(const {id,url} of BLS_FEEDS){
   try{
-   const r=await fetcher(url,{method:'GET',headers:{accept:id==='BLS_CALENDAR'?'text/calendar':'application/rss+xml, application/xml, text/xml'},redirect:'follow',signal:AbortSignal.timeout(16000)});
+   const r=await fetcher(url,{method:'GET',headers:{'User-Agent':'CryptoAlphaSourceHealth/1.0 (+read-only validation)',accept:id==='BLS_CALENDAR'?'text/calendar':'application/rss+xml, application/xml, text/xml;q=0.9'},redirect:'manual',signal:AbortSignal.timeout(16000)});
    if(!r.ok)throw new Error('UPSTREAM_HTTP_'+r.status);
    const body=await r.text();
-   if(!validOfficialBlSResponse({url:r.url,text:body,source:id,contentType:r.headers?.get?.('content-type')}))throw new Error('OFFICIAL_SOURCE_VALIDATION_FAILED');
+   if(!validOfficialBlSResponse({url:r.url,text:body,source:id,contentType:r.headers?.get?.('content-type')}))throw new Error('OFFICIAL_FEED_FORMAT_OR_FINAL_HOST_INVALID');
    sources.push({id,sourceUrl:url,body,fetchedAt:new Date(now()).toISOString(),sha256:createHash('sha256').update(body,'utf8').digest('hex')});
-  }catch(e){failures.push({id,reason:/^UPSTREAM_HTTP_\d{3}$/.test(e.message)?e.message:'SOURCE_UNAVAILABLE_OR_INVALID'});}
+  }catch(e){failures.push({id,reason:/^(UPSTREAM_HTTP_\d{3}|OFFICIAL_FEED_FORMAT_OR_FINAL_HOST_INVALID)$/.test(e.message)?e.message:'SOURCE_UNAVAILABLE_OR_INVALID'});}
  }
  return {sources,failures};
 }
