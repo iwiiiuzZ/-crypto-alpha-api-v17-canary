@@ -82,3 +82,5 @@ jobs:
             corrected-official-bls-relay.log
             corrected-bls-consumption.json
           retention-days: 30
+
+# Refresh real official feeds while verified source reconciliation awaits default-branch CI.
