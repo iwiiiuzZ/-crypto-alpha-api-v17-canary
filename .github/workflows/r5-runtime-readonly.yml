@@ -36,6 +36,7 @@ jobs:
           const sample=summarizeSample(fast,status),review=fast.fastMonitor?.fullReview||{};
           const pick=(v,keys)=>Object.fromEntries(keys.filter(k=>v?.[k]!==undefined).map(k=>[k,v[k]]));
           const evidence={mode:'READ_ONLY_FAST_AND_STATUS_NO_FOREGROUND_MARKET',sample,cloudflare,buildConfiguration,
+            timing:{actualAlarmLatenessSeconds:fast.fastMonitor?.actualAlarmLatenessSeconds??null,lastTickDurationSeconds:fast.fastMonitor?.lastTickDurationSeconds??null},
             review:pick(review,['status','producerBuild','startedAt','checkedAt','completedAt','inspectedModels','modelDataReady','requestId','source','reason']),
             reviewErrorCode:code(review.lastError),
             scanner:pick(status.heartbeat,['status','producerBuild','lastAttemptAt','lastCompletedAt','lastSuccessfulCycleAt','observationReason']),
@@ -45,10 +46,34 @@ jobs:
           const out=safeOutput(evidence,[scanner,token]);
           fs.writeFileSync('r5-runtime-readonly-evidence.json',out);console.log(out);
           NODE
+      - name: Probe official macro alternatives without changing production
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const rows=[];
+          for(const [source,url] of [['BLS_PUBLIC_API_CPI','https://api.bls.gov/publicAPI/v1/timeseries/data/CUSR0000SA0'],['FRED_INITIAL_CLAIMS','https://fred.stlouisfed.org/graph/fredgraph.csv?id=ICSA&cosd=2026-09-01']]){
+            try{
+              const r=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(10000),headers:{accept:source.startsWith('BLS')?'application/json':'text/csv'}});
+              const text=await r.text();
+              if(source.startsWith('BLS')){
+                let data;try{data=JSON.parse(text);}catch{}
+                const points=(data?.Results?.series?.[0]?.data||[]).filter(x=>/^M(0[1-9]|1[0-2])$/.test(x.period)).sort((a,b)=>Number(b.year)-Number(a.year)||Number(b.period.slice(1))-Number(a.period.slice(1)));
+                rows.push({source,httpStatus:r.status,apiStatus:data?.status||null,rows:points.length,latestObservationPeriod:points[0]?points[0].year+'-'+points[0].period:null,available:r.ok&&data?.status==='REQUEST_SUCCEEDED'&&points.length>0,publicationTimeVerified:false});
+              }else{
+                const lines=text.trim().split(/\r?\n/),points=lines.slice(1).map(x=>x.split(',')).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x[0])&&x[1]!==''&&Number.isFinite(Number(x[1])));
+                rows.push({source,httpStatus:r.status,rows:points.length,latestObservationDate:points.at(-1)?.[0]||null,available:r.ok&&/ICSA/.test(lines[0])&&points.length>0,publicationTimeVerified:false});
+              }
+            }catch{rows.push({source,available:false,error:'REQUEST_FAILED'});}
+          }
+          const out={scope:'OFFICIAL_SOURCE_FEASIBILITY_ONLY_NOT_CONNECTED_TO_PRODUCTION',observedAt:new Date().toISOString(),rows};
+          fs.writeFileSync('official-macro-alternatives.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));
+          NODE
       - name: Preserve current real evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: R5_INDEPENDENT_RUNTIME_READONLY
-          path: r5-runtime-readonly-evidence.json
+          path: |
+            r5-runtime-readonly-evidence.json
+            official-macro-alternatives.json
           retention-days: 30

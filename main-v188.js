@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5d";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5e";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -779,6 +779,12 @@ async function syncFastModelReview(owner){
  else if(pending)next={...review,status:'pending',requestId:request.requestId,requestedAt:request.requestedAt,reason:request.reason,awaitingReview:true,inspectedModels:null,modelDataReady:false,
    nextCondition:'WAIT_FOR_SHARED_SCANNER_RESULT',lastCompletedReview:actual,lastCompletedAt:review.lastCompletedAt||null};
  else next={...review,lastSharedCycle:actual};
+ // A pending request or a failed cycle is current status, never a replacement
+ // for the timestamped last successful receipt. Keep both kinds of evidence.
+ const successful=[actual,review.lastSuccessfulReview,review,review.lastSharedCycle,review.lastCompletedReview]
+  .filter(r=>r&&r.producerBuild===BUILD&&r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady===true&&Number.isFinite(Date.parse(r.completedAt)))
+  .sort((a,b)=>Date.parse(b.completedAt)-Date.parse(a.completedAt))[0];
+ if(successful){const {lastSuccessfulReview,lastSharedCycle,lastCompletedReview,legacyReview,...receiptOnly}=successful;next.lastSuccessfulReview=receiptOnly;}
  if(JSON.stringify(next)!==JSON.stringify(review))await owner.ctx.storage.put(FAST_REVIEW_KEY,next);
  return next;
 }
@@ -2315,15 +2321,28 @@ async function updateForwardStudy(env,snapshot,selected) {
 function scannerCycle(env,options={}) {
   let snapshot;
   const prices = new Map();
+  const deadlineAt=Date.now()+45_000;
   return {
     forceDiscovery:options.forceDiscovery===true,
-    deadlineAt: Date.now() + 45_000,
+    deadlineAt,
     getSnapshot() { return snapshot ||= buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); },
     getPrices(symbol) {
       // Broad zone affects only the sampling helper's flag. Each consumer checks its own zone.
       const cached = prices.get(symbol);
       if (!cached || Date.now() - cached.startedAt > 8000) {
-        prices.set(symbol, { startedAt: Date.now(), promise: verifyOkxScannerZone(symbol, { min: 0, max: Number.MAX_VALUE }, env) });
+        const entry={startedAt:Date.now()};
+        entry.promise=(async()=>{
+          for(let attempt=0;;attempt++){
+            try{return await verifyOkxScannerZone(symbol,{min:0,max:Number.MAX_VALUE},env);}
+            catch(error){
+              if(attempt||Date.now()+3000>=deadlineAt)throw error;
+              // Retry the whole independent pair, retaining endpoint cooldowns
+              // and all original spread, deviation and quote-age checks.
+              await delay(500);
+            }
+          }
+        })().catch(error=>{if(prices.get(symbol)===entry)prices.delete(symbol);throw error;});
+        prices.set(symbol,entry);
       }
       return prices.get(symbol).promise;
     },
@@ -2372,11 +2391,11 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const evaluations = [], notifications = [];
   let verification = null, priceError = null;
   if (active.some(r => Date.parse(r.expiresAt) > now)) {
-    try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { priceError = String(error?.message || error); }
+    try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { priceError = String(error?.message || error); }
     // Closed-candle invalidation is checked even when price is outside a zone.
     if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
     // Slow upstream recovery must not turn earlier samples into a current-price alert.
-    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { verification = null; priceError = String(error?.message || error); } }
+    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { verification = null; priceError = String(error?.message || error); } }
     if(full?.assets?.ETHUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
       await attachArrivalLiquidity(env,full);
       try{verification=await cycle.getPrices("ETHUSDT");}catch{verification=null;}
@@ -6372,13 +6391,21 @@ async function runScanner(env,options={}) {
     const completedAt = new Date(Date.now()).toISOString();
     const degraded = result.status === "error" || result.observations?.status === "error"
       || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
+    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
+    const lastDegradedCycle=degraded?{producerBuild:BUILD,startedAt,completedAt,
+      planError:result.status==='error'?String(result.reason||'').slice(0,180):null,
+      discoveryError:String(result.observations?.discoveryError||'').slice(0,180)||null,
+      priceError:String(result.observations?.priceError||'').slice(0,180)||null,
+      observationError:result.observations?.status==='error'?String(result.observations.reason||'').slice(0,180):null,
+      modelDataReady:receipt.modelDataReady,inspectedModels:receipt.inspectedModels,
+      blockedModels:(result.observations?.opportunityAudit?.models||[]).filter(m=>m.state==='DATA_BLOCKED').map(m=>({submodel:m.submodel,reason:m.failedGate||null}))}:old.lastDegradedCycle||null;
     await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { producerBuild:BUILD,status: degraded ? "degraded" : "completed", lastAttemptAt: startedAt,
       lastCompletedAt: completedAt, lastSuccessfulCycleAt: degraded ? old.lastSuccessfulCycleAt || null : completedAt,
+      lastDegradedCycle,
       nextScheduledCheckAt: new Date(Date.now() + 60_000).toISOString(),
       planState: result.evaluation?.state || result.reason || result.status,
       observationReason: result.observations?.reason || null, observationError: result.observations?.discoveryError || result.observations?.priceError || null,
       lastError: result.status === "error" ? result.reason : result.observations?.status === "error" ? result.observations.reason : null });
-    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
     await scannerStatePut(env,SCANNER_CYCLE_RESULT_KEY,receipt,3600);
     if(claimed){
       const current=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
@@ -6399,7 +6426,7 @@ async function runScanner(env,options={}) {
 
 function boundedScannerStatus(result) {
   const pick=(v,keys)=>v&&typeof v==="object"?Object.fromEntries(keys.filter(k=>v[k]!==undefined).map(k=>[k,compactStatusValue(v[k])])):v??null;
-  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError"]);
+  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError","lastDegradedCycle"]);
   result.responseMode="COMPACT_V26";
   result.generatedAt=new Date(Date.now()).toISOString();
   result.runtime=pick(result.runtime,["planId","state","checkedAt","lastAlertAt","lastAttemptAt","lastObservedPrice","notification"]);

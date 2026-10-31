@@ -65,7 +65,7 @@ full_opening = output / '02_INSTRUCTIONS/FULL_OPENING_MESSAGE.txt'
 text = full_opening.read_text().replace('crypto-alpha-worker-v27.6.2-owner-local-dispatch', manifest['build'])
 full_opening.write_text(text)
 shutil.copy2(root / 'GPT_OPENING_V27_6_3_CANDIDATE.txt', output / '02_INSTRUCTIONS/OPENING_UNDER_500.txt')
-for directory in ['ops', 'tests', 'test-results', 'docs']:
+for directory in ['ops', 'tests', 'test-results', 'docs', 'evidence']:
     shutil.copytree(root / directory, output / directory)
 for name in ['main-v188.js', 'wrangler.jsonc', 'package.json', 'package-lock.json']:
     shutil.copy2(root / name, output / name)

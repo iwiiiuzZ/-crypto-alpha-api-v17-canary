@@ -1,0 +1,181 @@
+{
+  "scope": "SAVED_CANDLE_ONLY_STRUCTURE_DIAGNOSTIC_NOT_BACKTEST_OR_EXECUTABLE_TRADE",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5d",
+  "sourceSha256": "d7dc2267305073c8d9921894c4374d5aaa9ef506df939bcc9d82bb9ef8522b57",
+  "sourceDescription": "Original privately retained Gate public perpetual candles; not freshly fetched or independently authenticated in this run",
+  "barEndTimeCutoffApplied": true,
+  "historicalPublicationAvailabilityVerified": false,
+  "exactContractToBaseUnitsVerified": false,
+  "executableQuotesAvailable": false,
+  "orderbookAvailable": false,
+  "contemporaneousNewsAvailable": false,
+  "historicalFundingAvailable": false,
+  "unseenSampleStatus": "NOT_CERTIFIED_OUT_OF_SAMPLE_PRIOR_DEVELOPMENT_USE_UNKNOWN",
+  "actualTradeCount": null,
+  "winRate": null,
+  "netExpectancy": null,
+  "profitabilityValidated": false,
+  "results": {
+    "MARKET_SAMPLE": {
+      "scannedClosed15mPrefixes": 759,
+      "startAt": "2026-10-10T05:15:02.000Z",
+      "endAt": "2026-10-18T02:45:02.000Z",
+      "uniqueResearchEvents": 127,
+      "structureReadyEvents": 48,
+      "bySubmodel": {
+        "A1": {
+          "uniqueResearchEvents": 30,
+          "structureReadyEvents": 7
+        },
+        "A2": {
+          "uniqueResearchEvents": 10,
+          "structureReadyEvents": 5
+        },
+        "B1": {
+          "uniqueResearchEvents": 56,
+          "structureReadyEvents": 11
+        },
+        "B2": {
+          "uniqueResearchEvents": 10,
+          "structureReadyEvents": 4
+        },
+        "C1": {
+          "uniqueResearchEvents": 0,
+          "structureReadyEvents": 0
+        },
+        "C2": {
+          "uniqueResearchEvents": 0,
+          "structureReadyEvents": 0
+        },
+        "D1": {
+          "uniqueResearchEvents": 16,
+          "structureReadyEvents": 16
+        },
+        "D2": {
+          "uniqueResearchEvents": 5,
+          "structureReadyEvents": 5
+        }
+      },
+      "provenance": [
+        {
+          "symbol": "ETH",
+          "timeframe": "15m",
+          "rows": 1000,
+          "sha256": "eb603beca6b4df37ae20c52d7afdf8c4fec543c5749cb2c6834a9fc67bf0ab17"
+        },
+        {
+          "symbol": "ETH",
+          "timeframe": "1h",
+          "rows": 1000,
+          "sha256": "a1f21d01a8b4b7867de93e588bb7024aa8d7256138f8652387d908ac283c33ca"
+        },
+        {
+          "symbol": "ETH",
+          "timeframe": "4h",
+          "rows": 1000,
+          "sha256": "8ed5104873572ead9c8203affbb7439489009b205dad0110180e5b6576be8750"
+        },
+        {
+          "symbol": "BTC",
+          "timeframe": "15m",
+          "rows": 1000,
+          "sha256": "2e3acc476e897a200c9e68a135af8b5cf065a45e47b58e2410c836bbc6cdbbd4"
+        },
+        {
+          "symbol": "BTC",
+          "timeframe": "1h",
+          "rows": 1000,
+          "sha256": "c4e9ea8c712009ec38d7b137d0c01869ff6bed0f27153570766e0d84778e153f"
+        },
+        {
+          "symbol": "BTC",
+          "timeframe": "4h",
+          "rows": 1000,
+          "sha256": "1d5ff07d945e902373d4f086b62e01cffd823cfc2fca92d3212f68e783e534eb"
+        }
+      ]
+    },
+    "MARKET_SAMPLE_20261020": {
+      "scannedClosed15mPrefixes": 759,
+      "startAt": "2026-10-12T04:45:02.000Z",
+      "endAt": "2026-10-20T02:15:02.000Z",
+      "uniqueResearchEvents": 139,
+      "structureReadyEvents": 58,
+      "bySubmodel": {
+        "A1": {
+          "uniqueResearchEvents": 28,
+          "structureReadyEvents": 6
+        },
+        "A2": {
+          "uniqueResearchEvents": 14,
+          "structureReadyEvents": 8
+        },
+        "B1": {
+          "uniqueResearchEvents": 65,
+          "structureReadyEvents": 16
+        },
+        "B2": {
+          "uniqueResearchEvents": 6,
+          "structureReadyEvents": 2
+        },
+        "C1": {
+          "uniqueResearchEvents": 0,
+          "structureReadyEvents": 0
+        },
+        "C2": {
+          "uniqueResearchEvents": 0,
+          "structureReadyEvents": 0
+        },
+        "D1": {
+          "uniqueResearchEvents": 22,
+          "structureReadyEvents": 22
+        },
+        "D2": {
+          "uniqueResearchEvents": 4,
+          "structureReadyEvents": 4
+        }
+      },
+      "provenance": [
+        {
+          "symbol": "ETH",
+          "timeframe": "15m",
+          "rows": 1000,
+          "sha256": "761588e1776cde7164c13d374a24970123426d41a5ec47cfc19a99ba97e4ab58"
+        },
+        {
+          "symbol": "ETH",
+          "timeframe": "1h",
+          "rows": 1000,
+          "sha256": "602d43601daec85c48925471dce986acfc4b6498eb3b81dac974571ff2e5a672"
+        },
+        {
+          "symbol": "ETH",
+          "timeframe": "4h",
+          "rows": 1000,
+          "sha256": "f2489011e4202fc0ef271259aceb425cf286f582b2fb1518dfcf01203a4c60fe"
+        },
+        {
+          "symbol": "BTC",
+          "timeframe": "15m",
+          "rows": 1000,
+          "sha256": "7e9410f760ea6903a1aaad6f196854c3bc5caa62bf55df8de38a15da24a263f1"
+        },
+        {
+          "symbol": "BTC",
+          "timeframe": "1h",
+          "rows": 1000,
+          "sha256": "e6018bd04eddbcdb839fc3a3c4421bd4e3649b9d3d83e8ea2891e796c2bb8dc2"
+        },
+        {
+          "symbol": "BTC",
+          "timeframe": "4h",
+          "rows": 1000,
+          "sha256": "3517ff1fac8559ca8f1d1de62440b534595b757478d449da890ab52e56091e5d"
+        }
+      ]
+    }
+  },
+  "overlappingWindowsNotIndependent": true,
+  "coverageQualityAssumption": "PREFIX_OHLC_CONTINUITY_CHECKED_LIVE_CROSS_MARKET_QUALITY_NOT_VERIFIED",
+  "structureReadyMeaning": "DETECTOR_PROGRESS_UNDER_LIMITED_RESEARCH_INPUT_NOT_PREPARED_TRADE"
+}

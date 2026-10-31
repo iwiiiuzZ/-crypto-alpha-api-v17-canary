@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {fixture} from './v24-fixtures.mjs';
+import {summarizeSample} from '../ops/diagnostics.mjs';
+
+const f=fixture(),x=vm.runInContext('({BUILD,FAST_REVIEW_KEY,SCANNER_CYCLE_RESULT_KEY,SCANNER_REVIEW_REQUEST_KEY,syncFastModelReview,scannerCycle,compactFastMonitor})',f.c);
+const db=new Map(),owner={ctx:{storage:{get:async k=>structuredClone(db.get(k)),put:async(k,v)=>db.set(k,structuredClone(v))}}};
+const now=()=>new Date(f.now()).toISOString();
+const receipt={producerBuild:x.BUILD,status:'completed',inspectedModels:8,modelDataReady:true,requestId:'one',checkedAt:now(),completedAt:now()};
+db.set(x.SCANNER_CYCLE_RESULT_KEY,{value:receipt});
+let review=await x.syncFastModelReview(owner);
+assert.equal(review.lastSuccessfulReview.completedAt,receipt.completedAt);
+f.advance(20000);
+db.set(x.SCANNER_REVIEW_REQUEST_KEY,{value:{requestId:'two',status:'PENDING',expiresAt:new Date(f.now()+60000).toISOString()}});
+db.set(x.SCANNER_CYCLE_RESULT_KEY,{value:{...receipt,status:'data_blocked',modelDataReady:false,requestId:'two',completedAt:now()}});
+review=await x.syncFastModelReview(owner);
+assert.equal(review.status,'pending');
+assert.equal(review.modelDataReady,false);
+assert.equal(review.lastCompletedReview.status,'data_blocked');
+assert.equal(review.lastSuccessfulReview.completedAt,receipt.completedAt);
+assert.equal(review.lastSuccessfulReview.modelDataReady,true);
+assert.equal(review.lastSuccessfulReview.lastSuccessfulReview,undefined);
+// A new owner still returns actual failures and the original successful time.
+review=await x.syncFastModelReview({ctx:owner.ctx});
+const s=summarizeSample({fastMonitor:{fullReview:review}},{},f.now());
+assert.ok(s.receipts.some(r=>r.status==='data_blocked'&&!r.modelDataReady));
+assert.ok(s.receipts.some(r=>r.status==='completed'&&r.completedAt===receipt.completedAt));
+f.advance(180000);
+assert.equal((await x.syncFastModelReview(owner)).lastSuccessfulReview.completedAt,receipt.completedAt,'reads never refresh the successful timestamp');
+// Entire two-sample verification is retried. Rejected promises are not cached.
+let attempts=0;
+f.c.recoverPair=async()=>{attempts++;if(attempts===1)throw Error('ONE_TRANSIENT_FAILURE');return {passed:true,samples:[{id:'real-one'},{id:'real-two'}]};};
+vm.runInContext('verifyOkxScannerZone=recoverPair;',f.c);
+const cycle=x.scannerCycle(f.env);
+const result=await cycle.getPrices('ETHUSDT');
+assert.equal(attempts,2);assert.equal(result.samples.length,2);
+await cycle.getPrices('ETHUSDT');assert.equal(attempts,2,'successful result remains bounded and shared');
+attempts=0;f.c.failPair=async()=>{attempts++;throw Error('PERSISTENT_FAILURE');};
+vm.runInContext('verifyOkxScannerZone=failPair;',f.c);
+const fail=x.scannerCycle(f.env);
+await assert.rejects(()=>fail.getPrices('ETHUSDT'),/PERSISTENT_FAILURE/);
+assert.equal(attempts,2);
+await assert.rejects(()=>fail.getPrices('ETHUSDT'),/PERSISTENT_FAILURE/);
+assert.equal(attempts,4,'rejection evicted without inventing successful data');
+console.log(JSON.stringify({passed:true,scope:'ISOLATED_PENDING_FAILED_RESTART_AND_PRICE_PAIR_RECOVERY',productionVerified:false}));

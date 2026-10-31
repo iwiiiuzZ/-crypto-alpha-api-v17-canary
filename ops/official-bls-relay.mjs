@@ -45,7 +45,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  // Do not post to an old R4: a cron running before R5 deployment is harmless.
  const health=await fetch(target+'/health',{signal:AbortSignal.timeout(12000)});
  const current=await health.json();
- if(current.build!=='crypto-alpha-worker-v27.6.3-macro-r5d'){
+ if(current.build!=='crypto-alpha-worker-v27.6.3-macro-r5e'){
   console.log(JSON.stringify({status:'SKIPPED_R5_NOT_DEPLOYED',currentBuild:current.build||'unknown'}));process.exit(0);
  }
  const data=await collectBlsSources();

@@ -19,8 +19,8 @@ assert.equal(receipts.BLS_CPI.fetchedAt,null);
 assert(!JSON.stringify(receipts).includes('MUST_NOT_LEAK'));
 assert(!JSON.stringify(receipts).includes('must-not-leak'));
 const bulky={
- build:'crypto-alpha-worker-v27.6.3-macro-r5d',apiVersion:'7.6.0',
- heartbeat:{status:'completed',producerBuild:'crypto-alpha-worker-v27.6.3-macro-r5d',
+ build:'crypto-alpha-worker-v27.6.3-macro-r5e',apiVersion:'7.6.0',
+ heartbeat:{status:'completed',producerBuild:'crypto-alpha-worker-v27.6.3-macro-r5e',
   lastSuccessfulCycleAt:'2026-10-31T01:50:00Z'},
  backendIdentity:{matched:true},configuration:{},activePlan:null,observationHistory:[],
  observations:Array.from({length:180},(_,i)=>({observationId:'OBS-'+i,revision:'r1',state:'APPROACHING',submodel:'A1',direction:'LONG',notificationDecision:{reason:'WAIT_FOR_CONFIRMATION',explanation:'x'.repeat(320)}})),failureHistory:[],runtime:null,notificationAudit:{recentAttempts:[]},
@@ -32,7 +32,7 @@ const compact=boundedScannerStatus(bulky);
 assert(compact.diagnostics.detailsOmitted===true);
 assert.equal(compact.discovery?.newsStatus?.sources,undefined);
 assert.deepEqual(compact.diagnostics.newsSourceReceipts,receipts);
-const status={build:'crypto-alpha-worker-v27.6.3-macro-r5d',diagnostics:compact.diagnostics,
+const status={build:'crypto-alpha-worker-v27.6.3-macro-r5e',diagnostics:compact.diagnostics,
  backendIdentity:{matched:true},heartbeat:compact.heartbeat};
 const sample=summarizeSample({},status,Date.parse('2026-10-31T01:50:10Z'));
 assert.equal(sample.consumedNewsSources.length,3);

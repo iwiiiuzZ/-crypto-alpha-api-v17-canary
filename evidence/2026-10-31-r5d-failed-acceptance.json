@@ -1,0 +1,110 @@
+{
+  "scope": "ACTUAL_R5D_FAILED_PRODUCTION_ACCEPTANCE_NOT_FINAL",
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41170867875",
+  "sourceGitBlobSha": "722a144cfdb3f799cee9cd2ff17f174c11a47c43",
+  "sourceSha256": "d7dc2267305073c8d9921894c4374d5aaa9ef506df939bcc9d82bb9ef8522b57",
+  "soak": {
+    "result": "SOAK_COMPLETE",
+    "expectedBuild": "crypto-alpha-worker-v27.6.3-macro-r5d",
+    "assessment": {
+      "gates": {
+        "observationWindow": true,
+        "versionIdentity": true,
+        "independentHealth": true,
+        "autonomousSamples": true,
+        "minuteScanner": true,
+        "newEightModelReview": true,
+        "newsConsumer": true,
+        "heartbeatProgresses": true,
+        "modelReviewProgresses": false,
+        "fullDuration": true,
+        "noReadGap": true,
+        "allMinuteHeartbeats": false,
+        "allModelReceipts": false,
+        "deploymentUnchanged": true,
+        "namespacePreserved": true
+      },
+      "passed": false,
+      "failedGates": [
+        "modelReviewProgresses",
+        "allMinuteHeartbeats",
+        "allModelReceipts"
+      ],
+      "sampleCount": 37,
+      "observedSeconds": 612.309,
+      "scope": "TEN_MINUTE_SAMPLED_PRODUCTION_WINDOW_NOT_LONG_TERM_OR_PROFITABILITY_PROOF"
+    },
+    "before": {
+      "deploymentId": "57a31466-2283-4778-b9df-9e6ebdace9bf",
+      "deployedAt": "2026-10-31T05:06:40.002Z",
+      "versions": [
+        {
+          "id": "da32ea6e-fdcc-460a-8eb9-a292c1c1839d",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "after": {
+      "deploymentId": "57a31466-2283-4778-b9df-9e6ebdace9bf",
+      "deployedAt": "2026-10-31T05:06:40.002Z",
+      "versions": [
+        {
+          "id": "da32ea6e-fdcc-460a-8eb9-a292c1c1839d",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "errors": [],
+    "deviceReceiptVerified": false,
+    "preparedNotificationLiveVerified": false
+  },
+  "rollback": {
+    "status": "R4_VERSION_RESTORED",
+    "previousR4VersionId": "2e50f457-d798-4ae3-ac97-345c05b4aa14",
+    "newDeploymentId": "c1cef5b7-75f0-4636-94ae-19c103195e95",
+    "namespacePreserved": true,
+    "deviceReceiptVerified": false,
+    "observedAt": "2026-10-31T05:22:52.668Z"
+  },
+  "modelReceiptMissingSamples": [
+    24,
+    25
+  ],
+  "degradedSamples": [
+    {
+      "sample": 21,
+      "readAt": "2026-10-31T05:18:36.463Z",
+      "lastSuccessfulCycleAt": "2026-10-31T05:18:12.794Z"
+    },
+    {
+      "sample": 24,
+      "readAt": "2026-10-31T05:19:27.485Z",
+      "lastSuccessfulCycleAt": "2026-10-31T05:18:44.397Z"
+    },
+    {
+      "sample": 25,
+      "readAt": "2026-10-31T05:19:44.162Z",
+      "lastSuccessfulCycleAt": "2026-10-31T05:18:44.397Z"
+    }
+  ],
+  "quoteHealthPassSamples": 37,
+  "preparedNotificationLiveVerified": false,
+  "gptInstalledVerified": false,
+  "finalDeliveryAccepted": false
+}
