@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "b24f2cd57955a549dec65546ee7268c9ca58a8e8",
-  "sourceGitBlobSha": "7223295a8761598bff67445e8566f48a2fe8efd1",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5b",
-  "priorDeploymentId": "8da5ba83-2c4d-49ab-a0b6-022e06438c7e",
+  "reviewedCommit": "2292dd3149e17117499398e82a0c655213a190a5",
+  "sourceGitBlobSha": "4771ff162e360eff75b6a1e8a41c33e4751ba2bb",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5c",
+  "priorDeploymentId": "f323a8f7-f7fe-48a4-b97a-bd601d3aea26",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "R5b 4-second shared OKX executed-flow cache; 51 regression suites and read-only R4 preflight passed. Controlled production 10-minute acceptance, source-locked, guarded rollback. No order execution."
+  "notes": "Continue user's existing authorized repair and final acceptance. Exact reviewed source; 52 isolated/native suites and read-only R4 preflight passed. Preserve primary rate-limit cooldown; verified official full-book fallback, unchanged freshness/model/RR rules. Controlled strict ten-minute production acceptance and source-locked guarded rollback. No artificial signal, test push, or order execution. Final GPT/macro/real alert gaps remain independent."
 }
