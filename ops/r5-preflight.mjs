@@ -5,7 +5,7 @@ import {requestJson,cloudflareSnapshot,summarizeSample} from './diagnostics.mjs'
 
 export const R4_BASELINE={
  build:'crypto-alpha-worker-v27.6.3-macro-r4',
- deploymentId:'f18315e1-0726-4d3d-9f5e-4011f7770b5d',
+ deploymentId:'8da5ba83-2c4d-49ab-a0b6-022e06438c7e',
  namespaceFingerprint:'aedfbcd14cd1'
 };
 export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5b';
