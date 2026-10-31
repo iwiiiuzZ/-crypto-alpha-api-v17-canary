@@ -1,0 +1,502 @@
+{
+  "scope": "REAL_OFFICIAL_SOURCE_AND_BATCH_CONSUMPTION_NOT_TRADING_OR_DEVICE_PROOF",
+  "observedAt": "2026-10-31T10:23:47.013Z",
+  "newsSources": [
+    {
+      "source": "JIN10",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T10:22:01.372Z",
+      "publishedAt": "2026-10-31T10:03:59.000Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:21:58.687Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "COINDESK",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T10:21:59.190Z",
+      "publishedAt": "2026-10-31T05:01:32.000Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:21:58.687Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "FED_PRESS",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T10:22:31.687Z",
+      "publishedAt": "2026-10-29T20:30:00.000Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:31.678Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "FED_SPEECH",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T10:22:31.712Z",
+      "publishedAt": "2026-10-15T02:55:00.000Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:31.678Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "BLS_CPI",
+      "status": "ok",
+      "httpStatus": 403,
+      "fetchedAt": "2026-10-31T10:22:14.971Z",
+      "publishedAt": "2026-10-14T11:50:31.200Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:15.051Z",
+      "cacheState": "relay",
+      "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+      "directHttpStatus": 403,
+      "relayReceivedAt": "2026-10-31T10:22:15.051Z"
+    },
+    {
+      "source": "BLS_EMPLOYMENT",
+      "status": "ok",
+      "httpStatus": 403,
+      "fetchedAt": "2026-10-31T10:22:14.999Z",
+      "publishedAt": "2026-10-02T11:51:08.289Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:15.051Z",
+      "cacheState": "relay",
+      "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+      "directHttpStatus": 403,
+      "relayReceivedAt": "2026-10-31T10:22:15.051Z"
+    },
+    {
+      "source": "BLS_CALENDAR",
+      "status": "ok",
+      "httpStatus": 403,
+      "fetchedAt": "2026-10-31T10:22:15.008Z",
+      "publishedAt": null,
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:15.051Z",
+      "cacheState": "relay",
+      "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+      "directHttpStatus": 403,
+      "relayReceivedAt": "2026-10-31T10:22:15.051Z"
+    },
+    {
+      "source": "NYFED_CALENDAR",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T09:44:25.693Z",
+      "publishedAt": null,
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T09:44:25.106Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "BEA_RELEASES",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T10:22:23.969Z",
+      "publishedAt": "2026-10-29T12:30:00.000Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:23.689Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "BOJ_RELEASES",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T10:22:24.099Z",
+      "publishedAt": "2026-10-30T08:00:00.000Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:23.689Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    },
+    {
+      "source": "BLS_PPI",
+      "status": "ok",
+      "httpStatus": 403,
+      "fetchedAt": "2026-10-31T10:22:14.987Z",
+      "publishedAt": "2026-10-15T11:50:51.146Z",
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T10:22:15.051Z",
+      "cacheState": "relay",
+      "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+      "directHttpStatus": 403,
+      "relayReceivedAt": "2026-10-31T10:22:15.051Z"
+    },
+    {
+      "source": "US_TREASURY_YIELD_DAILY",
+      "status": "ok",
+      "httpStatus": 200,
+      "fetchedAt": "2026-10-31T05:41:14.742Z",
+      "publishedAt": null,
+      "retryAt": null,
+      "lastAttemptAt": "2026-10-31T05:41:14.685Z",
+      "cacheState": "live",
+      "sourceProvenance": "DIRECT_FETCH",
+      "directHttpStatus": null,
+      "relayReceivedAt": null
+    }
+  ],
+  "calendarEvidence": {
+    "blsEventCount": 3,
+    "upcomingBySource": {
+      "BLS_CALENDAR": 2,
+      "NYFED_CALENDAR": 10
+    }
+  },
+  "followup": {
+    "scope": "STATUS_ONLY_AFTER_FOREGROUND_CONTEXT_NO_MANUAL_SCAN",
+    "expectedSuccessfulSources": [
+      "JIN10",
+      "COINDESK",
+      "FED_PRESS",
+      "FED_SPEECH",
+      "BLS_CPI",
+      "BLS_EMPLOYMENT",
+      "BLS_CALENDAR",
+      "NYFED_CALENDAR",
+      "BEA_RELEASES",
+      "BOJ_RELEASES",
+      "BLS_PPI",
+      "US_TREASURY_YIELD_DAILY"
+    ],
+    "observations": [
+      {
+        "readAt": "2026-10-31T10:22:47.064Z",
+        "identityMatched": true,
+        "newsConsumedAt": "2026-10-31T10:22:24.658Z",
+        "comparisons": [
+          {
+            "source": "JIN10",
+            "observedBatchAt": "2026-10-31T10:22:01.372Z",
+            "consumedBatchAt": "2026-10-31T10:22:01.372Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "COINDESK",
+            "observedBatchAt": "2026-10-31T10:21:59.190Z",
+            "consumedBatchAt": "2026-10-31T10:21:59.190Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "FED_PRESS",
+            "observedBatchAt": "2026-10-31T10:22:31.687Z",
+            "consumedBatchAt": "2026-10-31T10:19:24.561Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "FED_SPEECH",
+            "observedBatchAt": "2026-10-31T10:22:31.712Z",
+            "consumedBatchAt": "2026-10-31T10:19:24.782Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_CPI",
+            "observedBatchAt": "2026-10-31T10:22:14.971Z",
+            "consumedBatchAt": "2026-10-31T10:22:14.971Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "observedBatchAt": "2026-10-31T10:22:14.999Z",
+            "consumedBatchAt": "2026-10-31T10:22:14.999Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "observedBatchAt": "2026-10-31T10:22:15.008Z",
+            "consumedBatchAt": "2026-10-31T10:22:15.008Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "observedBatchAt": "2026-10-31T09:44:25.693Z",
+            "consumedBatchAt": "2026-10-31T09:44:25.693Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BEA_RELEASES",
+            "observedBatchAt": "2026-10-31T10:22:23.969Z",
+            "consumedBatchAt": "2026-10-31T10:19:23.984Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "observedBatchAt": "2026-10-31T10:22:24.099Z",
+            "consumedBatchAt": "2026-10-31T10:19:24.330Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_PPI",
+            "observedBatchAt": "2026-10-31T10:22:14.987Z",
+            "consumedBatchAt": "2026-10-31T10:22:14.987Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "observedBatchAt": "2026-10-31T05:41:14.742Z",
+            "consumedBatchAt": "2026-10-31T05:41:14.742Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          }
+        ],
+        "passed": false
+      },
+      {
+        "readAt": "2026-10-31T10:23:17.058Z",
+        "identityMatched": true,
+        "newsConsumedAt": "2026-10-31T10:22:24.658Z",
+        "comparisons": [
+          {
+            "source": "JIN10",
+            "observedBatchAt": "2026-10-31T10:22:01.372Z",
+            "consumedBatchAt": "2026-10-31T10:22:01.372Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "COINDESK",
+            "observedBatchAt": "2026-10-31T10:21:59.190Z",
+            "consumedBatchAt": "2026-10-31T10:21:59.190Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "FED_PRESS",
+            "observedBatchAt": "2026-10-31T10:22:31.687Z",
+            "consumedBatchAt": "2026-10-31T10:19:24.561Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "FED_SPEECH",
+            "observedBatchAt": "2026-10-31T10:22:31.712Z",
+            "consumedBatchAt": "2026-10-31T10:19:24.782Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_CPI",
+            "observedBatchAt": "2026-10-31T10:22:14.971Z",
+            "consumedBatchAt": "2026-10-31T10:22:14.971Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "observedBatchAt": "2026-10-31T10:22:14.999Z",
+            "consumedBatchAt": "2026-10-31T10:22:14.999Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "observedBatchAt": "2026-10-31T10:22:15.008Z",
+            "consumedBatchAt": "2026-10-31T10:22:15.008Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "observedBatchAt": "2026-10-31T09:44:25.693Z",
+            "consumedBatchAt": "2026-10-31T09:44:25.693Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BEA_RELEASES",
+            "observedBatchAt": "2026-10-31T10:22:23.969Z",
+            "consumedBatchAt": "2026-10-31T10:19:23.984Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "observedBatchAt": "2026-10-31T10:22:24.099Z",
+            "consumedBatchAt": "2026-10-31T10:19:24.330Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_PPI",
+            "observedBatchAt": "2026-10-31T10:22:14.987Z",
+            "consumedBatchAt": "2026-10-31T10:22:14.987Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "observedBatchAt": "2026-10-31T05:41:14.742Z",
+            "consumedBatchAt": "2026-10-31T05:41:14.742Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          }
+        ],
+        "passed": false
+      },
+      {
+        "readAt": "2026-10-31T10:23:47.013Z",
+        "identityMatched": true,
+        "newsConsumedAt": "2026-10-31T10:23:25.655Z",
+        "comparisons": [
+          {
+            "source": "JIN10",
+            "observedBatchAt": "2026-10-31T10:22:01.372Z",
+            "consumedBatchAt": "2026-10-31T10:22:01.372Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "COINDESK",
+            "observedBatchAt": "2026-10-31T10:21:59.190Z",
+            "consumedBatchAt": "2026-10-31T10:21:59.190Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "FED_PRESS",
+            "observedBatchAt": "2026-10-31T10:22:31.687Z",
+            "consumedBatchAt": "2026-10-31T10:22:31.687Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "FED_SPEECH",
+            "observedBatchAt": "2026-10-31T10:22:31.712Z",
+            "consumedBatchAt": "2026-10-31T10:22:31.712Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_CPI",
+            "observedBatchAt": "2026-10-31T10:22:14.971Z",
+            "consumedBatchAt": "2026-10-31T10:22:33.674Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": true
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "observedBatchAt": "2026-10-31T10:22:14.999Z",
+            "consumedBatchAt": "2026-10-31T10:22:33.735Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": true
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "observedBatchAt": "2026-10-31T10:22:15.008Z",
+            "consumedBatchAt": "2026-10-31T10:22:33.770Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": true
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "observedBatchAt": "2026-10-31T09:44:25.693Z",
+            "consumedBatchAt": "2026-10-31T09:44:25.693Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BEA_RELEASES",
+            "observedBatchAt": "2026-10-31T10:22:23.969Z",
+            "consumedBatchAt": "2026-10-31T10:22:23.969Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "observedBatchAt": "2026-10-31T10:22:24.099Z",
+            "consumedBatchAt": "2026-10-31T10:22:24.099Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          },
+          {
+            "source": "BLS_PPI",
+            "observedBatchAt": "2026-10-31T10:22:14.987Z",
+            "consumedBatchAt": "2026-10-31T10:22:33.705Z",
+            "verified": false,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": true
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "observedBatchAt": "2026-10-31T05:41:14.742Z",
+            "consumedBatchAt": "2026-10-31T05:41:14.742Z",
+            "verified": true,
+            "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON",
+            "newerSuccessfulBatchConsumed": false
+          }
+        ],
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "finalDeliveryAccepted": false
+}

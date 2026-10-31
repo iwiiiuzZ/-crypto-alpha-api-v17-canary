@@ -1,0 +1,9 @@
+{
+  "accountId": "c99b73fa37ddd060903f0134b664a16f",
+  "worker": "crypto-alpha-api-v17-canary",
+  "origin": "https://crypto-alpha-api-v17-canary.id-mranran.workers.dev",
+  "stateBinding": "SCANNER_STATE",
+  "stateClass": "ScannerState",
+  "stateContract": "owner-local-dispatch-v1",
+  "apiVersion": "7.6.0"
+}

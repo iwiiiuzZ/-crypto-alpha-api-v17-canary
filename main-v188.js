@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.2-owner-local-dispatch";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5f";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -72,7 +72,7 @@ function orderflowPaths() {
 }
 function publicMarketDefinitions() {
   return [
-    ...orderflowPaths().map((path,i)=>({path,policy:i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0}})),
+    ...orderflowPaths().map((path,i)=>({path,policy:i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:4,staleSeconds:0}})),
     {path:"/api/v5/market/tickers?instType=SWAP",policy:CACHE_POLICY.ticker},
     {path:"/api/v5/public/mark-price?instType=SWAP",policy:CACHE_POLICY.markPrice},
     {path:"/api/v5/market/index-tickers?quoteCcy=USDT",policy:{freshSeconds:8,staleSeconds:30}},
@@ -90,6 +90,7 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   owner.publicReady ||= (async()=>{
     const saved = await owner.ctx.storage.get(PUBLIC_MARKET_STATE_KEY);
     owner.publicRecords = {entries:saved?.entries&&typeof saved.entries==="object"?saved.entries:{},cooldowns:saved?.cooldowns&&typeof saved.cooldowns==="object"?saved.cooldowns:{},cooldownDiagnostics:saved?.cooldownDiagnostics||{}};
+    owner.publicPersistedJson=saved?JSON.stringify(publicMarketPersistable(owner.publicRecords)):null;
     owner.publicInflight = new Map();
   })();
   try {await owner.publicReady;} catch(error) {owner.publicReady=null;throw error;}
@@ -97,7 +98,13 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   const work=(async()=>{
     const state=owner.publicRecords, old=state.entries[path], family=cooldownKey(OKX_BASE+path);
     const age=old?(Date.now()-old.storedAt)/1000:Infinity;
-    if(old && !force && age>=0 && age<=policy.freshSeconds)return {...old,state:"shared-fresh-cache"};
+    if(old && !force && age>=0 && age<=policy.freshSeconds){
+      const flowPaths=orderflowPaths(),tradeFlow=path===flowPaths[1],bookFlow=path===flowPaths[2]||path==="/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400";
+      const exchangeAt=tradeFlow?Math.max(...(old.rows||[]).map(r=>Number(r.ts))):bookFlow?Number(old.rows?.[0]?.ts):null;
+      // Collection age alone is insufficient: a cached response can already
+      // contain older exchange trades. Reserve room for the next delayed tick.
+      if((!tradeFlow&&!bookFlow)||usableTimestamp(exchangeAt,3))return {...old,state:"shared-fresh-cache"};
+    }
     try {
       if(state.cooldowns[family]>Date.now())throw cooldownError(state.cooldowns[family]);
       const rows=await fetchJson(OKX_BASE+path,"OKX coordinated public market",1,true,body=>{
@@ -132,9 +139,47 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   owner.publicInflight.set(path,work);
   try{return await work;}finally{owner.publicInflight.delete(path);}
 }
+// Same OKX instrument/depth/units. Independent documented endpoint quotas;
+// never clear the primary circuit, rotate hosts, or accept an aged snapshot.
+async function coordinatedOrderflowEndpoint(owner,path,policy,force=false) {
+  const primary=await coordinatedPublicEndpoint(owner,path,policy,force);
+  if(path!==orderflowPaths()[2])return primary;
+  const valid=item=>!item?.error&&["live","shared-fresh-cache"].includes(item?.state)
+    &&usableTimestamp(item.rows?.[0]?.ts,10)&&Number(item.rows[0].bids?.[0]?.[0])>0
+    &&Number(item.rows[0].asks?.[0]?.[0])>0&&Number(item.rows[0].bids[0][0])<=Number(item.rows[0].asks[0][0]);
+  if(valid(primary))return primary;
+  const fallbackPath="/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400";
+  const fallback=await coordinatedPublicEndpoint(owner,fallbackPath,policy,force);
+  // Full-depth fallback has three columns (price, contracts, order count).
+  // Normalize to the existing four-column organic-book contract, never RPI.
+  const result={...fallback,rows:fallback.rows?.map(row=>({...row,
+    bids:row.bids?.map(level=>level.length===3?[level[0],level[1],"0",level[2]]:level),
+    asks:row.asks?.map(level=>level.length===3?[level[0],level[1],"0",level[2]]:level)}))};
+  const failover={primaryEndpoint:path,primaryHttpStatus:primary.httpStatus||null,
+    primaryError:primary.error||"PRIMARY_BOOK_INVALID_OR_EXPIRED",primaryRetryAt:primary.retryAt||null,
+    fallbackEndpoint:fallbackPath,fallbackSucceeded:valid(result)};
+  // Canonical flow keys are intentionally excluded from persistent bulky rows.
+  // Retain only the existing four-second in-memory shared cache; circuits persist.
+  if(owner.publicRecords)delete owner.publicRecords.entries[fallbackPath];
+  if(!failover.fallbackSucceeded)return {...primary,failover};
+  const recovered={...result,canonicalEndpoint:path,failover};
+  if(owner.publicRecords)owner.publicRecords.entries[path]=recovered;
+  return recovered;
+}
 function publicMarketPersistable(records) {
   const ephemeral=new Set(orderflowPaths().slice(1));
   return {...records,entries:Object.fromEntries(Object.entries(records.entries).filter(([path])=>!ephemeral.has(path)))};
+}
+async function persistPublicMarketIfChanged(owner) {
+  const previous=owner.publicPersistWork||Promise.resolve();
+  const work=previous.catch(()=>{}).then(async()=>{
+    const payload=publicMarketPersistable(owner.publicRecords),serialized=JSON.stringify(payload);
+    if(serialized===owner.publicPersistedJson)return false;
+    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,payload);
+    owner.publicPersistedJson=serialized;return true;
+  });
+  owner.publicPersistWork=work;
+  try{return await work;}finally{if(owner.publicPersistWork===work)owner.publicPersistWork=null;}
 }
 function restorePublicRows(item) {
   if(!Array.isArray(item?.rows))throw new Error(item?.error||"Public market module unavailable");
@@ -176,7 +221,7 @@ async function coordinatedMarketBundle(owner) {
   if(owner.marketBundleWork)return owner.marketBundleWork;
   const work=(async()=>{
     const defs=publicMarketDefinitions();
-    const values=await Promise.all(defs.map(d=>coordinatedPublicEndpoint(owner,d.path,d.policy)));
+    const values=await Promise.all(defs.map(d=>coordinatedOrderflowEndpoint(owner,d.path,d.policy)));
     const modules=Object.fromEntries(defs.map((d,i)=>[d.path,values[i]]));
     const key="/api/v5/market/tickers?instType=SWAP", original=modules[key], recovered=[];
     for(const a of Object.values(ASSETS)){
@@ -379,7 +424,7 @@ async function collectCrossVenueLiquidity(owner,modules){
  const defs=liquidityFeedDefinitions();
  const wave=async force=>{
   const paths=orderflowPaths();let okxItems=paths.map(p=>modules[p]);
-  if(force){const d=publicMarketDefinitions();okxItems=await Promise.all(paths.map(p=>coordinatedPublicEndpoint(owner,p,d.find(x=>x.path===p).policy,p!==paths[0])));}
+  if(force){const d=publicMarketDefinitions();okxItems=await Promise.all(paths.map(p=>coordinatedOrderflowEndpoint(owner,p,d.find(x=>x.path===p).policy,p!==paths[0])));}
   const okxInput=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:okxItems[i]?.rows,error:okxItems[i]?.error||(!okxItems[i]?.rows?'OKX_PUBLIC_FEED_MISSING':null),fetchedAt:okxItems[i]?.storedAt}]));
   const peers=await Promise.all(Object.entries(defs).map(async([venue,d])=>{const[meta,book,trades]=await Promise.all([liquidityFeed(owner,d.meta,true),liquidityFeed(owner,d.book,false,force),liquidityFeed(owner,d.trades,false,force)]);return normalizeLiquidityVenue(venue,{meta,book,trades});}));
   return [normalizeLiquidityVenue("OKX",okxInput),...peers];
@@ -503,7 +548,7 @@ function holdingFundingScenarios(asset,direction,entry,stop,target){
  const f=asset.derivatives?.funding,interval=(Date.parse(f?.nextFundingAt)-Date.parse(f?.fundingAt))/3600000,rate=f?.ratePct;
  if(f?.status!=='ok'||!Number.isFinite(rate)||!(interval>=1&&interval<=24))return {status:'UNKNOWN_INTERVAL_OR_RATE',futureRatesKnown:false,scenarios:[]};
  // Scenario only: do not credit hypothetical future receipts and do not assert constant future rates.
- const perSettlement=Math.max(0,direction==='LONG'?rate:-rate),baseCost=Math.max(.15,estimatedCandidateCost(asset)-Math.max(0,rate));
+ const perSettlement=Math.max(0,direction==='LONG'?rate:-rate),baseCost=.15;
  return {status:'CURRENT_RATE_SCENARIO_NOT_FORECAST',intervalHours:interval,currentRatePct:rate,futureRatesKnown:false,scenarios:[2,7,14].map(days=>{const settlements=Math.ceil(days*24/interval),fundingPct=perSettlement*settlements,cost=baseCost+fundingPct;
   return {days,settlements,assumedFundingCostPct:round(fundingPct,6),totalCostPct:round(cost,6),netRR:round(planNetRR({direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry),5),stressNetRR:round(planNetRR({direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:cost},entry,1.5),5)};})};
 }
@@ -524,7 +569,7 @@ function assessSwingOpportunity(asset,model){
  const target=possible.filter(p=>Number.isFinite(p)&&(long?p>entry:p<entry)).sort((a,b)=>long?a-b:b-a)[0];
  if(!Number.isFinite(target))return {...state,reason:'NO_REAL_FIRST_SWING_TARGET'};
  const move=Math.abs(target-entry),minimumMove=Math.max(profile.minimumFirstTargetMoveUsd,entry*profile.minimumFirstTargetMovePct/100,atr*profile.minimumFirstTargetAtr4h);
- const costs=holdingFundingScenarios(asset,c.direction,entry,stop,target),qualifiedHorizon=[...costs.scenarios].reverse().find(x=>x.netRR>=2),baseCost=qualifiedHorizon?.totalCostPct??costs.scenarios.at(-1)?.totalCostPct??estimatedCandidateCost(asset);
+ const costs=holdingFundingScenarios(asset,c.direction,entry,stop,target),qualifiedHorizon=[...costs.scenarios].reverse().find(x=>x.netRR>=2),baseCost=qualifiedHorizon?.totalCostPct??costs.scenarios.at(-1)?.totalCostPct??estimatedCandidateCost(asset,c.direction);
  const netRR=planNetRR({direction:c.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:baseCost},entry);
  const projected={...state,structuralStop:stop,modelProtectionPrice:pivot.price,protectionAt:pivot.ts,stopTimeframe:'4h',firstTarget:target,firstTargetMoveUsd:round(move,3),minimumPreferredMoveUsd:round(minimumMove,3),netRR:round(netRR,5),funding:costs};
  if(move<minimumMove)return {...projected,reason:'FIRST_REAL_TARGET_SPACE_BELOW_SWING_PREFERENCE'};
@@ -557,6 +602,29 @@ const SCANNER_REVIEW_REQUEST_KEY='scanner:review-request:v2761';
 const SCANNER_CYCLE_RESULT_KEY='scanner:last-cycle-result:v2761';
 const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
 const FAST_INTERVAL_MS=10000;
+// 2.5s bounded feed timeout + 4s observed platform scheduling allowance.
+// This is a refresh budget, never permission to use a quote older than 10s.
+const FAST_QUOTE_REFRESH_RESERVE_MS=6500;
+const FAST_MIN_INTERVAL_MS=2500;
+function nextFastAlarmAt(state,now=Date.now()){
+ const anchor=Number.isFinite(state.lastTickAt)?state.lastTickAt:now;
+ const quote=state.executionQuote,times=[quote?.exchangeTimestamp,quote?.lastTradeTimestamp,quote?.bookTimestamp].map(x=>Date.parse(x)).filter(Number.isFinite);
+ // Full samples and independent ticker quotes keep the same ten-second
+ // freshness limit. Flow cooldowns do not postpone a quote refresh.
+ // Account for both feed latency and the measured late alarm invocation.
+ const expiry=times.length?Math.min(...times)+10000-FAST_QUOTE_REFRESH_RESERVE_MS:Infinity;
+ const quoteDue=['ok','partial'].includes(state.status)?expiry:Infinity;
+ let deadline=Math.min(anchor+FAST_INTERVAL_MS,quoteDue);
+ const retry=Number(state.nextFlowAttemptAt);
+ // Wake at a cooldown ending before the next tick. If a failed-flow tick
+ // would fall just before that deadline, align it instead of skipping the
+ // feed and waiting another full interval. Never delay an earlier quote.
+ if(Number.isFinite(retry)&&retry>now){
+  if(retry<=deadline)deadline=retry;
+  else if(retry-deadline<=1000&&retry<=quoteDue)deadline=retry;
+ }
+ return Math.max(now+1000,anchor+FAST_MIN_INTERVAL_MS,deadline);
+}
 function fastMonitorConfigured(env){return String(env?.FAST_MONITOR_ENABLED??'true')!=='false'&&Boolean(env?.SCANNER_TOKEN&&env?.BARK_DEVICE_KEY&&scannerStateStub(env));}
 async function ensureFastMonitor(owner){
  if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED',scheduled:false};
@@ -572,7 +640,7 @@ function compactFastMonitor(state,review=null,now=Date.now()){
  return {...identity,status:state.status,lastAttemptAt:state.lastAttemptAt||null,lastSuccessAt:state.lastSuccessAt||null,dataAgeSeconds:Number.isFinite(age)?round(age,3):null,
   samplingHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,targetCadenceSeconds:10,actualLastGapSeconds:state.actualLastGapSeconds??null,nextAlarmAt:state.nextAlarmAt||null,
   executionQuote:state.executionQuote||null,quoteHealthy:genuineExecutionQuote(state.executionQuote,10),quoteLastSuccessAt:state.quoteLastSuccessAt||null,flowHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,
-  flowRetryAt:state.nextFlowAttemptAt?new Date(state.nextFlowAttemptAt).toISOString():null,feedDiagnostics:state.feedDiagnostics||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
+  flowRetryAt:state.nextFlowAttemptAt?new Date(state.nextFlowAttemptAt).toISOString():null,actualAlarmLatenessSeconds:state.actualAlarmLatenessSeconds??null,lastTickDurationSeconds:state.lastTickDurationSeconds??null,feedDiagnostics:state.feedDiagnostics||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
   lastError:state.lastError||null,lastAlertFailure:state.lastAlertFailure||null,failureCount:state.failureCount||0,reviewSchedulingError:state.reviewSchedulingError||null,fullReview:review?{...review}:null,partialSampledTape:true,continuousCoverageVerified:false,fixedLatencyGuaranteed:false,phoneReceiptVerified:false,openNowAllowed:false};
 }
 function fastWindowFromTrades(previous,venue,now=Date.now()){
@@ -711,6 +779,12 @@ async function syncFastModelReview(owner){
  else if(pending)next={...review,status:'pending',requestId:request.requestId,requestedAt:request.requestedAt,reason:request.reason,awaitingReview:true,inspectedModels:null,modelDataReady:false,
    nextCondition:'WAIT_FOR_SHARED_SCANNER_RESULT',lastCompletedReview:actual,lastCompletedAt:review.lastCompletedAt||null};
  else next={...review,lastSharedCycle:actual};
+ // A pending request or a failed cycle is current status, never a replacement
+ // for the timestamped last successful receipt. Keep both kinds of evidence.
+ const successful=[actual,review.lastSuccessfulReview,review,review.lastSharedCycle,review.lastCompletedReview]
+  .filter(r=>r&&r.producerBuild===BUILD&&r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady===true&&Number.isFinite(Date.parse(r.completedAt)))
+  .sort((a,b)=>Date.parse(b.completedAt)-Date.parse(a.completedAt))[0];
+ if(successful){const {lastSuccessfulReview,lastSharedCycle,lastCompletedReview,legacyReview,...receiptOnly}=successful;next.lastSuccessfulReview=receiptOnly;}
  if(JSON.stringify(next)!==JSON.stringify(review))await owner.ctx.storage.put(FAST_REVIEW_KEY,next);
  return next;
 }
@@ -764,15 +838,17 @@ async function runFastMonitorAlarm(owner){
   if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED'};
   const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
   // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
-  if(state.lastTickAt&&now-state.lastTickAt<5000){if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);return compactFastMonitor(state);}
+  if(state.lastTickAt&&now-state.lastTickAt<FAST_MIN_INTERVAL_MS){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
+  const scheduledAt=Date.parse(state.nextAlarmAt);
+  state.actualAlarmLatenessSeconds=Number.isFinite(scheduledAt)?round(Math.max(0,now-scheduledAt)/1000,3):null;
   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
-  state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
+  state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();
   try{
    if(state.nextFlowAttemptAt>now)throw Error('FLOW_RETRY_SCHEDULED');
    // Manual analysis, entry recheck and fast monitoring share the canonical feeds.
    const defs=orderflowPaths();
-   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0},false)));
-   state.feedDiagnostics=rows.map((r,i)=>({path:defs[i],state:r.state,error:r.error||null,httpStatus:r.httpStatus||null,localCooldown:r.localCooldown||false,retryAt:r.retryAt||null,upstreamFailedAt:r.upstreamFailedAt||null}));
+   const rows=await Promise.all(defs.map((p,i)=>coordinatedOrderflowEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:4,staleSeconds:0},false)));
+   state.feedDiagnostics=rows.map((r,i)=>({path:defs[i],actualEndpoint:r.endpoint||defs[i],failover:r.failover||null,state:r.state,error:r.error||null,httpStatus:r.httpStatus||null,localCooldown:r.localCooldown||false,retryAt:r.retryAt||null,upstreamFailedAt:r.upstreamFailedAt||null}));
    const input=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:rows[i].rows,error:rows[i].error||(!rows[i].rows?'MISSING_PUBLIC_FEED':null),fetchedAt:rows[i].storedAt}]));
    const venue=normalizeLiquidityVenue('OKX',input);
    if(venue.status!=='ok'||!venue.tradeFresh)throw Error(venue.reason||'FRESH_EXECUTED_TRADES_AND_BOOK_REQUIRED');
@@ -782,9 +858,11 @@ async function runFastMonitorAlarm(owner){
    const mid=(quote.bid+quote.ask)/2;if((quote.ask-quote.bid)/mid*10000>20||Math.abs(quote.last/mid-1)*10000>25)throw Error('FAST_EXECUTION_SPREAD_OR_TRADE_BOOK_MISMATCH');
    const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,event=fastMaterialEvent(window.window,quote.last,model?.atr15);
    state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.quoteLastSuccessAt=state.lastSuccessAt;state.nextFlowAttemptAt=0;state.lastError=null;state.failureCount=0;
+   const noticeBefore=JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]);
    await fastSendPending(owner,state,event);
-   // Publish an accepted alert before the full review reads shared notification state.
-   await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
+   // An accepted or changed alert must be visible before shared model review.
+   // Ordinary ticks publish atomically in finally, without a duplicate row write.
+   if(noticeBefore!==JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]))await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
   }catch(e){state.status='degraded';state.failureCount=(state.failureCount||0)+1;if(e?.message!=='FLOW_RETRY_SCHEDULED')state.lastError=String(e?.message||e).slice(0,180);
    const feedDeadline=Math.max(0,...(state.feedDiagnostics||[]).map(r=>Date.parse(r.retryAt)||0));
    if(e?.message!=='FLOW_RETRY_SCHEDULED')state.nextFlowAttemptAt=feedDeadline>Date.now()?feedDeadline:state.failureCount>=3?Date.now()+30000:0;
@@ -793,8 +871,11 @@ async function runFastMonitorAlarm(owner){
    // Review requests are independent of flow collection. A book cooldown must not freeze model work.
    try{await maintainFastModelReview(owner,state);}catch(e){state.reviewSchedulingError=String(e?.message||e).slice(0,180);}
    while(state.trades?.length&&jsonUtf8Size(JSON.stringify(state))>90000)state.trades.shift();
+   state.lastTickDurationSeconds=round((Date.now()-now)/1000,3);
+   const next=nextFastAlarmAt(state);state.nextAlarmAt=new Date(next).toISOString();
+   if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);
    await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
-   if(owner.publicRecords)await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
+   if(owner.publicRecords)await persistPublicMarketIfChanged(owner);
   }
   return compactFastMonitor(state,await owner.ctx.storage.get(FAST_REVIEW_KEY));
  })();owner.fastTickWork=work;try{return await work;}finally{owner.fastTickWork=null;}
@@ -884,16 +965,93 @@ function refreshServedSnapshot(snapshot) {
 
 // V27: timestamped news transport, separate from execution quotes and signal authority.
 const NEWS_STATE_KEY = "news:context:v27";
+const BLS_RELAY_STATE_KEY = "news:bls-official-relay:v1";
+const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
 const NEWS_TRANSPORT_REVISION = "27.0.2";
-const NEWS_PARSER_REVISION = "27.1.1";
+const NEWS_PARSER_REVISION = "27.6.3-macro-news-r5";
 const NEWS_SOURCES = [
+  {id:"BEA_RELEASES",url:"https://apps.bea.gov/rss/rss.xml",seconds:180},
+  {id:"BOJ_RELEASES",url:"https://www.boj.or.jp/en/rss/whatsnew.xml",seconds:180},
   {id:"COINDESK",url:"https://www.coindesk.com/arc/outboundfeeds/rss/",seconds:60},
   {id:"FED_PRESS",url:"https://www.federalreserve.gov/feeds/press_all.xml",seconds:180},
   {id:"FED_SPEECH",url:"https://www.federalreserve.gov/feeds/speeches.xml",seconds:180},
   {id:"BLS_CPI",url:"https://www.bls.gov/feed/cpi.rss",seconds:300},
+  {id:"BLS_PPI",url:"https://www.bls.gov/feed/ppi.rss",seconds:300},
   {id:"BLS_EMPLOYMENT",url:"https://www.bls.gov/feed/empsit.rss",seconds:300},
   {id:"BLS_CALENDAR",url:"https://www.bls.gov/schedule/news_release/bls.ics",seconds:3600,calendar:true},
 ];
+// Official Treasury end-of-day par yields; never substitute for live US2Y/US10Y quotes.
+const TREASURY_DAILY_SOURCE={id:"US_TREASURY_YIELD_DAILY",seconds:21600,treasury:true};
+function treasuryDailyUrl(now=Date.now()) {
+  const year=new Date(now).getUTCFullYear();
+  return "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/"+year+"/all?type=daily_treasury_yield_curve&field_tdr_date_value="+year+"&page&_format=csv";
+}
+function parseTreasuryDailyCsv(text,now=Date.now()) {
+  if(typeof text!=="string"||text.length>300000)throw new Error("TREASURY_CSV_INVALID_SIZE");
+  const lines=text.trim().split(/\r?\n/).filter(Boolean);
+  const header=(lines.shift()||"").split(",").map(x=>x.trim().replace(/^"|"$/g,""));
+  const dateIndex=header.indexOf("Date"),two=header.findIndex(x=>/^2\s*Yr$/i.test(x)),ten=header.findIndex(x=>/^10\s*Yr$/i.test(x));
+  if(dateIndex<0||two<0||ten<0||lines.length===0)throw new Error("TREASURY_CSV_COLUMNS_MISSING");
+  const rows=[];
+  for(const line of lines){
+    const cells=line.split(","),match=(cells[dateIndex]||"").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if(!match)continue;
+    const timestamp=Date.UTC(+match[3],+match[1]-1,+match[2]);
+    const d=new Date(timestamp);
+    if(d.getUTCFullYear()!==+match[3]||d.getUTCMonth()!==+match[1]-1||d.getUTCDate()!==+match[2]||timestamp>now+86400000)continue;
+    const y2=Number(cells[two]),y10=Number(cells[ten]);
+    if(!Number.isFinite(y2)||!Number.isFinite(y10)||y2<=0||y10<=0||y2>=30||y10>=30)continue;
+    rows.push({timestamp,asOf:d.toISOString().slice(0,10),yield2yPct:y2,yield10yPct:y10});
+  }
+  rows.sort((a,b)=>b.timestamp-a.timestamp);
+  if(!rows.length||now-rows[0].timestamp>10*86400000)throw new Error("TREASURY_DAILY_YIELDS_STALE_OR_MISSING");
+  const [latest,previous]=rows;
+  return {asOf:latest.asOf,yield2yPct:latest.yield2yPct,yield10yPct:latest.yield10yPct,
+    previousAsOf:previous?.asOf||null,change2yBp:previous?Math.round((latest.yield2yPct-previous.yield2yPct)*100):null,
+    change10yBp:previous?Math.round((latest.yield10yPct-previous.yield10yPct)*100):null,
+    cadence:"OFFICIAL_DAILY",intraday:false,publicationTimeKnown:false,tradeDirection:null};
+}
+function officialBlsRelayUrl(id){
+  return NEWS_SOURCES.find(v=>v.id===id&&v.url.startsWith("https://www.bls.gov/"))?.url||null;
+}
+function officialBlsRelayRecord(record,id,now=Date.now()){
+  const at=Date.parse(record?.fetchedAt),received=Date.parse(record?.receivedAt);
+  return record?.id===id&&record?.sourceUrl===officialBlsRelayUrl(id)&&
+    typeof record?.body==="string"&&record.body.length>50&&record.body.length<=180000&&
+    Number.isFinite(at)&&Number.isFinite(received)&&
+    at<=now+60000&&received<=now+60000&&received>=at-60000&&
+    now-at>=-60000&&now-at<=BLS_RELAY_MAX_AGE_MS&&now-received<=BLS_RELAY_MAX_AGE_MS;
+}
+async function acceptOfficialBlsRelay(request,env){
+  const text=await request.text();
+  if(text.length>780000)return {error:"OFFICIAL_RELAY_PAYLOAD_TOO_LARGE"};
+  let payload;try{payload=JSON.parse(text);}catch{return {error:"OFFICIAL_RELAY_INVALID_JSON"};}
+  const records=payload?.sources;
+  if(!Array.isArray(records)||records.length===0||records.length>4)return {error:"OFFICIAL_RELAY_INVALID_SOURCE_COUNT"};
+  const seen=new Set(),now=Date.now(),receivedAt=new Date(now).toISOString(),accepted=[];
+  const previous=(await scannerStateGet(env,BLS_RELAY_STATE_KEY))?.records||{};
+  const next={...previous};
+  for(const r of records){
+    if(!r||typeof r.id!=="string"||!officialBlsRelayUrl(r.id)||seen.has(r.id))return {error:"OFFICIAL_RELAY_SOURCE_NOT_ALLOWED"};
+    seen.add(r.id);
+    if(r.sourceUrl!==officialBlsRelayUrl(r.id)||typeof r.body!=="string"||r.body.length>180000||r.body.length<50||
+      !/^[a-f0-9]{64}$/.test(r.sha256||""))return {error:"OFFICIAL_RELAY_INVALID_BODY"};
+    const at=Date.parse(r.fetchedAt);
+    if(!Number.isFinite(at)||now-at>15*60*1000||at>now+60000)return {error:"OFFICIAL_RELAY_STALE_OR_FUTURE"};
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(r.body))))
+      .map(b=>b.toString(16).padStart(2,"0")).join("");
+    if(digest!==r.sha256)return {error:"OFFICIAL_RELAY_HASH_MISMATCH"};
+    try{
+      if(r.id==="BLS_CALENDAR"){if(!/BEGIN:VCALENDAR[\s\S]*END:VCALENDAR/.test(r.body))throw new Error("CALENDAR_NOT_VALID");}
+      else{const items=parseNewsXml(r.body,r.id,r.fetchedAt);if(items.length===0)throw new Error("NO_VALID_ITEMS");}
+    }catch{return {error:"OFFICIAL_RELAY_OFFICIAL_FORMAT_INVALID"};}
+    next[r.id]={id:r.id,sourceUrl:r.sourceUrl,body:r.body,sha256:r.sha256,fetchedAt:r.fetchedAt,receivedAt};
+    accepted.push(r.id);
+  }
+  await scannerStatePut(env,BLS_RELAY_STATE_KEY,{records:next},1800);
+  return {status:"OFFICIAL_BLS_RELAY_ACCEPTED",accepted,storedAt:receivedAt,tradeSignalGenerated:false,
+    deviceNotificationSent:false,scope:"DELAYED_OFFICIAL_SOURCE_FALLBACK_NOT_SECONDS_LEVEL_NEWS"};
+}
 function newsText(value,max=240) {
   return String(value??"").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,"$1").replace(/<[^>]*>/g," ")
     .replace(/&(?:amp|lt|gt|quot|apos|nbsp);/g,m=>({"&amp;":"&","&lt;":"<","&gt;":">","&quot;":"\"","&apos;":"'","&nbsp;":" "}[m]))
@@ -908,14 +1066,20 @@ function newsTimestamp(value) {
 function newsItem(item,source,fetchedAt) {
   const title=newsText(item.title||item.content,220),publishedAt=newsTimestamp(item.publishedAt||item.time||item.pubDate);
   let url=null;try{const u=new URL(item.url);
-    if(u.protocol==="http:"&&["FED_PRESS","FED_SPEECH"].includes(source)&&u.hostname==="www.federalreserve.gov")u.protocol="https:";
+    if(u.protocol==="http:"&&(
+      (["FED_PRESS","FED_SPEECH"].includes(source)&&u.hostname==="www.federalreserve.gov")||
+      (source==="BOJ_RELEASES"&&u.hostname==="www.boj.or.jp")||
+      (source==="BEA_RELEASES"&&["www.bea.gov","bea.gov","apps.bea.gov"].includes(u.hostname))
+    ))u.protocol="https:";
     if(u.protocol==="https:"&&!u.username&&!u.password)url=u.href;}catch{}
   if(!title||!publishedAt||!url)return null;
   const text=title+" "+newsText(item.content,200);
-  const relevant=/ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|treasury|interest rate|bank of japan|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
+  const relevant=/gross domestic product|\bGDP\b|statement on monetary policy|outlook for economic activity and prices|change in the guideline for money market operations|ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|personal income|personal consumption expenditures|\bCPI\b|\bPCE\b|\bPPI\b|jobless claims|initial claims|unemployment claims|treasury yields?|\bDXY\b|dollar index|interest rate|bank of japan|\bBOJ\b|monetary policy|policy board|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|美元指数|个人消费支出|初请失业金|失业救济|日本央行|日本銀行|日銀|货币政策|金融政策|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
   const riskTags=[];
   if(/hack|exploit|halt.{0,15}withdraw|withdraw.{0,15}halt|停提|黑客|攻击|宕机/i.test(text))riskTags.push("EXCHANGE_SECURITY_REVIEW");
-  if(/FOMC|federal funds|rate decision|consumer price|inflation|payroll|employment situation|议息|利率决议|CPI|非农/i.test(text))riskTags.push("MACRO_EVENT_REVIEW");
+  if(/gross domestic product|\bGDP\b|FOMC|federal funds|rate decision|consumer price|producer price|inflation|payroll|employment situation|personal income|personal consumption expenditures|\bPCE\b|\bPPI\b|initial claims|jobless claims|unemployment claims|议息|利率决议|通胀|个人消费支出|初请失业金|失业救济|CPI|非农/i.test(text))riskTags.push("MACRO_EVENT_REVIEW");
+  if(/statement on monetary policy|outlook for economic activity and prices|change in the guideline for money market operations|bank of japan|\bBOJ\b|monetary policy|policy board|日本央行|日本銀行|日銀|货币政策|金融政策/i.test(text))riskTags.push("CENTRAL_BANK_POLICY_REVIEW");
+  if(/treasury yields?|\bDXY\b|dollar index|美元指数|国债收益率/i.test(text))riskTags.push("USD_YIELD_RISK_REVIEW");
   if(/war|missile|hormuz|战争|导弹|霍尔木兹/i.test(text))riskTags.push("GEOPOLITICAL_REVIEW");
   return {id:String(item.id||url).slice(0,240),source,title,url,publishedAt,firstSeenAt:fetchedAt,fetchedAt,
     eventAt:newsTimestamp(item.eventAt),relevant,riskTags,ageSeconds:Math.max(0,(Date.now()-Date.parse(publishedAt))/1000),
@@ -923,7 +1087,7 @@ function newsItem(item,source,fetchedAt) {
 }
 function parseNewsXml(text,source,fetchedAt) {
   if(/<!DOCTYPE|<!ENTITY/i.test(text))throw new Error("UNSUPPORTED_XML_DECLARATION");
-  if(!/<(?:rss|feed)\b/i.test(text))throw new Error("NOT_A_NEWS_FEED");
+  if(!/<(?:rss|feed|rdf:RDF)\b/i.test(text))throw new Error("NOT_A_NEWS_FEED");
   const tag=(block,name)=>block.match(new RegExp("<"+name+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+name+">","i"))?.[1];
   const blocks=[...text.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)].slice(0,60);
   const rejectedReasons={missingTitle:0,invalidPublicationTime:0,invalidLink:0};
@@ -1088,53 +1252,80 @@ async function loadJin10(owner,fetchedAt) {
     parseDiagnostics:{rawItemCount:raw.length,acceptedItemCount:items.length,rejectedItemCount:Math.max(0,Math.min(raw.length,60)-items.length),contentStatus:raw.length===0?"EMPTY_FEED":items.length<Math.min(raw.length,60)?"PARTIALLY_PARSED":"PARSED",parserRevision:NEWS_PARSER_REVISION}};
 }
 function newsContextSummary(records,now=Date.now()) {
+  const treasuryRecord=records.US_TREASURY_YIELD_DAILY;
+  const treasuryDaily=treasuryRecord?.status==="ok"&&treasuryRecord.yieldCurve?{...treasuryRecord.yieldCurve,source:"US_TREASURY_YIELD_DAILY",fetchedAt:treasuryRecord.fetchedAt,live:false}:null;
   const sources=Object.fromEntries(Object.entries(records).map(([k,v])=>{const age=v.fetchedAt?(now-Date.parse(v.fetchedAt))/1000:null;
     return [k,{status:v.status,fetchedAt:v.fetchedAt||null,transportAgeSeconds:age,latestPublishedAt:v.items?.[0]?.publishedAt||null,
       httpStatus:v.httpStatus||null,reason:v.reason||null,failureStage:v.failureStage||null,elapsedMs:v.elapsedMs??null,
       failureCount:v.failureCount||0,nextAttemptAt:v.nextAttemptAt?new Date(v.nextAttemptAt).toISOString():null,
-      handshakeAt:v.handshakeAt||null,transportRevision:v.transportRevision||null,
+      handshakeAt:v.handshakeAt||null,sourceProvenance:v.sourceProvenance||"DIRECT_FETCH",
+      relayReceivedAt:v.relayReceivedAt||null,directHttpStatus:v.directHttpStatus||null,
+      transportRevision:v.transportRevision||null,
       parserRevision:v.parseDiagnostics?.parserRevision||v.parserRevision||null,
       itemCount:v.items?.length||0,eventCount:v.events?.length||0,parseDiagnostics:v.parseDiagnostics||null,
       lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
   const all=Object.values(records).flatMap(v=>(v.items||[]).map(i=>({...i,ageSeconds:Math.max(0,(now-Date.parse(i.publishedAt))/1000),
-    transportFresh:v.status==="ok"&&now-Date.parse(v.fetchedAt)<=300000})));
+    transportFresh:v.status==="ok"&&v.sourceProvenance!=="AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED"&&now-Date.parse(v.fetchedAt)<=300000})));
   const byUrl=new Map();for(const i of all.sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt)))if(!byUrl.has(i.url))byUrl.set(i.url,i);
   const unique=[...byUrl.values()];
   const headlines=unique.filter(i=>i.relevant&&i.ageSeconds<=86400).slice(0,16);
   const recent=headlines.filter(i=>i.transportFresh&&i.ageSeconds<=900);
   const events=Object.values(records).filter(v=>v.status==="ok"&&now-Date.parse(v.fetchedAt)<=7200000).flatMap(v=>v.events||[]);
   return {status:Object.values(sources).some(v=>v.status==="ok"&&v.transportAgeSeconds>=0&&v.transportAgeSeconds<=300)?"PARTIAL_VERIFIED_FEEDS":"UNAVAILABLE",
-    checkedAt:new Date(now).toISOString(),sources,sourceCount:Object.keys(sources).length,expectedSourceCount:8,
+    checkedAt:new Date(now).toISOString(),sources,sourceCount:Object.keys(sources).length,expectedSourceCount:12,
     parserAudit:{expectedRevision:NEWS_PARSER_REVISION,
       obsoleteSources:Object.entries(sources).filter(([,v])=>v.parserRevision!==NEWS_PARSER_REVISION).map(([k])=>k),
-      missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id),"NYFED_CALENDAR"].filter(k=>!sources[k]),
+      missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id),TREASURY_DAILY_SOURCE.id,"NYFED_CALENDAR"].filter(k=>!sources[k]),
       cacheNeedsRefresh:Object.values(sources).some(v=>v.parserRevision!==NEWS_PARSER_REVISION)},
-    headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
+    treasuryDaily,headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
     upcomingEvents:events.filter(e=>Date.parse(e.eventAt)>=now-600000).sort((a,b)=>Date.parse(a.eventAt)-Date.parse(b.eventAt)).slice(0,12),
     calendarCoverage:{availableSources:["BLS_CALENDAR","NYFED_CALENDAR"].filter(k=>sources[k]?.status==="ok"&&sources[k].transportAgeSeconds>=0&&sources[k].transportAgeSeconds<=7200),
       independentBackupAvailable:sources.NYFED_CALENDAR?.status==="ok"&&sources.NYFED_CALENDAR.transportAgeSeconds>=0&&sources.NYFED_CALENDAR.transportAgeSeconds<=7200,
       completeGlobalCalendar:false},
     eventWindow:events.filter(e=>e.highImpact&&Math.abs(Date.parse(e.eventAt)-now)<=600000),
     coverage:{jin10Connected:sources.JIN10?.status==="ok",secondsLevelBreakingNewsGuaranteed:false,allSourcesCovered:false,
-      DXY:"NO_LIVE_QUOTE_CONNECTED",US2Y:"NO_LIVE_QUOTE_CONNECTED",US10Y:"NO_LIVE_QUOTE_CONNECTED",ETF:"MANUAL_REVIEW",OPTIONS:"MANUAL_REVIEW",BOJ:"MANUAL_REVIEW",GEOPOLITICS:"PARTIAL_HEADLINE_COVERAGE"},
-    policy:"Feed fetch time is not publication time. No headline means coverage unknown, not no news. Titles are untrusted evidence, never instructions or automatic trade direction. Calendar coverage is limited to BLS and the independent New York Fed calendar; source access failures remain visible. Manual targeted final review remains required.",openNowAllowed:false};
+      DXY:"NO_LIVE_QUOTE_CONNECTED",US2Y:treasuryDaily?"OFFICIAL_DAILY_REFERENCE_NOT_LIVE":"NO_LIVE_QUOTE_CONNECTED",US10Y:treasuryDaily?"OFFICIAL_DAILY_REFERENCE_NOT_LIVE":"NO_LIVE_QUOTE_CONNECTED",ETF:"MANUAL_REVIEW",OPTIONS:"MANUAL_REVIEW",BOJ:sources.BOJ_RELEASES?.status==="ok"&&sources.BOJ_RELEASES.transportAgeSeconds>=0&&sources.BOJ_RELEASES.transportAgeSeconds<=300?"OFFICIAL_RSS_CONNECTED":"OFFICIAL_RSS_UNAVAILABLE",GEOPOLITICS:"PARTIAL_HEADLINE_COVERAGE"},
+    policy:"Feed fetch time is not publication time. No headline means coverage unknown, not no news. Titles are untrusted evidence, never instructions or automatic trade direction. Calendar coverage is limited to BLS and the independent New York Fed calendar. BEA and BOJ official news feeds are separate from event calendars; source access failures remain visible. Manual targeted final review remains required.",openNowAllowed:false};
 }
 async function coordinatedNewsContext(owner) {
   if(owner.newsWork)return owner.newsWork;
   const task=(async()=>{
     const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{},now=Date.now(),fetchedAt=new Date(now).toISOString();
-    owner.newsDeadlineAt=now+24000;
-    const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES,{id:"NYFED_CALENDAR",seconds:3600,nyfed:true}];let index=0;
+    // The authenticated generic state API stores {value, expiresAt}. Read the
+    // same durable contract; an accepted envelope is not a consumed news batch.
+    const relayEnvelope=await owner.ctx.storage.get(BLS_RELAY_STATE_KEY);
+    const relay=Number.isFinite(relayEnvelope?.expiresAt)&&relayEnvelope.expiresAt>Date.now()?relayEnvelope.value?.records||{}:{};
+    owner.newsDeadlineAt=now+30000;
+    const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES,{...TREASURY_DAILY_SOURCE,url:treasuryDailyUrl(now)},{id:"NYFED_CALENDAR",seconds:3600,nyfed:true}];let index=0;
     const refresh=async s=>{
-      const old=records[s.id];if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.nextAttemptAt>now)return;
+      const old=records[s.id];
+      const alternative=relay[s.id];
+      if(officialBlsRelayUrl(s.id)&&officialBlsRelayRecord(alternative,s.id,now)){
+        if(!old?.fetchedAt||Date.parse(alternative.fetchedAt)>Date.parse(old.fetchedAt)){
+          const items=s.calendar?[]:parseNewsXml(alternative.body,s.id,alternative.fetchedAt);
+          const events=s.calendar?parseNewsCalendar(alternative.body,alternative.fetchedAt):[];
+          const previousSeen=new Map((old?.items||[]).map(i=>[i.id,i.firstSeenAt]));
+          records[s.id]={...old,status:"ok",fetchedAt:alternative.fetchedAt,items:items.map(i=>({...i,firstSeenAt:previousSeen.get(i.id)||i.firstSeenAt})),
+            events,sourceProvenance:"AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",relayReceivedAt:alternative.receivedAt,
+            directHttpStatus:old?.directHttpStatus||old?.httpStatus||null,cacheState:"relay",reason:null,
+            lastAttemptAt:alternative.receivedAt,transportRevision:NEWS_TRANSPORT_REVISION,parserRevision:NEWS_PARSER_REVISION,
+            nextAttemptAt:0,parseDiagnostics:{contentStatus:"OFFICIAL_BLS_RELAY_VALIDATED",parserRevision:NEWS_PARSER_REVISION}};
+        }
+        return;
+      }
+      if(old?.sourceProvenance==="AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED"){
+        records[s.id]={...old,status:"unavailable",reason:"OFFICIAL_RELAY_STALE",cacheState:"stale-on-error"};
+      }
+      if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.nextAttemptAt>now)return;
       if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.parserRevision===NEWS_PARSER_REVISION&&now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000)return;
       const started=Date.now(),attemptAt=new Date(started).toISOString();let httpStatus=null;
       try{let data;
         if(owner.newsDeadlineAt-Date.now()<100)throw new Error("SOURCE_CYCLE_BUDGET_EXHAUSTED");
         if(s.jin10)data=await loadJin10(owner,fetchedAt);
         else if(s.nyfed)data=await loadNyFedCalendar(owner);
-        else{const r=await boundedNewsFetch(s.url,{headers:{accept:s.calendar?"text/calendar":"application/rss+xml, application/atom+xml, text/xml"}},600000,Math.min(6000,owner.newsDeadlineAt-Date.now()));httpStatus=r.response.status;
-          if(s.calendar){const events=parseNewsCalendar(r.text,fetchedAt);data={status:"ok",fetchedAt,events,items:[],parseDiagnostics:{contentStatus:events.length?"EVENTS_IN_WINDOW":"NO_EVENT_IN_SUPPORTED_WINDOW"}};}
+        else{const r=await boundedNewsFetch(s.url,{headers:{accept:s.treasury?"text/csv":s.calendar?"text/calendar":"application/rss+xml, application/atom+xml, text/xml"}},600000,Math.min(6000,owner.newsDeadlineAt-Date.now()));httpStatus=r.response.status;
+          if(s.treasury){const yieldCurve=parseTreasuryDailyCsv(r.text);data={status:"ok",fetchedAt,yieldCurve,items:[],parseDiagnostics:{contentStatus:"OFFICIAL_DAILY_YIELDS_PARSED",parserRevision:NEWS_PARSER_REVISION}};}
+          else if(s.calendar){const events=parseNewsCalendar(r.text,fetchedAt);data={status:"ok",fetchedAt,events,items:[],parseDiagnostics:{contentStatus:events.length?"EVENTS_IN_WINDOW":"NO_EVENT_IN_SUPPORTED_WINDOW"}};}
           else{const items=parseNewsXml(r.text,s.id,fetchedAt);data={status:"ok",fetchedAt,items,parseDiagnostics:items.parseDiagnostics};}}
         const completedAt=new Date().toISOString();
         if(data.status==="ok"){data.fetchedAt=completedAt;data.items=(data.items||[]).map(i=>({...i,fetchedAt:completedAt,firstSeenAt:completedAt}));data.events=(data.events||[]).map(i=>({...i,fetchedAt:completedAt}));}
@@ -1146,8 +1337,8 @@ async function coordinatedNewsContext(owner) {
         const failures=(old?.failureCount||0)+1,backoff=e.httpStatus===401||e.httpStatus===403?3600:e.httpStatus===429?Math.max(600,e.retryAfterSeconds||0):Math.min(900,60*2**Math.min(failures,4));
         records[s.id]={...old,status:"unavailable",lastAttemptAt:attemptAt,failureCount:failures,nextAttemptAt:Date.now()+backoff*1000,reason:e.message,failureStage:e.stage,httpStatus:e.httpStatus,elapsedMs:Date.now()-started,handshakeAt:s.jin10?owner.jinHandshakeAt||null:null,transportRevision:NEWS_TRANSPORT_REVISION,parserRevision:NEWS_PARSER_REVISION,cacheState:old?.items?.length?"stale-on-error":"unavailable"};}
     };
-    // Two independent workers; Jin10 is first, and one slow source cannot monopolize all sockets.
-    await Promise.all([0,1].map(async()=>{while(index<sources.length){const s=sources[index++];await refresh(s);}}));
+    // Three bounded workers; prioritize Jin10, BEA, and BOJ before optional feeds.
+    await Promise.all([0,1,2].map(async()=>{while(index<sources.length){const s=sources[index++];await refresh(s);}}));
     await owner.ctx.storage.put(NEWS_STATE_KEY,{records});return newsContextSummary(records);
   })();owner.newsWork=task;try{return await task;}finally{owner.newsWork=null;}
 }
@@ -1266,7 +1457,7 @@ function adaptiveAssessmentBase(seed,asset,btc) {
   if(!Number.isFinite(price)||!genuineExecutionQuote(asset.ticker))return {...result,failedGate:"CURRENT_OKX_EXECUTION_QUOTE_MISSING"};
   if(!Number.isFinite(target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_MISSING_NO_PROJECTED_TARGET"};
   if(long?price>=target:price<=target)return {...result,failedGate:"FIRST_REALISTIC_TARGET_ALREADY_PASSED"};
-  const stop=stopOutsideNearbyStructuralPool(seed.direction,seed.stopLoss,asset,seed.atr),costPct=estimatedCandidateCost(asset),netRR=planNetRR({direction:seed.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
+  const stop=stopOutsideNearbyStructuralPool(seed.direction,seed.stopLoss,asset,seed.atr),costPct=estimatedCandidateCost(asset,seed.direction),netRR=planNetRR({direction:seed.direction,stopLoss:stop,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
   const cap=(target+2*stop)/(3*(long?1+costPct/100:1-costPct/100));
   const zone=long?{min:Math.max(seed.entryZone.min,stop+1e-8),max:Math.min(seed.entryZone.max,cap)}:{min:Math.max(seed.entryZone.min,cap),max:Math.min(seed.entryZone.max,stop-1e-8)};
   const rrQualifiedEntryZone=zone.min<=zone.max?zone:null,pricing={entry:price,entryReference:"DIRECTIONAL_ASK_OR_BID",stopLoss:stop,target,estimatedRoundTripCostPct:costPct,netRR,rrQualifiedEntryZone};
@@ -1274,9 +1465,11 @@ function adaptiveAssessmentBase(seed,asset,btc) {
   return {...result,...pricing,state:"CANDIDATE_FOR_REVIEW",failedGate:null,candidate:{...seed,...pricing,candleAt:p.candleAt,openNowAllowed:false,
     validationStatus:"NEW_RESEARCH_ROUTE_NO_VERIFIED_WIN_RATE",reviewRequired:["FRESH_NEWS","ACTUAL_COSTS"],adaptiveEvidence:seed}};
 }
-function estimatedCandidateCost(asset) {
+function estimatedCandidateCost(asset,direction) {
   // A conservative engineering floor, not the user's actual exchange fee tier.
-  const funding=Math.max(0,finite(asset?.derivatives?.funding?.fundingRatePct,0));
+  // Parsers expose ratePct. Charge the paying side; never credit assumed receipts.
+  const rate=finite(asset?.derivatives?.funding?.ratePct,0);
+  const funding=Math.max(0,direction==='LONG'?rate:direction==='SHORT'?-rate:Math.abs(rate));
   return Math.max(0.15,0.10+0.04+funding);
 }
 function monitorPage() {
@@ -1488,7 +1681,7 @@ function opportunityAssessmentBase(seed,asset,btc) {
 
   if(!Number.isFinite(target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_MISSING"};
   const stopLoss=stopOutsideNearbyStructuralPool(direction,progress.stopLoss,asset,seed.atr);
-  const costPct=estimatedCandidateCost(asset),netRR=planNetRR({direction,stopLoss,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
+  const costPct=estimatedCandidateCost(asset,direction),netRR=planNetRR({direction,stopLoss,takeProfits:[{price:target}],estimatedRoundTripCostPct:costPct},price);
   const cap=(target+MIN_NET_RR*stopLoss)/((1+MIN_NET_RR)*(long?1+costPct/100:1-costPct/100));
   const epsilon=Math.max(price*1e-10,1e-10);
   const zone=long?{min:Math.max(seed.entryZone.min,stopLoss+epsilon),max:Math.min(seed.entryZone.max,cap)}
@@ -1748,11 +1941,12 @@ function discoverRangeReversalBase(asset, btc) {
   if (!Number.isFinite(price) || (long ? price >= midpoint : price <= midpoint)) return null;
   if (trendAgainst(direction, btc?.timeframes?.["4h"]) && trendAgainst(direction, btc?.timeframes?.["1h"])) return null;
   const submodel = outsideCloseIndex >= 0 ? "C2" : "C1";
-  const plan = { direction, stopLoss, takeProfits: [{ price: midpoint }], estimatedRoundTripCostPct: 0.15 };
+  const costPct=estimatedCandidateCost(asset,direction);
+  const plan = { direction, stopLoss, takeProfits: [{ price: midpoint }], estimatedRoundTripCostPct: costPct };
   const netRR = planNetRR(plan, price);
   if (!(netRR >= LEGACY_CONFIG.minimumNetRR.SHORT.B)) return null;
   return {
-    model: "C", submodel, direction, boundary, entry:price,estimatedRoundTripCostPct:0.15,stopLoss, target: midpoint, netRR,
+    model: "C", submodel, direction, boundary, entry:price,estimatedRoundTripCostPct:costPct,stopLoss, target: midpoint, netRR,
     candleAt: latest.ts,
     entryZone: long ? { min: lower, max: Math.min(midpoint, lower + 0.25 * (upper - lower)) } : { min: Math.max(midpoint, upper - 0.25 * (upper - lower)), max: upper },
     evidence: { reentered, structureShift, event: submodel === "C2" ? "FAILED_BREAKOUT_REENTERED" : "SWEEP_RECLAIMED" },
@@ -2130,15 +2324,28 @@ async function updateForwardStudy(env,snapshot,selected) {
 function scannerCycle(env,options={}) {
   let snapshot;
   const prices = new Map();
+  const deadlineAt=Date.now()+45_000;
   return {
     forceDiscovery:options.forceDiscovery===true,
-    deadlineAt: Date.now() + 45_000,
+    deadlineAt,
     getSnapshot() { return snapshot ||= buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); },
     getPrices(symbol) {
       // Broad zone affects only the sampling helper's flag. Each consumer checks its own zone.
       const cached = prices.get(symbol);
       if (!cached || Date.now() - cached.startedAt > 8000) {
-        prices.set(symbol, { startedAt: Date.now(), promise: verifyOkxScannerZone(symbol, { min: 0, max: Number.MAX_VALUE }, env) });
+        const entry={startedAt:Date.now()};
+        entry.promise=(async()=>{
+          for(let attempt=0;;attempt++){
+            try{return await verifyOkxScannerZone(symbol,{min:0,max:Number.MAX_VALUE},env);}
+            catch(error){
+              if(attempt||Date.now()+3000>=deadlineAt)throw error;
+              // Retry the whole independent pair, retaining endpoint cooldowns
+              // and all original spread, deviation and quote-age checks.
+              await delay(500);
+            }
+          }
+        })().catch(error=>{if(prices.get(symbol)===entry)prices.delete(symbol);throw error;});
+        prices.set(symbol,entry);
       }
       return prices.get(symbol).promise;
     },
@@ -2187,14 +2394,14 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const evaluations = [], notifications = [];
   let verification = null, priceError = null;
   if (active.some(r => Date.parse(r.expiresAt) > now)) {
-    try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { priceError = String(error?.message || error); }
+    try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { priceError = String(error?.message || error); }
     // Closed-candle invalidation is checked even when price is outside a zone.
     if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
     // Slow upstream recovery must not turn earlier samples into a current-price alert.
-    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { verification = null; priceError = String(error?.message || error); } }
+    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { verification = null; priceError = String(error?.message || error); } }
     if(full?.assets?.ETHUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
       await attachArrivalLiquidity(env,full);
-      try{verification=await cycle.getPrices("ETHUSDT");}catch{verification=null;}
+      try{verification=await cycle.getPrices("ETHUSDT");priceError=null;}catch(error){verification=null;priceError=String(error?.message||error);}
     }
     if (full?.assets?.ETHUSDT && verification?.current) {
       full.assets.ETHUSDT.ticker = verification.current;
@@ -2305,7 +2512,7 @@ const inflight = new Map();
 const upstreamCooldowns = new Map();
 const sharedCooldownChecks = new Map();
 const sharedCooldownInflight = new Map();
-let manualSnapshotWork = null;
+const manualSnapshotWork = new Map();
 let lastManualRequestAt = 0;
 let structureRefreshWork = null;
 
@@ -6187,13 +6394,21 @@ async function runScanner(env,options={}) {
     const completedAt = new Date(Date.now()).toISOString();
     const degraded = result.status === "error" || result.observations?.status === "error"
       || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
+    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
+    const lastDegradedCycle=degraded?{producerBuild:BUILD,startedAt,completedAt,
+      planError:result.status==='error'?String(result.reason||'').slice(0,180):null,
+      discoveryError:String(result.observations?.discoveryError||'').slice(0,180)||null,
+      priceError:String(result.observations?.priceError||'').slice(0,180)||null,
+      observationError:result.observations?.status==='error'?String(result.observations.reason||'').slice(0,180):null,
+      modelDataReady:receipt.modelDataReady,inspectedModels:receipt.inspectedModels,
+      blockedModels:(result.observations?.opportunityAudit?.models||[]).filter(m=>m.state==='DATA_BLOCKED').map(m=>({submodel:m.submodel,reason:m.failedGate||null}))}:old.lastDegradedCycle||null;
     await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { producerBuild:BUILD,status: degraded ? "degraded" : "completed", lastAttemptAt: startedAt,
       lastCompletedAt: completedAt, lastSuccessfulCycleAt: degraded ? old.lastSuccessfulCycleAt || null : completedAt,
+      lastDegradedCycle,
       nextScheduledCheckAt: new Date(Date.now() + 60_000).toISOString(),
       planState: result.evaluation?.state || result.reason || result.status,
       observationReason: result.observations?.reason || null, observationError: result.observations?.discoveryError || result.observations?.priceError || null,
       lastError: result.status === "error" ? result.reason : result.observations?.status === "error" ? result.observations.reason : null });
-    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
     await scannerStatePut(env,SCANNER_CYCLE_RESULT_KEY,receipt,3600);
     if(claimed){
       const current=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
@@ -6214,7 +6429,7 @@ async function runScanner(env,options={}) {
 
 function boundedScannerStatus(result) {
   const pick=(v,keys)=>v&&typeof v==="object"?Object.fromEntries(keys.filter(k=>v[k]!==undefined).map(k=>[k,compactStatusValue(v[k])])):v??null;
-  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError"]);
+  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError","lastDegradedCycle"]);
   result.responseMode="COMPACT_V26";
   result.generatedAt=new Date(Date.now()).toISOString();
   result.runtime=pick(result.runtime,["planId","state","checkedAt","lastAlertAt","lastAttemptAt","lastObservedPrice","notification"]);
@@ -6243,6 +6458,20 @@ function boundedScannerStatus(result) {
   return result;
 }
 
+// Preserve compact per-source production news receipts even if the 24KB status
+// response drops large discovery details. No headline content, tokens, or URLs.
+function compactNewsSourceReceipts(newsStatus){
+  const available=newsStatus?.sources||{};
+  const ids=["JIN10",...NEWS_SOURCES.map(v=>v.id),TREASURY_DAILY_SOURCE.id,"NYFED_CALENDAR"];
+  const receiptAt=value=>typeof value==="string"&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():null;
+  return Object.fromEntries(ids.filter(id=>available[id]&&typeof available[id]==="object")
+    .map(id=>[id,{
+      status:typeof available[id].status==="string"?available[id].status.slice(0,32):"unknown",
+      fetchedAt:receiptAt(available[id].fetchedAt),
+      parserRevision:typeof available[id].parserRevision==="string"?available[id].parserRevision.slice(0,64):null
+    }]));
+}
+
 async function scannerStatus(env) {
   try {
     const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY,PUSH_AUDIT_KEY]);
@@ -6267,6 +6496,7 @@ async function scannerStatus(env) {
         pendingProgressPushes:Object.values(state[PROGRESS_ALERT_KEY]?.pending||{}).filter(p=>p.expiresAt>Date.now()).length,
         newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
           parserAudit:state[DISCOVERY_STATE_KEY]?.newsStatus?.parserAudit||null,coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
+        newsSourceReceipts:compactNewsSourceReceipts(state[DISCOVERY_STATE_KEY]?.newsStatus),
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true,fastSamplingHealthy:fastMonitor?.samplingHealthy===true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
     result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes+result.diagnostics.pendingFastPushes+result.diagnostics.pendingProgressPushes;
@@ -6624,6 +6854,41 @@ function marketFailureResponse(code,stage) {
 function jsonUtf8Size(text) {
   let bytes=0;for(const c of text){const n=c.codePointAt(0);bytes+=n<=0x7f?1:n<=0x7ff?2:n<=0xffff?3:4;}return bytes;
 }
+function referenceRepeatedMarketEvidence(out) {
+  const canonical=new Map();let count=0;
+  const children=(v,visit)=>{for(const [k,x] of Object.entries(v))if(/^[A-Za-z0-9_]+$/.test(k))visit(k,x);};
+  const seed=(v,path)=>{
+    if(!v||typeof v!=="object"||Object.hasOwn(v,"sameAs"))return;
+    const text=JSON.stringify(v);if(jsonUtf8Size(text)>=512&&!canonical.has(text))canonical.set(text,path);
+    children(v,(k,x)=>seed(x,path+"."+k));
+  };
+  // These decision-bearing sections remain inline and unchanged. References
+  // elsewhere can point at them, but can never replace their contents.
+  for(const symbol of ["ETHUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(!a)continue;
+    for(const key of ["opportunityEngine","timeframes","ticker"])seed(a[key],"assets."+symbol+"."+key);
+  }
+  seed(out.newsContext?.sources,"newsContext.sources");seed(out.newsContext?.recentRiskHeadlines,"newsContext.recentRiskHeadlines");
+  const walk=(parent,key,path)=>{
+    const v=parent[key];if(!v||typeof v!=="object"||Object.hasOwn(v,"sameAs"))return;
+    const text=JSON.stringify(v),target=canonical.get(text),reference={sameAs:target};
+    if(target&&target!==path&&jsonUtf8Size(text)>jsonUtf8Size(JSON.stringify(reference))+jsonUtf8Size(JSON.stringify({[path]:target}))+96){
+      parent[key]=reference;out.transportDiagnostics.references[path]=target;count++;return;
+    }
+    if(jsonUtf8Size(text)>=512&&!target)canonical.set(text,path);
+    children(v,(k)=>walk(v,k,path+"."+k));
+  };
+  // Only known response modules participate; unknown extensions still fail
+  // closed when oversized. No values are rounded, truncated or discarded.
+  const modules=["spotMarket","derivatives","capitalFlow","executionLiquidity","liquidationRiskProxy","liquidityRisk","estimatedLiquidationPressureZones","largeParticipantProxy","crossVenueLiquidity","publicOrderflow","effortVsResult","rangeContext","marketRegimeRouter","dynamicContext","dataGaps","holdingProfile"];
+  for(const symbol of ["ETHUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(a)for(const key of modules)walk(a,key,"assets."+symbol+"."+key);}
+  if(out.newsContext)walk(out.newsContext,"headlines","newsContext.headlines");
+  return count;
+}
+function marketResponseSectionBytes(out) {
+  const size=v=>v===undefined?0:jsonUtf8Size(JSON.stringify(v));
+  return {newsContext:size(out.newsContext),analysisContract:size(out.analysisContract),
+    assets:Object.fromEntries(["ETHUSDT","BTCUSDT"].map(symbol=>[symbol,Object.fromEntries(["timeframes","opportunityEngine","crossVenueLiquidity","publicOrderflow","capitalFlow","liquidityRisk"].map(key=>[key,size(out.assets?.[symbol]?.[key])]))]))};
+}
 function boundedMarketSnapshot(snapshot) {
   const original=JSON.stringify(snapshot),budget=90000;
   const meta={responseMode:"BOUNDED_MARKET_V27_1_2",originalCharacters:original.length,originalUtf8Bytes:jsonUtf8Size(original),maximumUtf8Bytes:budget,
@@ -6696,12 +6961,23 @@ function boundedMarketSnapshot(snapshot) {
     }
   }
   if(!fits()){
+    // The full news list remains available through view=news. Keep every
+    // risk headline, event window and source audit inline; only defer the
+    // optional general-title preview when it would block the whole market.
+    const n=out.newsContext;
+    if(Array.isArray(n?.headlines)&&n.headlines.length){
+      n.headlinePreview={available:n.headlinePreview?.available??n.headlines.length,returned:0,completeView:"news"};
+      n.headlines=[];note("GENERAL_HEADLINE_PREVIEW_DEFERRED_TO_NEWS_VIEW");
+    }
+  }
+  if(!fits()&&referenceRepeatedMarketEvidence(out))note("EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS");
+  if(!fits()){
     return {status:"error",build:snapshot.build,apiVersion:snapshot.apiVersion,generatedAt:snapshot.generatedAt,
       decisionState:"TRANSPORT_ERROR",error:{code:"MARKET_RESPONSE_BUDGET_EXCEEDED",retryable:true},
       assets:Object.fromEntries(Object.keys(ASSETS).map(k=>{const a=snapshot.assets?.[k]||{},t=a.ticker||{},ticker={};for(const n of ["status","source","priceType","last","bid","ask","exchangeTimestamp","error"]){const v=t[n];if(typeof v==="string")ticker[n]=v.slice(0,200);else if(typeof v==="number")ticker[n]=v;}return [k,{symbol:k,ticker}];})),
       coverage:{executionPriceReady:snapshot.coverage?.executionPriceReady===true,fullAnalysisTransferred:false},
       transportDiagnostics:{...meta,compacted:true,rawSnapshotTransferredInFull:false,decisionAnalysisTransferred:false,modelAssessmentsTransferredInFull:false,
-        attemptedCompactedUtf8Bytes:measure().bytes,omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
+        attemptedCompactedUtf8Bytes:measure().bytes,attemptedSectionUtf8Bytes:marketResponseSectionBytes(out),omitted:["OVERSIZED_ANALYSIS_NOT_TRANSFERRED"]}};
   }
   // Include actual serialized size, not merely the size of the original snapshot.
   for(let i=0;i<4;i++){
@@ -6717,19 +6993,26 @@ function marketSnapshotResponse(snapshot) {
 
 async function handleSnapshot(request, env, ctx) {
   lastManualRequestAt = Date.now();
-  if (!manualSnapshotWork) {
+  const mode=new URL(request.url).searchParams.get("recheck")==="true"?"recheck":"normal";
+  if (!manualSnapshotWork.has(mode)) {
     // Keep one shared refresh even if an individual request reaches its response deadline.
-    const work=buildManualResponse(request,env,ctx);
-    manualSnapshotWork=work;
-    work.finally(()=>{if(manualSnapshotWork===work)manualSnapshotWork=null;}).catch(()=>{});
+    // Share only inert data. A Response body belongs to its originating request
+    // in workerd; cloning it from another handler fails or locks the stream.
+    // Consume it in the creating handler, then build a fresh Response per caller.
+    const work=buildManualResponse(request,env,ctx).then(async response=>({
+      body:await response.text(),status:response.status,statusText:response.statusText,headers:[...response.headers],
+    }));
+    manualSnapshotWork.set(mode,work);
+    work.finally(()=>{if(manualSnapshotWork.get(mode)===work)manualSnapshotWork.delete(mode);}).catch(()=>{});
     if(ctx?.waitUntil)ctx.waitUntil(work.then(()=>{},()=>{}));
   }
   let timer;
   try {
-    const result=await Promise.race([manualSnapshotWork,new Promise(resolve=>{
-      timer=setTimeout(()=>resolve(marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD")),35000);
+    const result=await Promise.race([manualSnapshotWork.get(mode),new Promise(resolve=>{
+      timer=setTimeout(()=>resolve(null),35000);
     })]);
-    return result.clone();
+    if(result===null)return marketFailureResponse("MARKET_RESPONSE_DEADLINE","SNAPSHOT_BUILD");
+    return new Response(result.body,{status:result.status,statusText:result.statusText,headers:result.headers});
   }catch{return marketFailureResponse("MARKET_SNAPSHOT_FAILED","SNAPSHOT_BUILD");}
   finally{clearTimeout(timer);}
 }
@@ -6983,6 +7266,11 @@ export default {
     if (path.startsWith("/scanner/")) {
       if (!scannerAuthorized(request, env)) return json({ error: "UNAUTHORIZED", code:"SCANNER_TOKEN_REQUIRED", message: "Configure SCANNER_TOKEN and send it as a Bearer token",build:BUILD,workerReached:true }, 401,{"cache-control":"no-store"});
       if (request.method === "GET" && path === "/scanner/status") return json(await scannerStatus(env),200,{"cache-control":"no-store"});
+      if (request.method === "POST" && path === "/scanner/official-macro-relay") {
+        try{const receipt=await acceptOfficialBlsRelay(request,env);
+          return json(receipt,receipt.error?400:200,{"cache-control":"no-store"});}
+        catch{return json({error:"OFFICIAL_RELAY_STORAGE_OR_VALIDATION_FAILED"},503,{"cache-control":"no-store"});}
+      }
       if (request.method === "POST" && path === "/scanner/plan") {
         try { return json(await saveTradingPlan(env, await readJsonRequest(request))); }
         catch (error) { return json({ error: "INVALID_PLAN", message: error?.message || String(error) }, 400); }
@@ -6993,7 +7281,7 @@ export default {
       }
       if (request.method === "POST" && path === "/scanner/test") {
         try {
-          const notification = await sendBark(env, { title: "✅ Crypto Alpha 提醒测试成功", body: "Bark、Worker 和扫描提醒线路已经连通。", level: "timeSensitive" });
+          const notification = await sendBark(env, { title: "Crypto Alpha 通信测试｜非交易信号", body: "这是一条通信测试通知。手机显示此条仅证明这次测试送达；候选生成、定时扫描和其他提醒需要分别验收。", level: "timeSensitive" });
           return json({ status: "ok", notification });
         } catch (error) { return json({ error: "BARK_TEST_FAILED", message: error?.message || String(error) }, 503); }
       }

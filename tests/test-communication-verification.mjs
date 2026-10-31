@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {verifyCommunication} from '../ops/communication-verification.mjs';
+const expected='crypto-alpha-worker-v27.6.3-acceptance-candidate-r3';
+let posts=0,calls=0;
+const f=async(u,o)=>{calls++;if(o.method==='POST'){posts++;return Response.json({notification:{sent:true,auditPersisted:true,auditAttemptId:'fixture',providerAcceptedAt:'2026-10-28T00:00:00Z'}});}return Response.json({build:expected,backendIdentity:{matched:true,stateOwnerBuild:expected},notificationAudit:{recentAttempts:[{attemptId:'fixture',kind:'CONTROL',outcome:'PROVIDER_ACCEPTED'}]}});};
+await assert.rejects(verifyCommunication(f,'https://fixture.invalid','synthetic',false));assert.equal(calls,0);
+const r=await verifyCommunication(f,'https://fixture.invalid','synthetic',true);assert.equal(posts,1);assert.equal(r.auditMatched,true);assert.equal(r.deviceReceiptVerified,false);
+posts=0;await assert.rejects(verifyCommunication(async(u,o)=>{if(o.method==='POST'){posts++;throw Error('timeout');}return f(u,o);},'https://fixture.invalid','synthetic',true));assert.equal(posts,1);
+posts=0;await assert.rejects(verifyCommunication(async()=>Response.json({build:'old'}),'https://fixture.invalid','synthetic',true));assert.equal(posts,0);
+await assert.rejects(verifyCommunication(async(u,o)=>o.method==='POST'?Response.json({notification:{sent:false}}):f(u,o),'https://fixture.invalid','synthetic',true));
+console.log('PASS isolated communication checks; no real messages sent');

@@ -1,0 +1,96 @@
+import assert from 'node:assert/strict';
+import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
+import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
+import fs from 'node:fs';
+const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
+const start=Date.parse('2026-10-22T05:00:00Z'),iso=n=>new Date(n).toISOString();
+function sample(delta){const now=start+delta,identity={matched:true,frontendBuild:'current',stateOwnerBuild:'current',stateOwnerContract:config.stateContract};return summarizeSample({build:'current',apiVersion:'7.6.0',backendIdentity:identity,fastMonitor:{samplingHealthy:true,quoteHealthy:true,flowHealthy:true,lastSuccessAt:iso(now-1000),executionQuote:{lastTradeTimestamp:iso(now-1500),bookTimestamp:iso(now-500)},fullReview:{status:'completed',producerBuild:'current',inspectedModels:8,modelDataReady:true,checkedAt:iso(now-3000),completedAt:iso(now-2000)}}},{build:'current',backendIdentity:identity,heartbeat:{status:'completed',producerBuild:'current',lastCompletedAt:iso(now-2000),lastSuccessfulCycleAt:iso(now-2000)},diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(now-2500)},pendingPushes:0},notificationAudit:{channels:[],recentAttempts:[{body:'private-financial-detail'}]},observations:[{entry:2400,accountBalance:10000}],configuration:{secret:'not-for-logs'}},now);}
+let passed=0;
+async function test(name,fn){await fn();passed++;console.log('PASS '+name);}
+await test('news consumption needs matching successful source batches, not a newer generic heartbeat',()=>{
+ const c={newsSources:[{source:'JIN10',status:'ok',fetchedAt:iso(start)}]},s={scanner:{newsConsumedAt:iso(start+5000)},consumedNewsSources:[]};
+ assert.equal(compareNewsBatches(s,c)[0].verified,false);
+ s.consumedNewsSources=[{source:'JIN10',status:'ok',fetchedAt:iso(start-60000)}];assert.equal(compareNewsBatches(s,c)[0].verified,false);
+ s.consumedNewsSources[0].fetchedAt=iso(start);assert.equal(compareNewsBatches(s,c)[0].verified,true);
+ s.consumedNewsSources[0].status='unavailable';assert.equal(compareNewsBatches(s,c)[0].verified,false);
+});
+await test('official BEA and BOJ source consumption is visible to acceptance audit',()=>{
+ const identity={matched:true,frontendBuild:'current',stateOwnerBuild:'current',stateOwnerContract:config.stateContract};
+ const status={build:'current',backendIdentity:identity,diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(start+1000)}},
+  discovery:{newsStatus:{sources:{BEA_RELEASES:{status:'ok',fetchedAt:iso(start)},BOJ_RELEASES:{status:'ok',fetchedAt:iso(start)}}}}};
+ const row=summarizeSample({build:'current',apiVersion:'7.6.0',backendIdentity:identity},status,start+2000);
+ assert.deepEqual(row.consumedNewsSources.map(x=>x.source).sort(),['BEA_RELEASES','BOJ_RELEASES']);
+ const context={newsSources:[{source:'BEA_RELEASES',status:'ok',fetchedAt:iso(start)},{source:'BOJ_RELEASES',status:'ok',fetchedAt:iso(start)}]};
+ assert.deepEqual(compareNewsBatches(row,context).map(x=>x.verified),[true,true]);
+});
+await test('build configuration audit only reads the target and excludes commands and credentials',async()=>{
+ const urls=[];const r=await cloudflareBuildSnapshot(async(url,init)=>{urls.push(url);assert.equal(init.method,'GET');return Response.json({success:true,result:url.endsWith('/scripts')?[{id:'other',tag:'unrelated'},{id:'worker',tag:'target-tag'}]:[{trigger_uuid:'target-trigger',branch_includes:['main'],branch_excludes:[],root_directory:'/',deploy_command:'npm run deploy:checked',environment_variables:{TOKEN:'private-key'},build_token_uuid:'private-token'}]});},config,'token');
+ assert.ok(urls[1].includes('/target-tag/'));assert.equal(r.triggers[0].checkedDeployCommand,true);assert.equal(r.triggers[0].exactMainOnly,true);assert.ok(!JSON.stringify(r).includes('private-'));assert.ok(!JSON.stringify(r).includes('unrelated'));
+});
+await test('foreground audit cannot expose market prices or news contents or claim background proof',()=>{
+ const r=summarizeReadContext({assets:{ETHUSDT:{ticker:{last:2444.321},timeframes:{'15m':{quality:{passed:true,newestClosedCandleAt:iso(start)}}},opportunityEngine:{models:[{submodel:'B1',state:'NO_SETUP',candidate:{entry:2444.321}}]}}}},{newsContext:{headlines:[{title:'private-headline'}],sources:{JIN10:{status:'ok',httpStatus:200,fetchedAt:iso(start),secret:'private-secret'}}}});
+ const s=JSON.stringify(r);for(const v of ['2444.321','private-headline','private-secret'])assert.ok(!s.includes(v));assert.equal(r.structure.length,6);assert.equal(r.structure[1].qualityPassed,false);assert.equal(r.newsSources[0].httpStatus,200);assert.ok(r.evidenceScope.includes('NOT_BACKGROUND_PROOF'));
+});
+await test('candidate diagnosis preserves unknown/omitted states and distinguishes technical cards from execution permission',()=>{
+ const unknown=summarizeCandidateChain({diagnostics:{stateReadSucceeded:false},observations:null});
+ assert.equal(unknown.activeCount,null);assert.equal(unknown.active,null);
+ const r=summarizeCandidateChain({diagnostics:{stateReadSucceeded:true,detailsOmitted:true},observations:[{submodel:'B1',state:'MARKET_CANDIDATE',preparedTrade:{executionPermission:'FINAL_REVIEW_REQUIRED',entry:2400},notificationDecision:{currentStagePushStatus:'PENDING',reason:'NEWS_REVIEW_PENDING'}}],observationHistory:[]});
+ assert.equal(r.activeCount,1);assert.equal(r.active[0].technicalCardPresent,true);assert.equal(r.active[0].executionPermission,'FINAL_REVIEW_REQUIRED');assert.equal(r.detailsOmitted,true);assert.equal(r.preparedNotificationLiveVerified,false);
+});
+await test('candidate stage evidence excludes private IDs, prices and free text',()=>{
+ const r=summarizeCandidateChain({observations:[{observationId:'private-id',submodel:'B1',state:'IN_ZONE',price:2444.123,preparedTrade:null,notificationDecision:{reason:'private text',currentStagePushStatus:'NOT_QUEUED'}}],notificationAudit:{recentAttempts:[{eventId:'private-id',body:'private-body',stage:'MARKET_CANDIDATE',outcome:'PROVIDER_ACCEPTED',attemptedAt:iso(start)}]}});
+ const out=JSON.stringify(r);for(const s of ['private-id','2444.123','private text','private-body'])assert.ok(!out.includes(s));assert.equal(r.active[0].reason,null);assert.equal(r.recentAttemptStages[0].outcome,'PROVIDER_ACCEPTED');assert.equal(r.deviceReceiptVerified,false);
+});
+await test('three genuinely advancing samples and a new current-producer receipt pass only with limits',()=>{const r=assessSamples([sample(0),sample(25000),sample(85000)],config);assert.equal(r.operationalPassed,true);assert.equal(r.limits.deviceReceipt,'NOT_VERIFIED');assert.equal(r.limits.pushRetryRecovery,'NOT_PROVEN_BY_EMPTY_QUEUES');});
+await test('healthy flags cannot hide frozen quote/trade/complete timestamps',()=>{const a=sample(0),b=sample(85000);b.health={...a.health};const r=assessSamples([a,sample(25000),b],config);assert.equal(r.gates.autonomousSamples,false);assert.equal(r.gates.independentHealth,false);});
+await test('new attempt times do not count as a new minute completion',()=>{const a=sample(0),b=sample(85000);b.scanner.lastCompletedAt=a.scanner.lastCompletedAt;b.scanner.lastSuccessfulCycleAt=a.scanner.lastSuccessfulCycleAt;assert.equal(assessSamples([a,sample(25000),b],config).gates.minuteScanner,false);});
+await test('a new successful cycle remains evidence while the next cycle runs; stale success and degraded cycles fail',()=>{const a=sample(0),b=sample(85000);b.scanner.status='running';assert.equal(assessSamples([a,sample(25000),b],config).gates.minuteScanner,true);b.scanner.lastSuccessfulCycleAt=a.scanner.lastSuccessfulCycleAt;assert.equal(assessSamples([a,sample(25000),b],config).gates.minuteScanner,false);b.scanner.lastSuccessfulCycleAt=sample(85000).scanner.lastSuccessfulCycleAt;b.scanner.status='degraded';assert.equal(assessSamples([a,sample(25000),b],config).gates.minuteScanner,false);});
+await test('missing producer identity and an old successful receipt cannot pass',()=>{for(const mutate of [s=>s.receipts[0].producerBuild=null,s=>s.receipts[0].checkedAt=iso(start-1000),s=>s.receipts[0].inspectedModels=0]){const b=sample(85000);mutate(b);assert.equal(assessSamples([sample(0),sample(25000),b],config).gates.newEightModelReview,false);}});
+await test('short window, missing backend identity, future times and one partial feed fail',()=>{const rows=[sample(0),sample(25000),sample(85000)];assert.equal(assessSamples(rows.slice(0,2),config).operationalPassed,false);rows[1].identity.matched=false;rows[2].health.bookAt=iso(start+100000);rows[0].health.flow=false;const r=assessSamples(rows,config);assert.equal(r.gates.versionIdentity,false);assert.equal(r.gates.independentHealth,false);});
+await test('public report drops account data, observation prices, raw attempts, configuration and provider text',()=>{const text=JSON.stringify(sample(85000));for(const secret of ['accountBalance','2400','private-financial-detail','not-for-logs'])assert.ok(!text.includes(secret),secret);assert.equal(sample(85000).notifications.deviceReceiptVerified,false);});
+await test('secrets cannot escape through the final report formatter',()=>{assert.ok(!safeOutput({build:'TOKEN-secret'},['TOKEN-secret']).includes('TOKEN-secret'));});
+await test('failed and redirected HTTP does not leak provider body or retry a denied request',async()=>{let calls=0;await assert.rejects(()=>requestJson(async(url,init)=>{calls++;assert.equal(init.redirect,'error');return new Response('TOKEN-secret',{status:403});},'https://example.invalid'),/^Error: HTTP_403$/);assert.equal(calls,1);});
+await test('malformed and over-budget JSON are rejected',async()=>{await assert.rejects(()=>requestJson(async()=>new Response('oops'),'https://example.invalid'),/INVALID_JSON/);await assert.rejects(()=>requestJson(async()=>new Response('x'.repeat(1048577)),'https://example.invalid'),/RESPONSE_TOO_LARGE/);});
+await test('HTTP failures retain only known internal classifications and never arbitrary provider content',async()=>{
+ for(const reason of ['MARKET_RESPONSE_BUDGET_EXCEEDED','private-provider-secret']){
+  try{await requestJson(async()=>Response.json({error:{code:reason},message:'private-body'},{status:503}),'https://example.invalid');assert.fail('must fail');}
+  catch(e){assert.equal(e.code,'HTTP_503');assert.equal(e.reason,reason.startsWith('MARKET_')?reason:undefined);assert.ok(!JSON.stringify(e).includes('private-'));}
+ }
+});
+await test('cloud metadata distinguishes mixed traffic and foreign state owner',async()=>{const paths=[];const r=await cloudflareSnapshot(async(url,init)=>{paths.push(url);assert.equal(init.headers.authorization,'Bearer token');return Response.json({success:true,result:url.endsWith('/settings')?{bindings:[{name:'SCANNER_STATE',class_name:'ScannerState',script_name:'other',namespace_id:'private-namespace'}]}:{deployments:[{id:'deployment',created_on:iso(start),versions:[{version_id:'a',percentage:50},{version_id:'b',percentage:50}]}]}});},config,'token');assert.equal(r.bindingMatches,false);assert.equal(r.singleVersion,false);assert.equal(paths.length,2);assert.ok(!JSON.stringify(r).includes('private-namespace'));});
+await test('missing cloud permissions fail explicitly rather than returning success',async()=>{await assert.rejects(()=>cloudflareSnapshot(fetch,config,''),/MISSING_CLOUDFLARE_API_TOKEN/);await assert.rejects(()=>cloudflareSnapshot(async()=>Response.json({success:false,errors:[{message:'secret'}]}),config,'token'),/CLOUDFLARE_API_REJECTED/);});
+await test('deployment protects target, namespace, migrations and account',()=>{
+ const policy=JSON.parse(fs.readFileSync(new URL('../ops/config.json',import.meta.url),'utf8')),original=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
+ assert.doesNotThrow(()=>validateTarget(original,policy,policy.accountId));
+ for(const change of [w=>w.name='other-worker',w=>w.main='worker.js',w=>w.durable_objects.bindings[0].script_name='foreign-worker',w=>w.durable_objects.bindings.push({...w.durable_objects.bindings[0]}),w=>w.migrations.push({tag:'delete',deleted_classes:['ScannerState']})]){const w=structuredClone(original);change(w);assert.throws(()=>validateTarget(w,policy,policy.accountId));}
+ assert.throws(()=>validateTarget(original,policy,'other-account'),/WRONG_CLOUDFLARE_ACCOUNT/);
+ assert.equal(fs.existsSync(wranglerCLI()),true);
+});
+await test('feed failure diagnostics distinguish a retained upstream failure from local cooldown without exposing URLs or errors',()=>{const f=summarizeFastFailures({status:'degraded',failureCount:3,lastError:'private-token',flowRetryAt:iso(start+30000),feedDiagnostics:[{path:'/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500',state:'cooldown',httpStatus:429,localCooldown:true,retryAt:iso(start+30000),upstreamFailedAt:iso(start),error:'private-token'},{path:'https://private-token.invalid/?key=secret',state:'private-token',httpStatus:999}]});assert.equal(f.feeds[0].feed,'TRADES');assert.equal(f.feeds[0].upstreamFailedAt,iso(start));assert.equal(f.feeds[0].localCooldown,true);assert.equal(f.feeds[1].feed,'OTHER');assert.equal(f.feeds[1].state,null);assert.equal(f.feeds[1].httpStatus,null);assert.ok(!JSON.stringify(f).includes('private-token'));});
+await test('response budget diagnostics expose sizes only, on both success and explicit budget failure',async()=>{
+ const body={error:{code:'MARKET_RESPONSE_BUDGET_EXCEEDED'},transportDiagnostics:{originalUtf8Bytes:121171,attemptedCompactedUtf8Bytes:92628,privateToken:'do-not-print',references:{'private-price': 'private-id'},attemptedSectionUtf8Bytes:{newsContext:4000,assets:{ETHUSDT:{opportunityEngine:21000,capitalFlow:'private-token',unknown:12345}}}}};
+ const d=summarizeResponseBudget(body);assert.equal(d.originalUtf8Bytes,121171);assert.equal(d.sections.assets.ETHUSDT.opportunityEngine,21000);assert.equal(d.sections.assets.ETHUSDT.capitalFlow,null);assert.equal(d.referenceCount,1);assert.ok(!/private|unknown|do-not-print/.test(JSON.stringify(d)));
+ try{await requestJson(async()=>Response.json(body,{status:503}),'https://fixture.invalid/');assert.fail('Expected failure');}catch(e){assert.equal(e.reason,'MARKET_RESPONSE_BUDGET_EXCEEDED');assert.deepEqual(e.responseBudget,d);}
+});
+await test('news follow-up reads later scanner batches and distinguishes exact matches from newer successful batches',async()=>{
+ const context={newsSources:[{source:'JIN10',status:'ok',fetchedAt:iso(start)},{source:'BLS_CPI',status:'unavailable',fetchedAt:iso(start-60000)}]};
+ for(const mode of['exact','newer','old','wrong-owner']){
+  let clock=start,reads=0;
+  const r=await observeNewsConsumption(async()=>{reads++;return {build:'current',backendIdentity:{matched:true,stateOwnerBuild:mode==='wrong-owner'?'old':'current'},heartbeat:{},diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(clock)}},discovery:{newsStatus:{sources:{JIN10:{status:'ok',fetchedAt:iso(mode==='old'?start-1000:mode==='newer'?start+1000:start)}}}}};},context,'current',{now:()=>clock,wait:async ms=>{clock+=ms;}});
+  assert.equal(r.passed,['exact','newer'].includes(mode));assert.equal(reads,r.passed?1:3);
+  assert.deepEqual(r.expectedSuccessfulSources,['JIN10']);assert.equal(r.observations[0].comparisons[0].verified,mode!=='old'&&mode!=='newer');
+  assert.equal(r.observations[0].comparisons[0].newerSuccessfulBatchConsumed,mode==='newer');
+  assert.equal(clock-start,r.passed?15000:75000);
+ }
+});
+await test('ongoing checks cannot let eight healthy feeds hide stale, missing or unconsumed BLS data',()=>{
+ const ids=['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','US_TREASURY_YIELD_DAILY','NYFED_CALENDAR'];
+ const good={readAt:iso(start),scanner:{newsConsumedAt:iso(start-1000)},consumedNewsSources:ids.map(source=>({source,status:'ok',fetchedAt:iso(start-60000)}))};
+ assert.equal(assessNewsReceiptCoverage(good).passed,true);
+ for(const change of[v=>v.consumedNewsSources.splice(6,4),v=>v.consumedNewsSources[6].status='unavailable',v=>v.consumedNewsSources[6].fetchedAt=iso(start-1200001),v=>v.scanner.newsConsumedAt=iso(start-120000)]){
+  const value=structuredClone(good);change(value);assert.equal(assessNewsReceiptCoverage(value).passed,false);
+ }
+ const daily=structuredClone(good);daily.consumedNewsSources.find(r=>r.source==='US_TREASURY_YIELD_DAILY').fetchedAt=iso(start-6*3600000);
+ assert.equal(assessNewsReceiptCoverage(daily).passed,true,'daily reference age is not a false seconds-level outage');
+});
+console.log(JSON.stringify({passed,failed:0,mode:'LOCAL_FIXTURES_ONLY'}));

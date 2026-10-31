@@ -1,0 +1,57 @@
+name: R4 controlled production acceptance
+on:
+  push:
+    branches:
+      - integration/r3-macro-news-20261030
+    paths:
+      - ops/r4-release-intent.json
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  controlled-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify explicit release intent matches immutable source
+        run: node ops/verify-r4-release-intent.mjs
+      - name: Full isolated and native regression
+        run: npm test
+      - name: Verify live r3 and preserved durable state before release
+        run: node ops/r4-preflight.mjs
+      - name: Deploy verified candidate
+        id: deploy
+        run: npm run deploy:checked
+      - name: Verify front-end and state owner converge to R4
+        run: node ops/wait-for-identity.mjs
+      - name: Observe ten-minute autonomous production operation
+        run: |
+          set -o pipefail
+          node ops/soak-monitor.mjs | tee r4-production-soak.log
+      - name: Restore pinned r3 version if deployment or acceptance failed
+        if: failure() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
+        env:
+          ROLLBACK_VERSION: 0ce31eb2-d0d7-4a64-82b2-fcc846bc2f73
+        run: node ops/rollback.mjs
+      - name: Preserve redacted release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R4_PRODUCTION_ACCEPTANCE_EVIDENCE
+          path: |
+            r4-production-soak.log
+            test-results/summary.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,251 @@
+{
+  "checkedAt": "2026-10-29T07:56:20.959290+00:00",
+  "sourceSha256": "4f9c0ae7a01f4438d41f9d85a9cbdac2f4fe132f0add311b095309bcbc8a7f6e",
+  "scope": "PRIVATE_DELIVERY_CONTENT_AND_ISOLATED_REGRESSION_NOT_INSTALLED_GPT",
+  "delivery": {
+    "passed": true,
+    "scope": "DELIVERED_FILES_AND_CANDIDATE_SOURCE_NOT_INSTALLED_GPT",
+    "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r3",
+    "instructionCharacters": 7979,
+    "originalKnowledgePreserved": true,
+    "instructionsSha256": "d1142d19864d75d449a07119b29df7894517630a1ee59c35086db7cb6fec7750",
+    "knowledgeSha256": "cc797964732217aed92391b1191dd5c985426aefe0c5f0490ab1c9e3bc7f4769",
+    "schemaSha256": "cf0aa97a5a8a25baea719f8fbef1bb8c449778cd9dcaf59bde118d08aa5f529f",
+    "sourceSha256": "4f9c0ae7a01f4438d41f9d85a9cbdac2f4fe132f0add311b095309bcbc8a7f6e",
+    "generatedSchemaMatches": true,
+    "operations": 4
+  },
+  "notificationRegression": {
+    "suite": "V27.6.1 push observability and real mocked HTTP retry",
+    "externalUpstreams": "LOCAL_FIXTURES_ONLY",
+    "productionDeploymentVerified": false,
+    "realDeviceReceiptVerified": false,
+    "passed": 15,
+    "failed": 0,
+    "cases": [
+      {
+        "name": "configured credentials and empty queues are not recorded as successful delivery",
+        "passed": true
+      },
+      {
+        "name": "six alert types have independent real HTTP-attempt and acceptance records",
+        "passed": true
+      },
+      {
+        "name": "HTTP200 with a rejection code is a failure and provider text cannot expose the device key",
+        "passed": true
+      },
+      {
+        "name": "invalid JSON cannot become proof of provider acceptance",
+        "passed": true
+      },
+      {
+        "name": "preparation failure stays pending, retries after revalidation, then deduplicates",
+        "passed": true
+      },
+      {
+        "name": "a failed prepared alert is superseded after price leaves the zone",
+        "passed": true
+      },
+      {
+        "name": "technical progress has a separate failed-then-accepted audit and deduplication",
+        "passed": true
+      },
+      {
+        "name": "ordinary research is silent and status explains its uncompleted model",
+        "passed": true
+      },
+      {
+        "name": "an audit write failure does not cause an accepted message to be resent",
+        "passed": true
+      },
+      {
+        "name": "simultaneous alert categories do not overwrite audit entries",
+        "passed": true
+      },
+      {
+        "name": "an interrupted attempt is not marked accepted",
+        "passed": true
+      },
+      {
+        "name": "audit records are bounded and counts survive record rotation",
+        "passed": true
+      },
+      {
+        "name": "read-only status never sends a message and private audit requires authorization",
+        "passed": true
+      },
+      {
+        "name": "new records explicitly cannot reconstruct last night before auditing existed",
+        "passed": true
+      },
+      {
+        "name": "missing device configuration is recorded without sending any HTTP request",
+        "passed": true
+      }
+    ]
+  },
+  "swingRegression": {
+    "suite": "final-swing-liquidity-review",
+    "passed": 37,
+    "failed": 0,
+    "cases": [
+      {
+        "name": "temporary wall has a separate stress target and cannot rewrite established structural target",
+        "passed": true
+      },
+      {
+        "name": "persistent cross-venue obstacle becomes first target without tightening stop",
+        "passed": true
+      },
+      {
+        "name": "resolved provisional wall releases liquidity review without resetting model event",
+        "passed": true
+      },
+      {
+        "name": "all better long entries remain strictly above model protection",
+        "passed": true
+      },
+      {
+        "name": "all better short entries remain strictly below model protection",
+        "passed": true
+      },
+      {
+        "name": "stricter trigger protection cannot be hidden by a looser invalidation field",
+        "passed": true
+      },
+      {
+        "name": "no qualified price is invented when entire model zone is beyond protection",
+        "passed": true
+      },
+      {
+        "name": "null stop, malformed direction and unknown event time fail closed",
+        "passed": true
+      },
+      {
+        "name": "unavailable liquidity with no timestamp preserves research without throwing",
+        "passed": true
+      },
+      {
+        "name": "persistence requires three independent samples and at least thirty seconds",
+        "passed": true
+      },
+      {
+        "name": "a long collection gap resets persistence instead of claiming continuous wall evidence",
+        "passed": true
+      },
+      {
+        "name": "native venue and price identity survives changing reference mapping",
+        "passed": true
+      },
+      {
+        "name": "rate/region cooldown retains original HTTP code and failure timestamp",
+        "passed": true
+      },
+      {
+        "name": "platform normalization exposes failed component diagnostics without fabricating empty books",
+        "passed": true
+      },
+      {
+        "name": "B1 event audit exposes actual boundary, retest close, trigger and original expiry",
+        "passed": true
+      },
+      {
+        "name": "repeated scans of one model event do not manufacture independent opportunities",
+        "passed": true
+      },
+      {
+        "name": "event audit stores price and changed rejection condition without inventing profit",
+        "passed": true
+      },
+      {
+        "name": "multi-day main plan uses confirmed H4 protection and a real first target",
+        "passed": true
+      },
+      {
+        "name": "10-20 dollar target cannot be advertised as a multi-day main plan",
+        "passed": true
+      },
+      {
+        "name": "nearer H1 obstacle cannot be skipped to make a distant swing target look attractive",
+        "passed": true
+      },
+      {
+        "name": "increasing leverage preference does not move structural stop or target",
+        "passed": true
+      },
+      {
+        "name": "broken H4 protected swing cannot be rescued by an attractive intraday candidate",
+        "passed": true
+      },
+      {
+        "name": "unconfirmed H4 pivot without a verifiable timestamp cannot create a swing stop",
+        "passed": true
+      },
+      {
+        "name": "fresh liquidity is required but pending swing geometry survives for final recheck",
+        "passed": true
+      },
+      {
+        "name": "funding scenarios use actual settlement interval and distinguish two seven fourteen days",
+        "passed": true
+      },
+      {
+        "name": "missing settlement interval cannot be silently assumed to be eight hours",
+        "passed": true
+      },
+      {
+        "name": "hypothetical funding receipts are not credited as guaranteed future profit",
+        "passed": true
+      },
+      {
+        "name": "annualized funding uses the stated interval rather than a fixed three daily settlements",
+        "passed": true
+      },
+      {
+        "name": "technical readiness card and notification explicitly retain pending news and actual costs",
+        "passed": true
+      },
+      {
+        "name": "persistent wall repricing updates multi-day funding RR to the same actual first target",
+        "passed": true
+      },
+      {
+        "name": "formal prepared notification shows the repriced target and qualified zone, not saved old numbers",
+        "passed": true
+      },
+      {
+        "name": "leverage stress is labeled as an initial-margin reference and never claims a liquidation price",
+        "passed": true
+      },
+      {
+        "name": "new swing stop cannot revive a failed original entry trigger on the final live quote",
+        "passed": true
+      },
+      {
+        "name": "all eight fully populated swing and intraday assessments fit the market envelope with exact trade numbers",
+        "passed": true
+      },
+      {
+        "name": "swing forward study keeps its holding horizon separate from expiring entry event",
+        "passed": true
+      },
+      {
+        "name": "a swing study is not forcibly closed four hours after entry",
+        "passed": true
+      },
+      {
+        "name": "study summary separates swing and intraday results instead of merging them into a claimed strategy win rate",
+        "passed": true
+      }
+    ],
+    "productionConnectivityVerified": false,
+    "livePerformanceVerified": false
+  },
+  "userProvidedPackageMatchesPrevious": true,
+  "onlineSchemaJsonMatchesPackage": true,
+  "oldOpeningBuildMismatch": "Package FULL_OPENING_MESSAGE requires v27.6.2; current engineering deployment is r3. Replace opening text only in the eventual unified delivery.",
+  "productionChanged": false,
+  "messagesSent": 0,
+  "finalReleaseApproved": false
+}

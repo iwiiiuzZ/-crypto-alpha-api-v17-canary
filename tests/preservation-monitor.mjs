@@ -1,0 +1,2 @@
+// Strip only additive V27.6 alarm and telemetry handlers. Every original private storage/auth line remains compared byte-for-byte.
+export function stripMonitorExtensions(text){return text.replace(/  async alarm\(\) \{\n    await runFastMonitorAlarm\(this\);\n  \}\n\n/,'').replace(/    if\(input\?\.op==="fastMonitorEnsure"\).*?\n/,'').replace(/    if\(input\?\.op==="fastMonitorStatus"\).*?\n/,'').replace(/    if\(input\?\.op==="pushAuditAppend"\).*?\n/,'').replace(/    if\(input\?\.op==="stateIdentity"\|\|input\?\.op==="scannerCycle"\).*?\n/,'');}

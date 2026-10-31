@@ -1,0 +1,9 @@
+{
+  "approved": true,
+  "purpose": "R4_PRODUCTION_ACCEPTANCE_WITH_AUTOMATIC_ROLLBACK",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r4",
+  "sourceGitBlobSha": "19d42249b59a72c6a382ccff173af521362702c8",
+  "priorVersion": "0ce31eb2-d0d7-4a64-82b2-fcc846bc2f73",
+  "rollbackOnFailure": true,
+  "notes": "Deploy only after 42 regression suites, read-only r3 preflight, and state namespace verification. Ten-minute production acceptance and automatic r3 rollback on failure. No order execution."
+}

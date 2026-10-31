@@ -1,0 +1,235 @@
+{
+  "sourceGitBlobSha": "e34d8e85864fba66cc0a331b77be7c817288242e",
+  "sourceSha256": "85afc28962ad5e64732d797588ebf319ecfe780ae50d42e8680715c85d386214",
+  "regression": {
+    "mode": "ISOLATED_FIXTURES_ONLY",
+    "productionVerified": false,
+    "suites": [
+      {
+        "suite": "test-release-identity.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-r4-preflight.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-r5-preflight.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-news-consumption-receipts.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-r5-release-intent.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-r5-guarded-rollback.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-r5-news-audit.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-official-bls-relay.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-official-bls-relay-client.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-production-parity.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-transport-references.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-deployment-convergence.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-soak-monitor.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-operations.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-cost-contract.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-course-engine.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-flow-cache-budget.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-rate-protection.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-fast-monitor.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-monitor-coordination.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-owner-local-dispatch.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-push-observability.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-consolidated-cross-module.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-consolidated-preservation.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-final-swing-liquidity.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-market-envelope.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-multivenue-linkage.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-public-orderflow.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-regime-submodels.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-resilience.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-response-parser.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v20-range.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v22-1-repair.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v22-durable-structure.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v22-integration.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v23-lifecycle.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v23-preservation.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v24-models.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v25-reliability.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v26-1-data-access.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v26-actionable.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v27-adaptive-news.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v27-news-integration.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-v27-news-transport.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-orderflow-book-fallback.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-fast-refresh-budget.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-review-receipt-recovery.mjs",
+        "passed": true
+      },
+      {
+        "suite": "test-current-release.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-full-system.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-fast-monitor.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-owner-local.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-news-runtime.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-monitor-contention.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-owner-identity.mjs",
+        "passed": true
+      },
+      {
+        "suite": "verify-workerd-response-isolation.mjs",
+        "passed": true
+      }
+    ]
+  },
+  "githubCI": [
+    41191727425,
+    41191724134
+  ],
+  "actualProductionVerifiedSeparately": true
+}

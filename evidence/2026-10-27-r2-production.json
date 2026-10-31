@@ -1,0 +1,4261 @@
+{
+  "recordedFrom": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/40434317119/job/121959233358",
+  "sourceCommit": "b47e47b96440b1336db3468b506a4a6eed5d5d56",
+  "sourceSha256": "35802e78b6529a90cd83bb4cc4c5d4cec54f38de6dbe9dc3038d54a36fcb1b0f",
+  "regressionSuitesPassed": 40,
+  "identityPropagationSeconds": 336.054,
+  "soak": {
+    "result": "SOAK_COMPLETE",
+    "expectedBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+    "assessment": {
+      "gates": {
+        "observationWindow": true,
+        "versionIdentity": true,
+        "independentHealth": false,
+        "autonomousSamples": true,
+        "minuteScanner": true,
+        "newEightModelReview": true,
+        "newsConsumer": true,
+        "fullDuration": true,
+        "noReadGap": true,
+        "allMinuteHeartbeats": true,
+        "allModelReceipts": true,
+        "deploymentUnchanged": true,
+        "namespacePreserved": true
+      },
+      "passed": false,
+      "failedGates": [
+        "independentHealth"
+      ],
+      "sampleCount": 37,
+      "observedSeconds": 612.162,
+      "scope": "TEN_MINUTE_SAMPLED_PRODUCTION_WINDOW_NOT_LONG_TERM_OR_PROFITABILITY_PROOF"
+    },
+    "before": {
+      "deploymentId": "bafd666f-a3c9-4251-8754-734766c89c6a",
+      "deployedAt": "2026-10-27T01:48:05.583Z",
+      "versions": [
+        {
+          "id": "49489199-bfb4-43de-a9e9-51dd1834ec9a",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "after": {
+      "deploymentId": "bafd666f-a3c9-4251-8754-734766c89c6a",
+      "deployedAt": "2026-10-27T01:48:05.583Z",
+      "versions": [
+        {
+          "id": "49489199-bfb4-43de-a9e9-51dd1834ec9a",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "errors": [],
+    "deviceReceiptVerified": false,
+    "preparedNotificationLiveVerified": false
+  },
+  "samples": [
+    {
+      "sample": 0,
+      "readAt": "2026-10-27T01:53:44.299Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:53:40.265Z",
+        "lastTradeAt": "2026-10-27T01:53:38.935Z",
+        "bookAt": "2026-10-27T01:53:40.108Z",
+        "dataAgeSeconds": 3.913,
+        "gapSeconds": 8.361
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:53:39.960Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:53:25.166Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:53:25.166Z",
+        "newsConsumedAt": "2026-10-27T01:53:25.166Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:25.166Z",
+          "completedAt": "2026-10-27T01:53:25.166Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "readAt": "2026-10-27T01:54:01.511Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:53:55.769Z",
+        "lastTradeAt": "2026-10-27T01:53:55.017Z",
+        "bookAt": "2026-10-27T01:53:55.608Z",
+        "dataAgeSeconds": 5.623,
+        "gapSeconds": 7.56
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:53:55.496Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:53:25.166Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:53:25.166Z",
+        "newsConsumedAt": "2026-10-27T01:53:25.166Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:25.166Z",
+          "completedAt": "2026-10-27T01:53:25.166Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "readAt": "2026-10-27T01:54:18.505Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:54:11.016Z",
+        "lastTradeAt": "2026-10-27T01:54:09.113Z",
+        "bookAt": "2026-10-27T01:54:10.858Z",
+        "dataAgeSeconds": 7.386,
+        "gapSeconds": 6.734
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:54:10.752Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:53:25.166Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:53:25.166Z",
+        "newsConsumedAt": "2026-10-27T01:53:25.166Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:25.166Z",
+          "completedAt": "2026-10-27T01:53:25.166Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 3,
+      "readAt": "2026-10-27T01:54:35.532Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:54:34.470Z",
+        "lastTradeAt": "2026-10-27T01:54:33.153Z",
+        "bookAt": "2026-10-27T01:54:34.308Z",
+        "dataAgeSeconds": 0.918,
+        "gapSeconds": 8.068
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:54:34.208Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:54:25.843Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:54:25.843Z",
+        "newsConsumedAt": "2026-10-27T01:54:25.843Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:54:25.843Z",
+          "completedAt": "2026-10-27T01:54:25.843Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 4,
+      "readAt": "2026-10-27T01:54:52.518Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:54:50.317Z",
+        "lastTradeAt": "2026-10-27T01:54:48.189Z",
+        "bookAt": "2026-10-27T01:54:50.158Z",
+        "dataAgeSeconds": 2.069,
+        "gapSeconds": 7.855
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:54:50.008Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:54:25.843Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:54:25.843Z",
+        "newsConsumedAt": "2026-10-27T01:54:25.843Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:54:25.843Z",
+          "completedAt": "2026-10-27T01:54:25.843Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 5,
+      "readAt": "2026-10-27T01:55:09.481Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:55:04.913Z",
+        "lastTradeAt": "2026-10-27T01:55:03.167Z",
+        "bookAt": "2026-10-27T01:55:04.758Z",
+        "dataAgeSeconds": 4.47,
+        "gapSeconds": 7.448
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:55:04.638Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:54:25.843Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:54:25.843Z",
+        "newsConsumedAt": "2026-10-27T01:54:25.843Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:54:25.843Z",
+          "completedAt": "2026-10-27T01:54:25.843Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 6,
+      "readAt": "2026-10-27T01:55:26.496Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:55:19.115Z",
+        "lastTradeAt": "2026-10-27T01:55:17.970Z",
+        "bookAt": "2026-10-27T01:55:18.958Z",
+        "dataAgeSeconds": 7.272,
+        "gapSeconds": 6.675
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:55:18.842Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:54:25.843Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:54:25.843Z",
+        "newsConsumedAt": "2026-10-27T01:54:25.843Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:54:25.843Z",
+          "completedAt": "2026-10-27T01:54:25.843Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 7,
+      "readAt": "2026-10-27T01:55:43.496Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:55:42.918Z",
+        "lastTradeAt": "2026-10-27T01:55:41.334Z",
+        "bookAt": "2026-10-27T01:55:42.758Z",
+        "dataAgeSeconds": 0.465,
+        "gapSeconds": 7.731
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:55:42.639Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:55:31.655Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:55:31.655Z",
+        "newsConsumedAt": "2026-10-27T01:55:31.655Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:55:31.655Z",
+          "completedAt": "2026-10-27T01:55:31.655Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 8,
+      "readAt": "2026-10-27T01:56:00.468Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:55:57.917Z",
+        "lastTradeAt": "2026-10-27T01:55:56.780Z",
+        "bookAt": "2026-10-27T01:55:57.758Z",
+        "dataAgeSeconds": 2.471,
+        "gapSeconds": 7.29
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:55:57.625Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:55:31.655Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:55:31.655Z",
+        "newsConsumedAt": "2026-10-27T01:55:31.655Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:55:31.655Z",
+          "completedAt": "2026-10-27T01:55:31.655Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 9,
+      "readAt": "2026-10-27T01:56:17.621Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:56:13.568Z",
+        "lastTradeAt": "2026-10-27T01:56:11.279Z",
+        "bookAt": "2026-10-27T01:56:13.408Z",
+        "dataAgeSeconds": 3.817,
+        "gapSeconds": 7.507
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:56:13.288Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:55:31.655Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:55:31.655Z",
+        "newsConsumedAt": "2026-10-27T01:55:31.655Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:55:31.655Z",
+          "completedAt": "2026-10-27T01:55:31.655Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 10,
+      "readAt": "2026-10-27T01:56:34.554Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:56:28.460Z",
+        "lastTradeAt": "2026-10-27T01:56:25.751Z",
+        "bookAt": "2026-10-27T01:56:28.308Z",
+        "dataAgeSeconds": 5.928,
+        "gapSeconds": 7.886
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:56:28.166Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:56:26.050Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:56:26.050Z",
+        "newsConsumedAt": "2026-10-27T01:56:26.050Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:56:26.050Z",
+          "completedAt": "2026-10-27T01:56:26.050Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 11,
+      "readAt": "2026-10-27T01:56:51.494Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:56:49.818Z",
+        "lastTradeAt": "2026-10-27T01:56:48.624Z",
+        "bookAt": "2026-10-27T01:56:49.658Z",
+        "dataAgeSeconds": 1.565,
+        "gapSeconds": 6.976
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:56:49.541Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:56:26.050Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:56:26.050Z",
+        "newsConsumedAt": "2026-10-27T01:56:26.050Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:56:26.050Z",
+          "completedAt": "2026-10-27T01:56:26.050Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 12,
+      "readAt": "2026-10-27T01:57:08.474Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:57:05.318Z",
+        "lastTradeAt": "2026-10-27T01:57:03.969Z",
+        "bookAt": "2026-10-27T01:57:05.158Z",
+        "dataAgeSeconds": 3.084,
+        "gapSeconds": 7.4
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:57:05.026Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:56:26.050Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:56:26.050Z",
+        "newsConsumedAt": "2026-10-27T01:56:26.050Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:56:26.050Z",
+          "completedAt": "2026-10-27T01:56:26.050Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 13,
+      "readAt": "2026-10-27T01:57:25.723Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:57:21.113Z",
+        "lastTradeAt": "2026-10-27T01:57:19.785Z",
+        "bookAt": "2026-10-27T01:57:20.958Z",
+        "dataAgeSeconds": 4.238,
+        "gapSeconds": 7.854
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:57:20.823Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "running",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:56:26.050Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:56:26.050Z",
+        "newsConsumedAt": "2026-10-27T01:56:26.050Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:56:26.050Z",
+          "completedAt": "2026-10-27T01:56:26.050Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 14,
+      "readAt": "2026-10-27T01:57:42.792Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:57:36.218Z",
+        "lastTradeAt": "2026-10-27T01:57:33.418Z",
+        "bookAt": "2026-10-27T01:57:36.058Z",
+        "dataAgeSeconds": 6.168,
+        "gapSeconds": 7.143
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:57:35.928Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:57:26.248Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:57:26.248Z",
+        "newsConsumedAt": "2026-10-27T01:57:26.248Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:57:26.248Z",
+          "completedAt": "2026-10-27T01:57:26.248Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 15,
+      "readAt": "2026-10-27T01:57:59.500Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:57:57.218Z",
+        "lastTradeAt": "2026-10-27T01:57:56.146Z",
+        "bookAt": "2026-10-27T01:57:57.058Z",
+        "dataAgeSeconds": 2.168,
+        "gapSeconds": 6.693
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:57:56.951Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:57:26.248Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:57:26.248Z",
+        "newsConsumedAt": "2026-10-27T01:57:26.248Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:57:26.248Z",
+          "completedAt": "2026-10-27T01:57:26.248Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 16,
+      "readAt": "2026-10-27T01:58:16.527Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:58:13.464Z",
+        "lastTradeAt": "2026-10-27T01:58:11.908Z",
+        "bookAt": "2026-10-27T01:58:13.308Z",
+        "dataAgeSeconds": 2.964,
+        "gapSeconds": 8.038
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:58:13.185Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:57:26.248Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:57:26.248Z",
+        "newsConsumedAt": "2026-10-27T01:57:26.248Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:57:26.248Z",
+          "completedAt": "2026-10-27T01:57:26.248Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 17,
+      "readAt": "2026-10-27T01:58:33.694Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:58:28.614Z",
+        "lastTradeAt": "2026-10-27T01:58:25.474Z",
+        "bookAt": "2026-10-27T01:58:28.458Z",
+        "dataAgeSeconds": 4.768,
+        "gapSeconds": 7.414
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:58:28.322Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:58:26.349Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:58:26.349Z",
+        "newsConsumedAt": "2026-10-27T01:58:26.349Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:58:26.349Z",
+          "completedAt": "2026-10-27T01:58:26.349Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 18,
+      "readAt": "2026-10-27T01:58:50.686Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:58:49.765Z",
+        "lastTradeAt": "2026-10-27T01:58:48.902Z",
+        "bookAt": "2026-10-27T01:58:49.608Z",
+        "dataAgeSeconds": 0.617,
+        "gapSeconds": 7.089
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:58:49.460Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:58:26.349Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:58:26.349Z",
+        "newsConsumedAt": "2026-10-27T01:58:26.349Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:58:26.349Z",
+          "completedAt": "2026-10-27T01:58:26.349Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 19,
+      "readAt": "2026-10-27T01:59:07.488Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:59:06.120Z",
+        "lastTradeAt": "2026-10-27T01:59:05.071Z",
+        "bookAt": "2026-10-27T01:59:05.958Z",
+        "dataAgeSeconds": 1.271,
+        "gapSeconds": 7.936
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:59:05.839Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:58:26.349Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:58:26.349Z",
+        "newsConsumedAt": "2026-10-27T01:58:26.349Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:58:26.349Z",
+          "completedAt": "2026-10-27T01:58:26.349Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 20,
+      "readAt": "2026-10-27T01:59:24.448Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:59:20.179Z",
+        "lastTradeAt": "2026-10-27T01:59:17.627Z",
+        "bookAt": "2026-10-27T01:59:20.008Z",
+        "dataAgeSeconds": 4.212,
+        "gapSeconds": 5.791
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:59:19.863Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "running",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:58:26.349Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:58:26.349Z",
+        "newsConsumedAt": "2026-10-27T01:58:26.349Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:58:26.349Z",
+          "completedAt": "2026-10-27T01:58:26.349Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 21,
+      "readAt": "2026-10-27T01:59:41.476Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:59:34.818Z",
+        "lastTradeAt": "2026-10-27T01:59:33.782Z",
+        "bookAt": "2026-10-27T01:59:34.608Z",
+        "dataAgeSeconds": 6.594,
+        "gapSeconds": 7.843
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:59:34.470Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:59:25.902Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:59:25.902Z",
+        "newsConsumedAt": "2026-10-27T01:59:25.902Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:59:25.902Z",
+          "completedAt": "2026-10-27T01:59:25.902Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 22,
+      "readAt": "2026-10-27T01:59:58.464Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T01:59:57.120Z",
+        "lastTradeAt": "2026-10-27T01:59:53.782Z",
+        "bookAt": "2026-10-27T01:59:56.958Z",
+        "dataAgeSeconds": 1.282,
+        "gapSeconds": 6.965
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T01:59:56.813Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:59:25.902Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:59:25.902Z",
+        "newsConsumedAt": "2026-10-27T01:59:25.902Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:59:25.902Z",
+          "completedAt": "2026-10-27T01:59:25.902Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 23,
+      "readAt": "2026-10-27T02:00:15.434Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:00:11.172Z",
+        "lastTradeAt": "2026-10-27T02:00:09.956Z",
+        "bookAt": "2026-10-27T02:00:11.008Z",
+        "dataAgeSeconds": 4.222,
+        "gapSeconds": 8.089
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:00:10.871Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T01:59:25.902Z",
+        "lastSuccessfulCycleAt": "2026-10-27T01:59:25.902Z",
+        "newsConsumedAt": "2026-10-27T01:59:25.902Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:59:25.902Z",
+          "completedAt": "2026-10-27T01:59:25.902Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 24,
+      "readAt": "2026-10-27T02:00:32.456Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:00:27.049Z",
+        "lastTradeAt": "2026-10-27T02:00:24.389Z",
+        "bookAt": "2026-10-27T02:00:26.908Z",
+        "dataAgeSeconds": 5.351,
+        "gapSeconds": 7.791
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:00:26.748Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:00:26.397Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:00:26.397Z",
+        "newsConsumedAt": "2026-10-27T02:00:26.397Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T01:53:12.893Z",
+          "completedAt": "2026-10-27T01:53:12.893Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:26.397Z",
+          "completedAt": "2026-10-27T02:00:26.397Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 25,
+      "readAt": "2026-10-27T02:00:49.444Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:00:48.217Z",
+        "lastTradeAt": "2026-10-27T02:00:47.285Z",
+        "bookAt": "2026-10-27T02:00:48.058Z",
+        "dataAgeSeconds": 1.175,
+        "gapSeconds": 7.142
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:00:47.932Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:00:37.252Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:00:37.252Z",
+        "newsConsumedAt": "2026-10-27T02:00:37.252Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:26.397Z",
+          "completedAt": "2026-10-27T02:00:26.397Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 26,
+      "readAt": "2026-10-27T02:01:06.467Z",
+      "health": {
+        "sampling": true,
+        "quote": false,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:00:56.566Z",
+        "lastTradeAt": "2026-10-27T02:00:55.946Z",
+        "bookAt": "2026-10-27T02:00:56.408Z",
+        "dataAgeSeconds": 9.819,
+        "gapSeconds": 8.356
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:00:56.288Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:00:37.252Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:00:37.252Z",
+        "newsConsumedAt": "2026-10-27T02:00:37.252Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:26.397Z",
+          "completedAt": "2026-10-27T02:00:26.397Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 27,
+      "readAt": "2026-10-27T02:01:23.444Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:01:22.716Z",
+        "lastTradeAt": "2026-10-27T02:01:21.506Z",
+        "bookAt": "2026-10-27T02:01:22.558Z",
+        "dataAgeSeconds": 0.684,
+        "gapSeconds": 7.733
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:01:22.440Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:00:37.252Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:00:37.252Z",
+        "newsConsumedAt": "2026-10-27T02:00:37.252Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:26.397Z",
+          "completedAt": "2026-10-27T02:00:26.397Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 28,
+      "readAt": "2026-10-27T02:01:40.453Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:01:38.718Z",
+        "lastTradeAt": "2026-10-27T02:01:36.461Z",
+        "bookAt": "2026-10-27T02:01:38.558Z",
+        "dataAgeSeconds": 1.688,
+        "gapSeconds": 7.909
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:01:38.415Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:01:25.899Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:01:25.899Z",
+        "newsConsumedAt": "2026-10-27T02:01:25.899Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:01:25.899Z",
+          "completedAt": "2026-10-27T02:01:25.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 29,
+      "readAt": "2026-10-27T02:01:57.456Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:01:52.568Z",
+        "lastTradeAt": "2026-10-27T02:01:51.290Z",
+        "bookAt": "2026-10-27T02:01:52.408Z",
+        "dataAgeSeconds": 4.819,
+        "gapSeconds": 6.753
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:01:52.216Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:01:25.899Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:01:25.899Z",
+        "newsConsumedAt": "2026-10-27T02:01:25.899Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:01:25.899Z",
+          "completedAt": "2026-10-27T02:01:25.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 30,
+      "readAt": "2026-10-27T02:02:14.452Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:02:09.018Z",
+        "lastTradeAt": "2026-10-27T02:02:07.953Z",
+        "bookAt": "2026-10-27T02:02:08.858Z",
+        "dataAgeSeconds": 5.368,
+        "gapSeconds": 8.414
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:02:08.705Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:01:25.899Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:01:25.899Z",
+        "newsConsumedAt": "2026-10-27T02:01:25.899Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:01:25.899Z",
+          "completedAt": "2026-10-27T02:01:25.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 31,
+      "readAt": "2026-10-27T02:02:31.446Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:02:24.700Z",
+        "lastTradeAt": "2026-10-27T02:02:22.639Z",
+        "bookAt": "2026-10-27T02:02:23.608Z",
+        "dataAgeSeconds": 6.698,
+        "gapSeconds": 7.747
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:02:24.700Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:02:26.454Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:02:26.454Z",
+        "newsConsumedAt": "2026-10-27T02:02:26.454Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:02:26.454Z",
+          "completedAt": "2026-10-27T02:02:26.454Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 32,
+      "readAt": "2026-10-27T02:02:48.490Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:02:39.717Z",
+        "lastTradeAt": "2026-10-27T02:02:39.266Z",
+        "bookAt": "2026-10-27T02:02:39.558Z",
+        "dataAgeSeconds": 8.667,
+        "gapSeconds": 7.78
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:02:39.419Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:02:26.454Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:02:26.454Z",
+        "newsConsumedAt": "2026-10-27T02:02:26.454Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:02:26.454Z",
+          "completedAt": "2026-10-27T02:02:26.454Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 33,
+      "readAt": "2026-10-27T02:03:05.449Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:03:03.718Z",
+        "lastTradeAt": "2026-10-27T02:03:02.615Z",
+        "bookAt": "2026-10-27T02:03:03.558Z",
+        "dataAgeSeconds": 1.669,
+        "gapSeconds": 7.369
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:03:03.425Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:02:26.454Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:02:26.454Z",
+        "newsConsumedAt": "2026-10-27T02:02:26.454Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:02:26.454Z",
+          "completedAt": "2026-10-27T02:02:26.454Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 34,
+      "readAt": "2026-10-27T02:03:22.479Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:03:19.567Z",
+        "lastTradeAt": "2026-10-27T02:03:17.092Z",
+        "bookAt": "2026-10-27T02:03:19.408Z",
+        "dataAgeSeconds": 2.859,
+        "gapSeconds": 7.65
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:03:19.266Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:02:26.454Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:02:26.454Z",
+        "newsConsumedAt": "2026-10-27T02:02:26.454Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:02:26.454Z",
+          "completedAt": "2026-10-27T02:02:26.454Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 35,
+      "readAt": "2026-10-27T02:03:39.468Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:03:34.265Z",
+        "lastTradeAt": "2026-10-27T02:03:33.189Z",
+        "bookAt": "2026-10-27T02:03:34.108Z",
+        "dataAgeSeconds": 5.124,
+        "gapSeconds": 7.864
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:03:33.956Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:03:26.309Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:03:26.309Z",
+        "newsConsumedAt": "2026-10-27T02:03:26.309Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:03:26.309Z",
+          "completedAt": "2026-10-27T02:03:26.309Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    },
+    {
+      "sample": 36,
+      "readAt": "2026-10-27T02:03:56.461Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-10-27T02:03:50.117Z",
+        "lastTradeAt": "2026-10-27T02:03:48.308Z",
+        "bookAt": "2026-10-27T02:03:49.958Z",
+        "dataAgeSeconds": 6.268,
+        "gapSeconds": 7.627
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-10-27T02:03:49.817Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "lastCompletedAt": "2026-10-27T02:03:26.309Z",
+        "lastSuccessfulCycleAt": "2026-10-27T02:03:26.309Z",
+        "newsConsumedAt": "2026-10-27T02:03:26.309Z",
+        "pendingPushes": 0
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:00:37.252Z",
+          "completedAt": "2026-10-27T02:00:37.252Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-10-27T02:03:26.309Z",
+          "completedAt": "2026-10-27T02:03:26.309Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-10-27T01:52:26.501Z",
+          "completedAt": "2026-10-27T01:52:26.501Z"
+        }
+      ]
+    }
+  ],
+  "subsequentDiagnostic": {
+    "generatedAt": "2026-10-27T02:03:57.340Z",
+    "sourceBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+    "expectedBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+    "sourceIsDeploymentCandidate": false,
+    "mode": "READ_ONLY",
+    "errors": [],
+    "cloudflare": {
+      "deploymentId": "bafd666f-a3c9-4251-8754-734766c89c6a",
+      "deployedAt": "2026-10-27T01:48:05.583Z",
+      "versions": [
+        {
+          "id": "49489199-bfb4-43de-a9e9-51dd1834ec9a",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "cloudflareAfter": {
+      "deploymentId": "bafd666f-a3c9-4251-8754-734766c89c6a",
+      "deployedAt": "2026-10-27T01:48:05.583Z",
+      "versions": [
+        {
+          "id": "49489199-bfb4-43de-a9e9-51dd1834ec9a",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "samples": [
+      {
+        "readAt": "2026-10-27T02:03:58.269Z",
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "apiVersion": "7.6.0",
+        "identity": {
+          "frontendBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateOwnerContract": "owner-local-dispatch-v1",
+          "matched": true
+        },
+        "health": {
+          "sampling": true,
+          "quote": true,
+          "flow": true,
+          "lastSuccessAt": "2026-10-27T02:03:57.612Z",
+          "lastTradeAt": "2026-10-27T02:03:56.351Z",
+          "bookAt": "2026-10-27T02:03:57.458Z",
+          "dataAgeSeconds": 0.547,
+          "gapSeconds": 7.491
+        },
+        "failures": {
+          "status": "ok",
+          "lastAttemptAt": "2026-10-27T02:03:57.308Z",
+          "flowRetryAt": null,
+          "failureCount": 0,
+          "feeds": [
+            {
+              "feed": "CONTRACT",
+              "state": null,
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            },
+            {
+              "feed": "TRADES",
+              "state": "live",
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            },
+            {
+              "feed": "BOOK",
+              "state": "live",
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            }
+          ]
+        },
+        "receipts": [
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": true,
+            "checkedAt": "2026-10-27T02:00:37.252Z",
+            "completedAt": "2026-10-27T02:00:37.252Z"
+          },
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": true,
+            "checkedAt": "2026-10-27T02:03:26.309Z",
+            "completedAt": "2026-10-27T02:03:26.309Z"
+          },
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": false,
+            "checkedAt": "2026-10-27T01:52:26.501Z",
+            "completedAt": "2026-10-27T01:52:26.501Z"
+          }
+        ],
+        "scanner": {
+          "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateReadSucceeded": true,
+          "identityMatched": true,
+          "status": "completed",
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "lastCompletedAt": "2026-10-27T02:03:26.309Z",
+          "lastSuccessfulCycleAt": "2026-10-27T02:03:26.309Z",
+          "newsConsumedAt": "2026-10-27T02:03:26.309Z",
+          "pendingPushes": 0
+        },
+        "notifications": {
+          "auditStatus": "RECORDED_PROVIDER_ATTEMPTS",
+          "channels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 6,
+              "accepted": 6,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 3,
+              "accepted": 3,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            }
+          ],
+          "deviceReceiptVerified": false
+        },
+        "consumedNewsSources": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:01:24.712Z"
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:01:24.072Z"
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:02:23.652Z"
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:02:23.678Z"
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T05:12:25.706Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T05:12:25.726Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T04:28:24.911Z"
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T01:18:24.688Z"
+          }
+        ],
+        "candidateChain": {
+          "stateReadSucceeded": true,
+          "detailsOmitted": true,
+          "activeCount": 1,
+          "returnedHistoryCount": 0,
+          "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+          "active": [
+            {
+              "model": "B1",
+              "state": "APPROACHING",
+              "reason": "WAIT_FOR_OBSERVATION_ZONE",
+              "progress": "WAIT_RETEST",
+              "swingReason": null,
+              "pushStatus": "NOT_QUEUED",
+              "technicalCardPresent": false,
+              "executionPermission": null,
+              "decisionAvailable": true,
+              "structureReady": true,
+              "technicalCandidatePresent": false,
+              "triggerConfirmed": false,
+              "count": 1
+            }
+          ],
+          "history": [],
+          "activePlanPresent": false,
+          "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+          "auditUpdatedAt": "2026-10-27T01:31:30.813Z",
+          "retainedAttempts": 13,
+          "recentAttemptStages": [
+            {
+              "kind": "DYNAMIC_PRICE",
+              "stage": "MATERIAL_PRICE_CHANGE",
+              "outcome": "PROVIDER_ACCEPTED",
+              "attemptedAt": "2026-10-25T23:30:40.433Z",
+              "completedAt": "2026-10-25T23:30:41.489Z"
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "stage": "TECHNICAL_PROGRESS",
+              "outcome": "PROVIDER_ACCEPTED",
+              "attemptedAt": "2026-10-27T01:31:29.693Z",
+              "completedAt": "2026-10-27T01:31:30.813Z"
+            }
+          ],
+          "pendingByKind": {
+            "Observation": 0,
+            "News": 0,
+            "Dynamic": 0,
+            "Plan": 0,
+            "Fast": 0,
+            "Progress": 0
+          },
+          "preparedNotificationLiveVerified": false,
+          "deviceReceiptVerified": false
+        }
+      },
+      {
+        "readAt": "2026-10-27T02:04:23.434Z",
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "apiVersion": "7.6.0",
+        "identity": {
+          "frontendBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateOwnerContract": "owner-local-dispatch-v1",
+          "matched": true
+        },
+        "health": {
+          "sampling": true,
+          "quote": true,
+          "flow": true,
+          "lastSuccessAt": "2026-10-27T02:04:20.615Z",
+          "lastTradeAt": "2026-10-27T02:04:18.869Z",
+          "bookAt": "2026-10-27T02:04:20.458Z",
+          "dataAgeSeconds": 2.752,
+          "gapSeconds": 8.295
+        },
+        "failures": {
+          "status": "ok",
+          "lastAttemptAt": "2026-10-27T02:04:20.321Z",
+          "flowRetryAt": null,
+          "failureCount": 0,
+          "feeds": [
+            {
+              "feed": "CONTRACT",
+              "state": null,
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            },
+            {
+              "feed": "TRADES",
+              "state": "live",
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            },
+            {
+              "feed": "BOOK",
+              "state": "live",
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            }
+          ]
+        },
+        "receipts": [
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": true,
+            "checkedAt": "2026-10-27T02:00:37.252Z",
+            "completedAt": "2026-10-27T02:00:37.252Z"
+          },
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": true,
+            "checkedAt": "2026-10-27T02:03:26.309Z",
+            "completedAt": "2026-10-27T02:03:26.309Z"
+          },
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": false,
+            "checkedAt": "2026-10-27T01:52:26.501Z",
+            "completedAt": "2026-10-27T01:52:26.501Z"
+          }
+        ],
+        "scanner": {
+          "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateReadSucceeded": true,
+          "identityMatched": true,
+          "status": "completed",
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "lastCompletedAt": "2026-10-27T02:03:26.309Z",
+          "lastSuccessfulCycleAt": "2026-10-27T02:03:26.309Z",
+          "newsConsumedAt": "2026-10-27T02:03:26.309Z",
+          "pendingPushes": 0
+        },
+        "notifications": {
+          "auditStatus": "RECORDED_PROVIDER_ATTEMPTS",
+          "channels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 6,
+              "accepted": 6,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 3,
+              "accepted": 3,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            }
+          ],
+          "deviceReceiptVerified": false
+        },
+        "consumedNewsSources": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:01:24.712Z"
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:01:24.072Z"
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:02:23.652Z"
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:02:23.678Z"
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T05:12:25.706Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T05:12:25.726Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T04:28:24.911Z"
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T01:18:24.688Z"
+          }
+        ],
+        "candidateChain": {
+          "stateReadSucceeded": true,
+          "detailsOmitted": true,
+          "activeCount": 1,
+          "returnedHistoryCount": 0,
+          "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+          "active": [
+            {
+              "model": "B1",
+              "state": "APPROACHING",
+              "reason": "WAIT_FOR_OBSERVATION_ZONE",
+              "progress": "WAIT_RETEST",
+              "swingReason": null,
+              "pushStatus": "NOT_QUEUED",
+              "technicalCardPresent": false,
+              "executionPermission": null,
+              "decisionAvailable": true,
+              "structureReady": true,
+              "technicalCandidatePresent": false,
+              "triggerConfirmed": false,
+              "count": 1
+            }
+          ],
+          "history": [],
+          "activePlanPresent": false,
+          "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+          "auditUpdatedAt": "2026-10-27T01:31:30.813Z",
+          "retainedAttempts": 13,
+          "recentAttemptStages": [
+            {
+              "kind": "DYNAMIC_PRICE",
+              "stage": "MATERIAL_PRICE_CHANGE",
+              "outcome": "PROVIDER_ACCEPTED",
+              "attemptedAt": "2026-10-25T23:30:40.433Z",
+              "completedAt": "2026-10-25T23:30:41.489Z"
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "stage": "TECHNICAL_PROGRESS",
+              "outcome": "PROVIDER_ACCEPTED",
+              "attemptedAt": "2026-10-27T01:31:29.693Z",
+              "completedAt": "2026-10-27T01:31:30.813Z"
+            }
+          ],
+          "pendingByKind": {
+            "Observation": 0,
+            "News": 0,
+            "Dynamic": 0,
+            "Plan": 0,
+            "Fast": 0,
+            "Progress": 0
+          },
+          "preparedNotificationLiveVerified": false,
+          "deviceReceiptVerified": false
+        }
+      },
+      {
+        "readAt": "2026-10-27T02:05:23.467Z",
+        "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+        "apiVersion": "7.6.0",
+        "identity": {
+          "frontendBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateOwnerContract": "owner-local-dispatch-v1",
+          "matched": true
+        },
+        "health": {
+          "sampling": true,
+          "quote": true,
+          "flow": true,
+          "lastSuccessAt": "2026-10-27T02:05:21.966Z",
+          "lastTradeAt": "2026-10-27T02:05:20.787Z",
+          "bookAt": "2026-10-27T02:05:21.808Z",
+          "dataAgeSeconds": 1.429,
+          "gapSeconds": 7.335
+        },
+        "failures": {
+          "status": "ok",
+          "lastAttemptAt": "2026-10-27T02:05:21.680Z",
+          "flowRetryAt": null,
+          "failureCount": 0,
+          "feeds": [
+            {
+              "feed": "CONTRACT",
+              "state": null,
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            },
+            {
+              "feed": "TRADES",
+              "state": "live",
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            },
+            {
+              "feed": "BOOK",
+              "state": "live",
+              "httpStatus": null,
+              "localCooldown": false,
+              "retryAt": null,
+              "upstreamFailedAt": null
+            }
+          ]
+        },
+        "receipts": [
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": true,
+            "checkedAt": "2026-10-27T02:00:37.252Z",
+            "completedAt": "2026-10-27T02:00:37.252Z"
+          },
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": true,
+            "checkedAt": "2026-10-27T02:04:26.700Z",
+            "completedAt": "2026-10-27T02:04:26.700Z"
+          },
+          {
+            "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate",
+            "status": "completed",
+            "inspectedModels": 8,
+            "modelDataReady": false,
+            "checkedAt": "2026-10-27T01:52:26.501Z",
+            "completedAt": "2026-10-27T01:52:26.501Z"
+          }
+        ],
+        "scanner": {
+          "build": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "stateReadSucceeded": true,
+          "identityMatched": true,
+          "status": "completed",
+          "producerBuild": "crypto-alpha-worker-v27.6.3-acceptance-candidate-r2",
+          "lastCompletedAt": "2026-10-27T02:04:26.700Z",
+          "lastSuccessfulCycleAt": "2026-10-27T02:04:26.700Z",
+          "newsConsumedAt": "2026-10-27T02:04:26.700Z",
+          "pendingPushes": 0
+        },
+        "notifications": {
+          "auditStatus": "RECORDED_PROVIDER_ATTEMPTS",
+          "channels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 6,
+              "accepted": 6,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 3,
+              "accepted": 3,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            }
+          ],
+          "deviceReceiptVerified": false
+        },
+        "consumedNewsSources": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:03:24.403Z"
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:03:23.700Z"
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:02:23.652Z"
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T02:02:23.678Z"
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T05:12:25.706Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T05:12:25.726Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-21T04:28:24.911Z"
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-10-27T01:18:24.688Z"
+          }
+        ],
+        "candidateChain": {
+          "stateReadSucceeded": true,
+          "detailsOmitted": true,
+          "activeCount": 1,
+          "returnedHistoryCount": 0,
+          "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+          "active": [
+            {
+              "model": "B1",
+              "state": "APPROACHING",
+              "reason": "WAIT_FOR_OBSERVATION_ZONE",
+              "progress": "WAIT_RETEST",
+              "swingReason": null,
+              "pushStatus": "NOT_QUEUED",
+              "technicalCardPresent": false,
+              "executionPermission": null,
+              "decisionAvailable": true,
+              "structureReady": true,
+              "technicalCandidatePresent": false,
+              "triggerConfirmed": false,
+              "count": 1
+            }
+          ],
+          "history": [],
+          "activePlanPresent": false,
+          "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+          "auditUpdatedAt": "2026-10-27T01:31:30.813Z",
+          "retainedAttempts": 13,
+          "recentAttemptStages": [
+            {
+              "kind": "DYNAMIC_PRICE",
+              "stage": "MATERIAL_PRICE_CHANGE",
+              "outcome": "PROVIDER_ACCEPTED",
+              "attemptedAt": "2026-10-25T23:30:40.433Z",
+              "completedAt": "2026-10-25T23:30:41.489Z"
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "stage": "TECHNICAL_PROGRESS",
+              "outcome": "PROVIDER_ACCEPTED",
+              "attemptedAt": "2026-10-27T01:31:29.693Z",
+              "completedAt": "2026-10-27T01:31:30.813Z"
+            }
+          ],
+          "pendingByKind": {
+            "Observation": 0,
+            "News": 0,
+            "Dynamic": 0,
+            "Plan": 0,
+            "Fast": 0,
+            "Progress": 0
+          },
+          "preparedNotificationLiveVerified": false,
+          "deviceReceiptVerified": false
+        }
+      }
+    ],
+    "assessment": {
+      "gates": {
+        "observationWindow": true,
+        "versionIdentity": true,
+        "independentHealth": true,
+        "autonomousSamples": true,
+        "minuteScanner": true,
+        "newEightModelReview": true,
+        "newsConsumer": true
+      },
+      "operationalPassed": true,
+      "failedGates": [],
+      "limits": {
+        "coverage": "SAMPLED_WINDOW_NOT_LONG_TERM_STABILITY",
+        "latestNewsBatchConsumed": "NOT_INDEPENDENTLY_VERIFIED",
+        "pushRetryRecovery": "NOT_PROVEN_BY_EMPTY_QUEUES",
+        "deviceReceipt": "NOT_VERIFIED",
+        "tradingOpportunity": "NOT_INFERRED_FROM_SYSTEM_HEALTH"
+      }
+    },
+    "foregroundContext": {
+      "marketGeneratedAt": "2026-10-27T02:05:26.301Z",
+      "decisionState": "DATA_READY",
+      "marketTransport": {
+        "originalUtf8Bytes": 120869,
+        "transferredUtf8Bytes": 88328,
+        "attemptedCompactedUtf8Bytes": null,
+        "compacted": true,
+        "modelAssessmentsTransferredInFull": true,
+        "referenceCount": 2,
+        "sections": {
+          "newsContext": null,
+          "analysisContract": null,
+          "assets": {
+            "ETHUSDT": {
+              "timeframes": null,
+              "opportunityEngine": null,
+              "crossVenueLiquidity": null,
+              "publicOrderflow": null,
+              "capitalFlow": null,
+              "liquidityRisk": null
+            },
+            "BTCUSDT": {
+              "timeframes": null,
+              "opportunityEngine": null,
+              "crossVenueLiquidity": null,
+              "publicOrderflow": null,
+              "capitalFlow": null,
+              "liquidityRisk": null
+            }
+          }
+        }
+      },
+      "structure": [
+        {
+          "symbol": "ETHUSDT",
+          "timeframe": "15m",
+          "status": "ok",
+          "source": "GATE_USDT_PERPETUAL",
+          "qualityPassed": true,
+          "count": 240,
+          "newestClosedAt": "2026-10-27T01:45:00.000Z",
+          "expectedClosedAt": "2026-10-27T01:45:00.000Z",
+          "continuityRatio": 1,
+          "nonZeroVolumeRatio": 1,
+          "collectionAgeSeconds": 61.129
+        },
+        {
+          "symbol": "ETHUSDT",
+          "timeframe": "1h",
+          "status": "ok",
+          "source": "GATE_USDT_PERPETUAL",
+          "qualityPassed": true,
+          "count": 240,
+          "newestClosedAt": "2026-10-27T01:00:00.000Z",
+          "expectedClosedAt": "2026-10-27T01:00:00.000Z",
+          "continuityRatio": 1,
+          "nonZeroVolumeRatio": 1,
+          "collectionAgeSeconds": 60.877
+        },
+        {
+          "symbol": "ETHUSDT",
+          "timeframe": "4h",
+          "status": "ok",
+          "source": "GATE_USDT_PERPETUAL",
+          "qualityPassed": true,
+          "count": 240,
+          "newestClosedAt": "2026-10-26T20:00:00.000Z",
+          "expectedClosedAt": "2026-10-26T20:00:00.000Z",
+          "continuityRatio": 1,
+          "nonZeroVolumeRatio": 1,
+          "collectionAgeSeconds": 290.859
+        },
+        {
+          "symbol": "BTCUSDT",
+          "timeframe": "15m",
+          "status": "ok",
+          "source": "GATE_USDT_PERPETUAL",
+          "qualityPassed": true,
+          "count": 240,
+          "newestClosedAt": "2026-10-27T01:45:00.000Z",
+          "expectedClosedAt": "2026-10-27T01:45:00.000Z",
+          "continuityRatio": 1,
+          "nonZeroVolumeRatio": 1,
+          "collectionAgeSeconds": 61.95
+        },
+        {
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "status": "ok",
+          "source": "GATE_USDT_PERPETUAL",
+          "qualityPassed": true,
+          "count": 240,
+          "newestClosedAt": "2026-10-27T01:00:00.000Z",
+          "expectedClosedAt": "2026-10-27T01:00:00.000Z",
+          "continuityRatio": 1,
+          "nonZeroVolumeRatio": 1,
+          "collectionAgeSeconds": 61.95
+        },
+        {
+          "symbol": "BTCUSDT",
+          "timeframe": "4h",
+          "status": "ok",
+          "source": "GATE_USDT_PERPETUAL",
+          "qualityPassed": true,
+          "count": 240,
+          "newestClosedAt": "2026-10-26T20:00:00.000Z",
+          "expectedClosedAt": "2026-10-26T20:00:00.000Z",
+          "continuityRatio": 1,
+          "nonZeroVolumeRatio": 1,
+          "collectionAgeSeconds": 291.04
+        }
+      ],
+      "models": [
+        {
+          "model": "A1",
+          "state": "NO_SETUP",
+          "failedGate": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL"
+        },
+        {
+          "model": "A2",
+          "state": "NO_SETUP",
+          "failedGate": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL"
+        },
+        {
+          "model": "B1",
+          "state": "NO_SETUP",
+          "failedGate": "NO_BREAKOUT",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "NO_BREAKOUT"
+        },
+        {
+          "model": "B2",
+          "state": "NO_SETUP",
+          "failedGate": "NO_COMPRESSION_BREAKOUT",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "NO_COMPRESSION_BREAKOUT"
+        },
+        {
+          "model": "C1",
+          "state": "NO_SETUP",
+          "failedGate": "CONFIRMED_RANGE_EDGE_REQUIRED",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "CONFIRMED_RANGE_EDGE_REQUIRED"
+        },
+        {
+          "model": "C2",
+          "state": "NO_SETUP",
+          "failedGate": "CONFIRMED_RANGE_EDGE_REQUIRED",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "CONFIRMED_RANGE_EDGE_REQUIRED"
+        },
+        {
+          "model": "D1",
+          "state": "NO_SETUP",
+          "failedGate": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP"
+        },
+        {
+          "model": "D2",
+          "state": "NO_SETUP",
+          "failedGate": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP",
+          "swingState": "WAIT_ENTRY_MODEL",
+          "swingReason": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP"
+        }
+      ],
+      "newsCheckedAt": "2026-10-27T02:05:25.635Z",
+      "newsSources": [
+        {
+          "source": "JIN10",
+          "status": "ok",
+          "httpStatus": 200,
+          "fetchedAt": "2026-10-27T02:05:25.635Z",
+          "publishedAt": "2026-10-27T01:53:24.000Z",
+          "retryAt": null,
+          "lastAttemptAt": "2026-10-27T02:05:24.042Z",
+          "cacheState": "live"
+        },
+        {
+          "source": "COINDESK",
+          "status": "ok",
+          "httpStatus": 200,
+          "fetchedAt": "2026-10-27T02:05:24.327Z",
+          "publishedAt": "2026-10-26T16:05:12.000Z",
+          "retryAt": null,
+          "lastAttemptAt": "2026-10-27T02:05:24.042Z",
+          "cacheState": "live"
+        },
+        {
+          "source": "FED_PRESS",
+          "status": "ok",
+          "httpStatus": 200,
+          "fetchedAt": "2026-10-27T02:05:24.446Z",
+          "publishedAt": "2026-10-16T15:00:00.000Z",
+          "retryAt": null,
+          "lastAttemptAt": "2026-10-27T02:05:24.327Z",
+          "cacheState": "live"
+        },
+        {
+          "source": "FED_SPEECH",
+          "status": "ok",
+          "httpStatus": 200,
+          "fetchedAt": "2026-10-27T02:05:24.612Z",
+          "publishedAt": "2026-10-15T02:55:00.000Z",
+          "retryAt": null,
+          "lastAttemptAt": "2026-10-27T02:05:24.446Z",
+          "cacheState": "live"
+        },
+        {
+          "source": "BLS_CPI",
+          "status": "unavailable",
+          "httpStatus": 403,
+          "fetchedAt": "2026-10-21T05:12:25.706Z",
+          "publishedAt": "2026-10-14T11:50:31.200Z",
+          "retryAt": "2026-10-27T02:34:22.377Z",
+          "lastAttemptAt": "2026-10-27T01:34:22.187Z",
+          "cacheState": "stale-on-error"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "unavailable",
+          "httpStatus": 403,
+          "fetchedAt": "2026-10-21T05:12:25.726Z",
+          "publishedAt": "2026-10-02T11:51:08.289Z",
+          "retryAt": "2026-10-27T02:34:22.489Z",
+          "lastAttemptAt": "2026-10-27T01:34:22.377Z",
+          "cacheState": "stale-on-error"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "unavailable",
+          "httpStatus": 403,
+          "fetchedAt": "2026-10-21T04:28:24.911Z",
+          "publishedAt": null,
+          "retryAt": "2026-10-27T02:38:12.518Z",
+          "lastAttemptAt": "2026-10-27T01:38:12.268Z",
+          "cacheState": "unavailable"
+        },
+        {
+          "source": "NYFED_CALENDAR",
+          "status": "ok",
+          "httpStatus": 200,
+          "fetchedAt": "2026-10-27T01:18:24.688Z",
+          "publishedAt": null,
+          "retryAt": null,
+          "lastAttemptAt": "2026-10-27T01:18:24.037Z",
+          "cacheState": "live"
+        }
+      ],
+      "evidenceScope": "FOREGROUND_READ_AFTER_AUTONOMOUS_WINDOW_NOT_BACKGROUND_PROOF",
+      "errors": []
+    },
+    "newsBatchComparison": [
+      {
+        "source": "JIN10",
+        "observedBatchAt": "2026-10-27T02:05:25.635Z",
+        "consumedBatchAt": "2026-10-27T02:03:24.403Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "COINDESK",
+        "observedBatchAt": "2026-10-27T02:05:24.327Z",
+        "consumedBatchAt": "2026-10-27T02:03:23.700Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "FED_PRESS",
+        "observedBatchAt": "2026-10-27T02:05:24.446Z",
+        "consumedBatchAt": "2026-10-27T02:02:23.652Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "FED_SPEECH",
+        "observedBatchAt": "2026-10-27T02:05:24.612Z",
+        "consumedBatchAt": "2026-10-27T02:02:23.678Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "BLS_CPI",
+        "observedBatchAt": "2026-10-21T05:12:25.706Z",
+        "consumedBatchAt": "2026-10-21T05:12:25.706Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "BLS_EMPLOYMENT",
+        "observedBatchAt": "2026-10-21T05:12:25.726Z",
+        "consumedBatchAt": "2026-10-21T05:12:25.726Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "BLS_CALENDAR",
+        "observedBatchAt": "2026-10-21T04:28:24.911Z",
+        "consumedBatchAt": "2026-10-21T04:28:24.911Z",
+        "verified": false,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      },
+      {
+        "source": "NYFED_CALENDAR",
+        "observedBatchAt": "2026-10-27T01:18:24.688Z",
+        "consumedBatchAt": "2026-10-27T01:18:24.688Z",
+        "verified": true,
+        "meaning": "EXACT_SOURCE_BATCH_TIMESTAMP_COMPARISON"
+      }
+    ],
+    "buildConfiguration": {
+      "worker": "crypto-alpha-api-v17-canary",
+      "triggers": [
+        {
+          "id": "f38ad0bf-3347-440b-98f0-b3a5b6e9fc77",
+          "includesMain": false,
+          "excludesMain": true,
+          "exactMainOnly": false,
+          "rootDirectoryMatches": true,
+          "checkedDeployCommand": false,
+          "standardWranglerDeploy": false,
+          "buildCommandPresent": false
+        },
+        {
+          "id": "5827726d-2dc7-4544-ab7e-08a1169dcb20",
+          "includesMain": true,
+          "excludesMain": false,
+          "exactMainOnly": true,
+          "rootDirectoryMatches": true,
+          "checkedDeployCommand": true,
+          "standardWranglerDeploy": false,
+          "buildCommandPresent": false
+        }
+      ]
+    },
+    "result": "OPERATIONAL_WINDOW_PASSED_WITH_LIMITS"
+  },
+  "overallAcceptance": "FAILED_QUOTE_HEALTH_IN_FIXED_WINDOW",
+  "stableRelease": false
+}

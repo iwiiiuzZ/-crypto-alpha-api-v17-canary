@@ -1,0 +1,48 @@
+name: R5 read-only production preflight
+on:
+  push:
+    branches:
+      - integration/r5-freeze-candidate-20261031
+    paths:
+      - .github/workflows/r5-preflight-readonly.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-r5-readonly-preflight
+  cancel-in-progress: false
+jobs:
+  readonly-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Verify source-locked R5 candidate against unchanged live R4
+        run: |
+          if node --input-type=module -e "import fs from 'node:fs';process.exit(JSON.parse(fs.readFileSync('ops/release-manifest.json','utf8')).status==='DEPLOYED_AWAITING_FINAL_ACCEPTANCE'?0:1)"; then
+            node ops/current-release.mjs
+          else
+            node ops/r5-preflight.mjs
+          fi
+      - name: Check both official book sources without changing production
+        if: always()
+        run: node ops/official-book-live-probe.mjs
+      - name: Retain read-only baseline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R5_READONLY_PREFLIGHT
+          path: |
+            r5-preflight-evidence.json
+            current-release-evidence.json
+            official-book-live-probe.json
+          if-no-files-found: warn
+          retention-days: 30

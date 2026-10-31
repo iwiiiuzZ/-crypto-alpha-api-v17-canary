@@ -1,0 +1,14 @@
+{
+  "scope": "ONE_EXPLICITLY_AUTHORIZED_NON_TRADING_COMMUNICATION_TEST",
+  "run": 40682692881,
+  "job": 122797131235,
+  "commit": "36047e6b67aae341005eab5525046318af9dba15",
+  "providerAcceptedAt": "2026-10-28T11:47:47.115Z",
+  "providerAccepted": true,
+  "persistentAuditMatched": true,
+  "deviceReceiptVerified": true,
+  "deviceReceiptEvidence": "USER_CONFIRMED_RECEIVED_IN_CONVERSATION",
+  "exactDeviceReceiptTime": null,
+  "preparedTradeChainVerified": false,
+  "automaticRetry": false
+}
