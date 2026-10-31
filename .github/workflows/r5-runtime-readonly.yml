@@ -46,45 +46,15 @@ jobs:
           const out=safeOutput(evidence,[scanner,token]);
           fs.writeFileSync('r5-runtime-readonly-evidence.json',out);console.log(out);
           NODE
-      - name: Probe official macro alternatives without changing production
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const rows=[];
-          for(const [source,url] of [['BLS_PUBLIC_API_CPI','https://api.bls.gov/publicAPI/v1/timeseries/data/CUSR0000SA0'],['FRED_INITIAL_CLAIMS','https://fred.stlouisfed.org/graph/fredgraph.csv?id=ICSA&cosd=2026-09-01']]){
-            try{
-              const r=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(10000),headers:{accept:source.startsWith('BLS')?'application/json':'text/csv'}});
-              const text=await r.text();
-              if(source.startsWith('BLS')){
-                let data;try{data=JSON.parse(text);}catch{}
-                const points=(data?.Results?.series?.[0]?.data||[]).filter(x=>/^M(0[1-9]|1[0-2])$/.test(x.period)).sort((a,b)=>Number(b.year)-Number(a.year)||Number(b.period.slice(1))-Number(a.period.slice(1)));
-                rows.push({source,httpStatus:r.status,apiStatus:data?.status||null,rows:points.length,latestObservationPeriod:points[0]?points[0].year+'-'+points[0].period:null,available:r.ok&&data?.status==='REQUEST_SUCCEEDED'&&points.length>0,publicationTimeVerified:false});
-              }else{
-                const lines=text.trim().split(/\r?\n/),points=lines.slice(1).map(x=>x.split(',')).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x[0])&&x[1]!==''&&Number.isFinite(Number(x[1])));
-                rows.push({source,httpStatus:r.status,rows:points.length,latestObservationDate:points.at(-1)?.[0]||null,available:r.ok&&/ICSA/.test(lines[0])&&points.length>0,publicationTimeVerified:false});
-              }
-            }catch{rows.push({source,available:false,error:'REQUEST_FAILED'});}
-          }
-          for(const [source,url] of [['BLS_CPI_RSS','https://www.bls.gov/feed/cpi.rss'],['BLS_PPI_RSS','https://www.bls.gov/feed/ppi.rss'],['BLS_EMPLOYMENT_RSS','https://www.bls.gov/feed/empsit.rss'],['BLS_CALENDAR_ICS','https://www.bls.gov/schedule/news_release/bls.ics']]){
-            try{
-              const r=await fetch(url,{redirect:'follow',signal:AbortSignal.timeout(10000),headers:{accept:source.endsWith('ICS')?'text/calendar':'application/rss+xml, application/xml, text/xml','user-agent':'CryptoAlpha-PublicMacroResearch/27.6 (+https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary)'}});
-              const text=await r.text(),host=new URL(r.url).hostname;
-              rows.push({source,httpStatus:r.status,responseHost:host,contentType:r.headers.get('content-type'),bytes:Buffer.byteLength(text),xmlItems:(text.match(/<item\\b/gi)||[]).length,calendarEvents:(text.match(/BEGIN:VEVENT/g)||[]).length,htmlResponse:/<!doctype html|<html\\b/i.test(text),available:r.ok&&host==='www.bls.gov'&&(source.endsWith('ICS')?/BEGIN:VCALENDAR/.test(text):/<(?:rss|feed|rdf:RDF)\\b/i.test(text)&&/<item\\b/i.test(text))});
-            }catch{rows.push({source,available:false,error:'REQUEST_FAILED'});}
-          }
-          const out={scope:'OFFICIAL_SOURCE_FEASIBILITY_ONLY_NOT_CONNECTED_TO_PRODUCTION',observedAt:new Date().toISOString(),rows};
-          fs.writeFileSync('official-macro-alternatives.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));
-          NODE
       - name: Validate original official BLS feed transport and authorized ingestion without test signals
-        continue-on-error: true
         env:
           CRYPTO_ALPHA_WORKER_ORIGIN: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
-          EXPECTED_RELAY_BUILD: crypto-alpha-worker-v27.6.3-macro-r5e
+          EXPECTED_RELAY_BUILD: crypto-alpha-worker-v27.6.3-macro-r5f
         run: |
           set -o pipefail
           node ops/official-bls-relay.mjs | tee corrected-official-bls-relay.log
       - name: Verify actual corrected BLS source consumption
-        continue-on-error: true
+        if: always()
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -93,8 +63,8 @@ jobs:
           await requestJson(fetch,config.origin+'/?view=news');
           await new Promise(r=>setTimeout(r,16000));
           const news=await requestJson(fetch,config.origin+'/?view=news'),context=summarizeReadContext(null,news);
-          const followup=await observeNewsConsumption(()=>requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),context,'crypto-alpha-worker-v27.6.3-macro-r5e');
-          const evidence={scope:'REAL_OFFICIAL_SOURCE_AND_BATCH_CONSUMPTION_NOT_TRADING_OR_DEVICE_PROOF',observedAt:new Date().toISOString(),newsSources:context.newsSources,followup,finalDeliveryAccepted:false};
+          const followup=await observeNewsConsumption(()=>requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),context,'crypto-alpha-worker-v27.6.3-macro-r5f');
+          const evidence={scope:'REAL_OFFICIAL_SOURCE_AND_BATCH_CONSUMPTION_NOT_TRADING_OR_DEVICE_PROOF',observedAt:new Date().toISOString(),newsSources:context.newsSources,calendarEvidence:{blsEventCount:news.newsContext?.sources?.BLS_CALENDAR?.eventCount??null,upcomingBySource:Object.fromEntries(['BLS_CALENDAR','NYFED_CALENDAR'].map(source=>[source,(news.newsContext?.upcomingEvents||[]).filter(e=>e.source===source).length]))},followup,finalDeliveryAccepted:false};
           const output=safeOutput(evidence,[scanner]);fs.writeFileSync('corrected-bls-consumption.json',output);console.log(output);
           const bls=['BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR'];
           const blsAllConsumed=bls.every(id=>context.newsSources.some(s=>s.source===id&&s.status==='ok')&&followup.observations.at(-1)?.comparisons.some(c=>c.source===id&&(c.verified||c.newerSuccessfulBatchConsumed)));
