@@ -36,6 +36,7 @@ jobs:
           const sample=summarizeSample(fast,status),review=fast.fastMonitor?.fullReview||{};
           const pick=(v,keys)=>Object.fromEntries(keys.filter(k=>v?.[k]!==undefined).map(k=>[k,v[k]]));
           const evidence={mode:'READ_ONLY_FAST_AND_STATUS_NO_FOREGROUND_MARKET',sample,cloudflare,buildConfiguration,
+            timing:{actualAlarmLatenessSeconds:fast.fastMonitor?.actualAlarmLatenessSeconds??null,lastTickDurationSeconds:fast.fastMonitor?.lastTickDurationSeconds??null},
             review:pick(review,['status','producerBuild','startedAt','checkedAt','completedAt','inspectedModels','modelDataReady','requestId','source','reason']),
             reviewErrorCode:code(review.lastError),
             scanner:pick(status.heartbeat,['status','producerBuild','lastAttemptAt','lastCompletedAt','lastSuccessfulCycleAt','observationReason']),
