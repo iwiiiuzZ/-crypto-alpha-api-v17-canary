@@ -8,7 +8,7 @@ const current={deploymentId:'r5-deployment',singleVersion:true,versions:[{id:r5I
  bindingMatches:true,binding:{namespaceFingerprint:R4_BASELINE.namespaceFingerprint}};
 const snapshot=assessR5DeploymentSnapshot(before,current);
 assert.equal(snapshot.passed,true,JSON.stringify(snapshot.failedGates));
-const post={build:R5_BUILD,deploymentId:current.deploymentId,versionId:r5Id};
+const post={build:R5_BUILD,deploymentId:current.deploymentId,versionId:r5Id,priorVersionId:r4Id,priorDeploymentId:R4_BASELINE.deploymentId};
 const ok=assessR5GuardedRollback({before,post,current,liveBuild:R5_BUILD});
 assert.equal(ok.canRollback,true);
 assert.equal(ok.alreadyRestored,false);
