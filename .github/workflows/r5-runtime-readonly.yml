@@ -27,7 +27,7 @@ jobs:
           import {requestJson,summarizeSample,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from './ops/diagnostics.mjs';
           const config=JSON.parse(fs.readFileSync('ops/config.json','utf8'));
           const scanner=process.env.SCANNER_TOKEN,token=process.env.CLOUDFLARE_API_TOKEN;
-          const samples=[],began=Date.now();
+          const samples=[];let began=Date.now();
           for(const offset of [0,25000,85000]){
             await new Promise(r=>setTimeout(r,Math.max(0,began+offset-Date.now())));
             const [fast,status]=await Promise.all([
@@ -35,6 +35,7 @@ jobs:
               requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner})
             ]);
             samples.push(summarizeSample(fast,status));
+            if(samples.length===1)began=Date.parse(samples[0].readAt);
           }
           const [cloudflare,buildConfiguration]=await Promise.all([cloudflareSnapshot(fetch,config,token),cloudflareBuildSnapshot(fetch,config,token)]);
           const build='crypto-alpha-worker-v27.6.3-macro-r5f';
@@ -56,3 +57,5 @@ jobs:
           path: post-main-runtime-evidence.json
           if-no-files-found: warn
           retention-days: 30
+
+# Recovery check retains run 41195077359: one stale-trade refusal and a measurement-origin defect.
