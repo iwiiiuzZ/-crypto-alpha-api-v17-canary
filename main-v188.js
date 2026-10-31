@@ -908,6 +908,8 @@ function refreshServedSnapshot(snapshot) {
 
 // V27: timestamped news transport, separate from execution quotes and signal authority.
 const NEWS_STATE_KEY = "news:context:v27";
+const BLS_RELAY_STATE_KEY = "news:bls-official-relay:v1";
+const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
 const NEWS_TRANSPORT_REVISION = "27.0.2";
 const NEWS_PARSER_REVISION = "27.6.3-macro-news-r5";
 const NEWS_SOURCES = [
@@ -951,6 +953,47 @@ function parseTreasuryDailyCsv(text,now=Date.now()) {
     previousAsOf:previous?.asOf||null,change2yBp:previous?Math.round((latest.yield2yPct-previous.yield2yPct)*100):null,
     change10yBp:previous?Math.round((latest.yield10yPct-previous.yield10yPct)*100):null,
     cadence:"OFFICIAL_DAILY",intraday:false,publicationTimeKnown:false,tradeDirection:null};
+}
+function officialBlsRelayUrl(id){
+  return NEWS_SOURCES.find(v=>v.id===id&&v.url.startsWith("https://www.bls.gov/"))?.url||null;
+}
+function officialBlsRelayRecord(record,id,now=Date.now()){
+  const at=Date.parse(record?.fetchedAt),received=Date.parse(record?.receivedAt);
+  return record?.id===id&&record?.sourceUrl===officialBlsRelayUrl(id)&&
+    typeof record?.body==="string"&&record.body.length>50&&record.body.length<=180000&&
+    Number.isFinite(at)&&Number.isFinite(received)&&
+    at<=now+60000&&received<=now+60000&&received>=at-60000&&
+    now-at>=-60000&&now-at<=BLS_RELAY_MAX_AGE_MS&&now-received<=BLS_RELAY_MAX_AGE_MS;
+}
+async function acceptOfficialBlsRelay(request,env){
+  const text=await request.text();
+  if(text.length>780000)return {error:"OFFICIAL_RELAY_PAYLOAD_TOO_LARGE"};
+  let payload;try{payload=JSON.parse(text);}catch{return {error:"OFFICIAL_RELAY_INVALID_JSON"};}
+  const records=payload?.sources;
+  if(!Array.isArray(records)||records.length===0||records.length>4)return {error:"OFFICIAL_RELAY_INVALID_SOURCE_COUNT"};
+  const seen=new Set(),now=Date.now(),receivedAt=new Date(now).toISOString(),accepted=[];
+  const previous=(await scannerStateGet(env,BLS_RELAY_STATE_KEY))?.records||{};
+  const next={...previous};
+  for(const r of records){
+    if(!r||typeof r.id!=="string"||!officialBlsRelayUrl(r.id)||seen.has(r.id))return {error:"OFFICIAL_RELAY_SOURCE_NOT_ALLOWED"};
+    seen.add(r.id);
+    if(r.sourceUrl!==officialBlsRelayUrl(r.id)||typeof r.body!=="string"||r.body.length>180000||r.body.length<50||
+      !/^[a-f0-9]{64}$/.test(r.sha256||""))return {error:"OFFICIAL_RELAY_INVALID_BODY"};
+    const at=Date.parse(r.fetchedAt);
+    if(!Number.isFinite(at)||now-at>15*60*1000||at>now+60000)return {error:"OFFICIAL_RELAY_STALE_OR_FUTURE"};
+    const digest=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(r.body))))
+      .map(b=>b.toString(16).padStart(2,"0")).join("");
+    if(digest!==r.sha256)return {error:"OFFICIAL_RELAY_HASH_MISMATCH"};
+    try{
+      if(r.id==="BLS_CALENDAR"){if(!/BEGIN:VCALENDAR[\s\S]*END:VCALENDAR/.test(r.body))throw new Error("CALENDAR_NOT_VALID");}
+      else{const items=parseNewsXml(r.body,r.id,r.fetchedAt);if(items.length===0)throw new Error("NO_VALID_ITEMS");}
+    }catch{return {error:"OFFICIAL_RELAY_OFFICIAL_FORMAT_INVALID"};}
+    next[r.id]={id:r.id,sourceUrl:r.sourceUrl,body:r.body,sha256:r.sha256,fetchedAt:r.fetchedAt,receivedAt};
+    accepted.push(r.id);
+  }
+  await scannerStatePut(env,BLS_RELAY_STATE_KEY,{records:next},1800);
+  return {status:"OFFICIAL_BLS_RELAY_ACCEPTED",accepted,storedAt:receivedAt,tradeSignalGenerated:false,
+    deviceNotificationSent:false,scope:"DELAYED_OFFICIAL_SOURCE_FALLBACK_NOT_SECONDS_LEVEL_NEWS"};
 }
 function newsText(value,max=240) {
   return String(value??"").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,"$1").replace(/<[^>]*>/g," ")
@@ -1158,12 +1201,14 @@ function newsContextSummary(records,now=Date.now()) {
     return [k,{status:v.status,fetchedAt:v.fetchedAt||null,transportAgeSeconds:age,latestPublishedAt:v.items?.[0]?.publishedAt||null,
       httpStatus:v.httpStatus||null,reason:v.reason||null,failureStage:v.failureStage||null,elapsedMs:v.elapsedMs??null,
       failureCount:v.failureCount||0,nextAttemptAt:v.nextAttemptAt?new Date(v.nextAttemptAt).toISOString():null,
-      handshakeAt:v.handshakeAt||null,transportRevision:v.transportRevision||null,
+      handshakeAt:v.handshakeAt||null,sourceProvenance:v.sourceProvenance||"DIRECT_FETCH",
+      relayReceivedAt:v.relayReceivedAt||null,directHttpStatus:v.directHttpStatus||null,
+      transportRevision:v.transportRevision||null,
       parserRevision:v.parseDiagnostics?.parserRevision||v.parserRevision||null,
       itemCount:v.items?.length||0,eventCount:v.events?.length||0,parseDiagnostics:v.parseDiagnostics||null,
       lastAttemptAt:v.lastAttemptAt||null,cacheState:v.cacheState||"live"}];}));
   const all=Object.values(records).flatMap(v=>(v.items||[]).map(i=>({...i,ageSeconds:Math.max(0,(now-Date.parse(i.publishedAt))/1000),
-    transportFresh:v.status==="ok"&&now-Date.parse(v.fetchedAt)<=300000})));
+    transportFresh:v.status==="ok"&&v.sourceProvenance!=="AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED"&&now-Date.parse(v.fetchedAt)<=300000})));
   const byUrl=new Map();for(const i of all.sort((a,b)=>Date.parse(b.publishedAt)-Date.parse(a.publishedAt)))if(!byUrl.has(i.url))byUrl.set(i.url,i);
   const unique=[...byUrl.values()];
   const headlines=unique.filter(i=>i.relevant&&i.ageSeconds<=86400).slice(0,16);
@@ -1189,10 +1234,29 @@ async function coordinatedNewsContext(owner) {
   if(owner.newsWork)return owner.newsWork;
   const task=(async()=>{
     const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{},now=Date.now(),fetchedAt=new Date(now).toISOString();
+    const relay=(await owner.ctx.storage.get(BLS_RELAY_STATE_KEY))?.records||{};
     owner.newsDeadlineAt=now+30000;
     const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES,{...TREASURY_DAILY_SOURCE,url:treasuryDailyUrl(now)},{id:"NYFED_CALENDAR",seconds:3600,nyfed:true}];let index=0;
     const refresh=async s=>{
-      const old=records[s.id];if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.nextAttemptAt>now)return;
+      const old=records[s.id];
+      const alternative=relay[s.id];
+      if(officialBlsRelayUrl(s.id)&&officialBlsRelayRecord(alternative,s.id,now)){
+        if(!old?.fetchedAt||Date.parse(alternative.fetchedAt)>Date.parse(old.fetchedAt)){
+          const items=s.calendar?[]:parseNewsXml(alternative.body,s.id,alternative.fetchedAt);
+          const events=s.calendar?parseNewsCalendar(alternative.body,alternative.fetchedAt):[];
+          const previousSeen=new Map((old?.items||[]).map(i=>[i.id,i.firstSeenAt]));
+          records[s.id]={...old,status:"ok",fetchedAt:alternative.fetchedAt,items:items.map(i=>({...i,firstSeenAt:previousSeen.get(i.id)||i.firstSeenAt})),
+            events,sourceProvenance:"AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",relayReceivedAt:alternative.receivedAt,
+            directHttpStatus:old?.directHttpStatus||old?.httpStatus||null,cacheState:"relay",reason:null,
+            lastAttemptAt:alternative.receivedAt,transportRevision:NEWS_TRANSPORT_REVISION,parserRevision:NEWS_PARSER_REVISION,
+            nextAttemptAt:0,parseDiagnostics:{contentStatus:"OFFICIAL_BLS_RELAY_VALIDATED",parserRevision:NEWS_PARSER_REVISION}};
+        }
+        return;
+      }
+      if(old?.sourceProvenance==="AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED"){
+        records[s.id]={...old,status:"unavailable",reason:"OFFICIAL_RELAY_STALE",cacheState:"stale-on-error"};
+      }
+      if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.nextAttemptAt>now)return;
       if(old&&old.transportRevision===NEWS_TRANSPORT_REVISION&&old.parserRevision===NEWS_PARSER_REVISION&&now-Date.parse(old.lastAttemptAt||old.fetchedAt)<s.seconds*1000)return;
       const started=Date.now(),attemptAt=new Date(started).toISOString();let httpStatus=null;
       try{let data;
@@ -7121,6 +7185,11 @@ export default {
     if (path.startsWith("/scanner/")) {
       if (!scannerAuthorized(request, env)) return json({ error: "UNAUTHORIZED", code:"SCANNER_TOKEN_REQUIRED", message: "Configure SCANNER_TOKEN and send it as a Bearer token",build:BUILD,workerReached:true }, 401,{"cache-control":"no-store"});
       if (request.method === "GET" && path === "/scanner/status") return json(await scannerStatus(env),200,{"cache-control":"no-store"});
+      if (request.method === "POST" && path === "/scanner/official-macro-relay") {
+        try{const receipt=await acceptOfficialBlsRelay(request,env);
+          return json(receipt,receipt.error?400:200,{"cache-control":"no-store"});}
+        catch{return json({error:"OFFICIAL_RELAY_STORAGE_OR_VALIDATION_FAILED"},503,{"cache-control":"no-store"});}
+      }
       if (request.method === "POST" && path === "/scanner/plan") {
         try { return json(await saveTradingPlan(env, await readJsonRequest(request))); }
         catch (error) { return json({ error: "INVALID_PLAN", message: error?.message || String(error) }, 400); }
