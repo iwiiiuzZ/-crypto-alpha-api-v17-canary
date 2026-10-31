@@ -75,7 +75,7 @@ export function summarizeReadContext(market,news){
     count:number(t?.candleCount),newestClosedAt:stamp(q.newestClosedCandleAt),expectedClosedAt:stamp(q.expectedLastClosedStart),continuityRatio:number(q.continuityRatio),nonZeroVolumeRatio:number(q.nonZeroVolumeRatio),collectionAgeSeconds:number(t?.coordinator?.collectionAgeSeconds)};
   })),
   models:(market?.assets?.ETHUSDT?.opportunityEngine?.models||[]).map(m=>({model:word(m.submodel),state:word(m.state),failedGate:enumCode(m.failedGate),swingState:word(m.swingAssessment?.state),swingReason:enumCode(m.swingAssessment?.reason)})),
-  newsCheckedAt:stamp(news?.newsContext?.checkedAt),newsSources:Object.entries(sources).filter(([k])=>NEWS_IDS.includes(k)).map(([source,v])=>({source,status:word(v.status),httpStatus:number(v.httpStatus),fetchedAt:stamp(v.fetchedAt),publishedAt:stamp(v.latestPublishedAt),retryAt:stamp(v.nextAttemptAt),lastAttemptAt:stamp(v.lastAttemptAt),cacheState:word(v.cacheState)})),
+  newsCheckedAt:stamp(news?.newsContext?.checkedAt),newsSources:Object.entries(sources).filter(([k])=>NEWS_IDS.includes(k)).map(([source,v])=>({source,status:word(v.status),httpStatus:number(v.httpStatus),fetchedAt:stamp(v.fetchedAt),publishedAt:stamp(v.latestPublishedAt),retryAt:stamp(v.nextAttemptAt),lastAttemptAt:stamp(v.lastAttemptAt),cacheState:word(v.cacheState),sourceProvenance:word(v.sourceProvenance),directHttpStatus:number(v.directHttpStatus),relayReceivedAt:stamp(v.relayReceivedAt)})),
   evidenceScope:'FOREGROUND_READ_AFTER_AUTONOMOUS_WINDOW_NOT_BACKGROUND_PROOF'};
 }
 

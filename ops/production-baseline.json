@@ -1,0 +1,17 @@
+{
+  "status": "PRODUCTION_WINDOW_VERIFIED_AWAITING_FINAL_ACCEPTANCE",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5e",
+  "sourceGitBlobSha": "092aa22c41dc3da0c7d47856f472a28343e0c764",
+  "sourceSha256": "293417959d8b6c136720f29a39b04a35c3f8b3a00fca16c87f94ad7167f0e63b",
+  "deploymentId": "575d0441-9d7b-4db6-86e4-fe62e341613e",
+  "versionId": "29fe23fb-12b2-45aa-9cb3-8167d586dada",
+  "namespaceFingerprint": "aedfbcd14cd1",
+  "autonomousWindowPassed": true,
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41172864307",
+  "startAt": "2026-10-31T05:41:53.125Z",
+  "endAt": "2026-10-31T05:52:05.356Z",
+  "blsFourSourceConsumptionVerified": false,
+  "gptInstalledVerified": false,
+  "preparedNotificationLiveVerified": false,
+  "finalDeliveryAccepted": false
+}

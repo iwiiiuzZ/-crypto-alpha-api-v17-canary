@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5e";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5f";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -1291,7 +1291,10 @@ async function coordinatedNewsContext(owner) {
   if(owner.newsWork)return owner.newsWork;
   const task=(async()=>{
     const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{},now=Date.now(),fetchedAt=new Date(now).toISOString();
-    const relay=(await owner.ctx.storage.get(BLS_RELAY_STATE_KEY))?.records||{};
+    // The authenticated generic state API stores {value, expiresAt}. Read the
+    // same durable contract; an accepted envelope is not a consumed news batch.
+    const relayEnvelope=await owner.ctx.storage.get(BLS_RELAY_STATE_KEY);
+    const relay=Number.isFinite(relayEnvelope?.expiresAt)&&relayEnvelope.expiresAt>Date.now()?relayEnvelope.value?.records||{}:{};
     owner.newsDeadlineAt=now+30000;
     const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES,{...TREASURY_DAILY_SOURCE,url:treasuryDailyUrl(now)},{id:"NYFED_CALENDAR",seconds:3600,nyfed:true}];let index=0;
     const refresh=async s=>{
@@ -2398,7 +2401,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
     if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { verification = null; priceError = String(error?.message || error); } }
     if(full?.assets?.ETHUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
       await attachArrivalLiquidity(env,full);
-      try{verification=await cycle.getPrices("ETHUSDT");}catch{verification=null;}
+      try{verification=await cycle.getPrices("ETHUSDT");priceError=null;}catch(error){verification=null;priceError=String(error?.message||error);}
     }
     if (full?.assets?.ETHUSDT && verification?.current) {
       full.assets.ETHUSDT.ticker = verification.current;

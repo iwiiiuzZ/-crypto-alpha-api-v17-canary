@@ -1,0 +1,57 @@
+{
+  "scope": "DEPLOYMENT_PROPAGATION_NOT_ACCEPTANCE",
+  "readAt": "2026-10-31T05:38:07.052Z",
+  "identity": {
+    "frontendBuild": "crypto-alpha-worker-v27.6.3-macro-r5e",
+    "stateOwnerBuild": "crypto-alpha-worker-v27.6.3-macro-r4",
+    "stateOwnerContract": "owner-local-dispatch-v1",
+    "matched": false
+  },
+  "health": {
+    "sampling": true,
+    "quote": true,
+    "flow": true,
+    "lastSuccessAt": "2026-10-31T05:38:03.416Z",
+    "lastTradeAt": "2026-10-31T05:38:01.788Z",
+    "bookAt": "2026-10-31T05:38:03.256Z",
+    "dataAgeSeconds": 3.229,
+    "gapSeconds": 3.469
+  },
+  "cloudflare": {
+    "deploymentId": "575d0441-9d7b-4db6-86e4-fe62e341613e",
+    "deployedAt": "2026-10-31T05:36:10.184Z",
+    "versions": [
+      {
+        "id": "29fe23fb-12b2-45aa-9cb3-8167d586dada",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "priorOwnerQuoteFailure": {
+    "status": "data_blocked",
+    "source": "SHARED_SCANNER",
+    "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r4",
+    "requestId": null,
+    "startedAt": "2026-10-31T05:36:23.369Z",
+    "checkedAt": "2026-10-31T05:36:24.677Z",
+    "completedAt": "2026-10-31T05:36:24.677Z",
+    "inspectedModels": 8,
+    "modelDataReady": false,
+    "closedBarAt": "2026-10-31T05:15:00.000Z",
+    "preparedCount": 0,
+    "swingPreparedCount": 0,
+    "nextCondition": "DISCOVERY_INTERVAL_NOT_DUE",
+    "lastError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+    "openNowAllowed": false,
+    "lastCompletedAt": "2026-10-31T05:36:24.677Z"
+  },
+  "finalDeliveryAccepted": false
+}

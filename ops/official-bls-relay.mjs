@@ -1,6 +1,7 @@
 // Fallback transport only. GitHub Actions fetches original BLS URLs, never a proxy's content.
 // No trading order, news interpretation or notification is initiated by this script.
 import {createHash} from 'node:crypto';
+import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const BLS_FEEDS=Object.freeze([
  {id:'BLS_CPI',url:'https://www.bls.gov/feed/cpi.rss'},
@@ -11,19 +12,22 @@ const BLS_FEEDS=Object.freeze([
 export function validOfficialBlSResponse({url,text,contentType,source}){
  const u=new URL(url),correct=u.protocol==='https:'&&u.hostname==='www.bls.gov'&&u.username===''&&u.password==='';
  const isCalendar=source==='BLS_CALENDAR';
- return correct&&typeof text==='string'&&text.length>50&&text.length<=180000&&
-    (isCalendar?/BEGIN:VCALENDAR/.test(text)&&/END:VCALENDAR/.test(text):/<(?:rss|feed|rdf:RDF)\b/i.test(text)&&/<item\b/i.test(text));
+ const expected=BLS_FEEDS.find(s=>s.id===source)?.url;
+ const type=String(contentType||'').split(';')[0].toLowerCase().trim();
+ const validType=!type||(isCalendar?['text/calendar','application/ics']:['application/atom+xml','application/rss+xml','application/xml','text/xml']).includes(type);
+ return correct&&url===expected&&validType&&typeof text==='string'&&text.length>50&&text.length<=180000&&
+    (isCalendar?/BEGIN:VCALENDAR/.test(text)&&/END:VCALENDAR/.test(text):/<(?:rss|feed|rdf:RDF)\b/i.test(text)&&/<(?:item|entry)\b/i.test(text));
 }
 export async function collectBlsSources(fetcher=fetch,now=Date.now){
  const sources=[],failures=[];
  for(const {id,url} of BLS_FEEDS){
   try{
-   const r=await fetcher(url,{method:'GET',headers:{accept:id==='BLS_CALENDAR'?'text/calendar':'application/rss+xml, application/xml, text/xml'},redirect:'follow',signal:AbortSignal.timeout(16000)});
+   const r=await fetcher(url,{method:'GET',headers:{'User-Agent':'CryptoAlphaSourceHealth/1.0 (+read-only validation)',accept:id==='BLS_CALENDAR'?'text/calendar':'application/rss+xml, application/xml, text/xml;q=0.9'},redirect:'manual',signal:AbortSignal.timeout(16000)});
    if(!r.ok)throw new Error('UPSTREAM_HTTP_'+r.status);
    const body=await r.text();
-   if(!validOfficialBlSResponse({url:r.url,text:body,source:id,contentType:r.headers?.get?.('content-type')}))throw new Error('OFFICIAL_SOURCE_VALIDATION_FAILED');
+   if(!validOfficialBlSResponse({url:r.url,text:body,source:id,contentType:r.headers?.get?.('content-type')}))throw new Error('OFFICIAL_FEED_FORMAT_OR_FINAL_HOST_INVALID');
    sources.push({id,sourceUrl:url,body,fetchedAt:new Date(now()).toISOString(),sha256:createHash('sha256').update(body,'utf8').digest('hex')});
-  }catch(e){failures.push({id,reason:/^UPSTREAM_HTTP_\d{3}$/.test(e.message)?e.message:'SOURCE_UNAVAILABLE_OR_INVALID'});}
+  }catch(e){failures.push({id,reason:/^(UPSTREAM_HTTP_\d{3}|OFFICIAL_FEED_FORMAT_OR_FINAL_HOST_INVALID)$/.test(e.message)?e.message:'SOURCE_UNAVAILABLE_OR_INVALID'});}
  }
  return {sources,failures};
 }
@@ -45,7 +49,10 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  // Do not post to an old R4: a cron running before R5 deployment is harmless.
  const health=await fetch(target+'/health',{signal:AbortSignal.timeout(12000)});
  const current=await health.json();
- if(current.build!=='crypto-alpha-worker-v27.6.3-macro-r5e'){
+ const manifestUrl=new URL('./release-manifest.json',import.meta.url);
+ const expected=process.env.EXPECTED_RELAY_BUILD||(fs.existsSync(manifestUrl)?JSON.parse(fs.readFileSync(manifestUrl,'utf8')).build:null);
+ if(!/^crypto-alpha-worker-v27\.6\.3-macro-r5[a-z]?$/.test(expected||''))throw Error('EXACT_RELAY_BUILD_REQUIRED');
+ if(current.build!==expected){
   console.log(JSON.stringify({status:'SKIPPED_R5_NOT_DEPLOYED',currentBuild:current.build||'unknown'}));process.exit(0);
  }
  const data=await collectBlsSources();

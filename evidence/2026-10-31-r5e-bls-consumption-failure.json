@@ -1,0 +1,14 @@
+{
+  "scope": "ACTUAL_ACCEPTED_BLS_RELAY_NOT_CONSUMED_ON_R5E",
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41173867539",
+  "actualCollectorAcceptedSources": [
+    "BLS_CPI",
+    "BLS_PPI",
+    "BLS_EMPLOYMENT",
+    "BLS_CALENDAR"
+  ],
+  "strictFourSourceConsumptionPassed": false,
+  "workflowOverallGreenIsNotConsumptionProof": true,
+  "fix": "Read durable state envelope.value.records and enforce envelope.expiresAt; new actual workerd accepted/store/read/expired fixture",
+  "finalDeliveryAccepted": false
+}

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
-import {R4_BASELINE,R5_BUILD} from './r5-preflight.mjs';
+import {PRIOR_BASELINE,R5_BUILD} from './r5-preflight.mjs';
 
 export function verifyR5ReleaseIntent({intent,manifest,actualGitBlob,parentCommit,changedFiles}){
  const gates={
@@ -11,7 +11,7 @@ export function verifyR5ReleaseIntent({intent,manifest,actualGitBlob,parentCommi
   onlyIntentChanged:Array.isArray(changedFiles)&&changedFiles.length===1&&changedFiles[0]==='ops/r5-release-intent.json',
   immutableSource:actualGitBlob===manifest?.sourceGitBlobSha&&intent?.sourceGitBlobSha===actualGitBlob,
   candidateBuild:intent?.build===R5_BUILD&&manifest?.build===R5_BUILD&&manifest?.status==='CANDIDATE_NOT_DEPLOYED',
-  lockedPriorProduction:intent?.priorDeploymentId===R4_BASELINE.deploymentId&&manifest?.priorLiveBuild===R4_BASELINE.build,
+  lockedPriorProduction:intent?.priorDeploymentId===PRIOR_BASELINE.deploymentId&&manifest?.priorLiveBuild===PRIOR_BASELINE.build,
   rollbackRequired:intent?.rollbackOnFailure===true,
   noTradeMutation:intent?.noOrderExecution===true
  };
