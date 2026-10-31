@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "9d6137af1fcf10f9d9bc7cee91ee1815c42b4d78",
-  "sourceGitBlobSha": "72c7fdcff7848aae97e5add6e3db22b7713ff55c",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5",
-  "priorDeploymentId": "f18315e1-0726-4d3d-9f5e-4011f7770b5d",
+  "reviewedCommit": "b24f2cd57955a549dec65546ee7268c9ca58a8e8",
+  "sourceGitBlobSha": "7223295a8761598bff67445e8566f48a2fe8efd1",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5b",
+  "priorDeploymentId": "8da5ba83-2c4d-49ab-a0b6-022e06438c7e",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "User explicitly requests completion; source-locked controlled release only after complete CI, live R4 preflight, 10-minute production soak and source consumption audit. Guarded rollback on failure; no automated trading."
+  "notes": "R5b 4-second shared OKX executed-flow cache; 51 regression suites and read-only R4 preflight passed. Controlled production 10-minute acceptance, source-locked, guarded rollback. No order execution."
 }
