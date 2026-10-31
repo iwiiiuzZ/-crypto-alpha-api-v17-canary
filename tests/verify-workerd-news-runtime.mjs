@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 const binary=process.argv[2];if(!binary)throw Error('Pass a workerd executable path');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'crypto-news-runtime-'));
 const code=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
-fs.writeFileSync(path.join(dir,'app.mjs'),code+'\nexport {coordinatedNewsContext,loadNewsContext};\n');
+fs.writeFileSync(path.join(dir,'app.mjs'),code+'\nexport {coordinatedNewsContext,loadNewsContext,acceptOfficialBlsRelay};\n');
 fs.writeFileSync(path.join(dir,'entry.mjs'),`
-import {ScannerState,loadNewsContext} from './app.mjs';
+import {ScannerState,loadNewsContext,acceptOfficialBlsRelay} from './app.mjs';
 export default {async fetch(){
  let legacy;try{await fetch('https://www.coindesk.com/arc/outboundfeeds/rss/',{redirect:'error'});legacy={rejected:false};}catch(e){legacy={rejected:true,name:e.name,message:e.message};}
  const records=new Map(),pending=[],ctx={storage:{get:async k=>records.get(k),put:async(k,v)=>records.set(k,v)},waitUntil:p=>pending.push(p)};
@@ -20,10 +20,28 @@ export default {async fetch(){
  await Promise.all(pending);
  const result=await loadNewsContext(env),scanner=await loadNewsContext(env,{cacheFirst:true});
  await Promise.all(pending);
- return Response.json({legacy,result,scanner,cold,coldReadMs});
+ await fetch('https://fixture.invalid/enable-bls-outage');
+ records.delete('news:context:v27');
+ const fetchedAt=new Date().toISOString(),sources=[];
+ for(const [id,sourceUrl] of [['BLS_CPI','https://www.bls.gov/feed/cpi.rss'],['BLS_PPI','https://www.bls.gov/feed/ppi.rss'],['BLS_EMPLOYMENT','https://www.bls.gov/feed/empsit.rss'],['BLS_CALENDAR','https://www.bls.gov/schedule/news_release/bls.ics']]){
+  const body=id==='BLS_CALENDAR'?'BEGIN:VCALENDAR\\nVERSION:2.0\\nPRODID:-//CryptoAlpha//Local-Fixture\\nEND:VCALENDAR':'<feed><entry><title>Consumer Price Index CPI relay fixture</title><link href="https://www.bls.gov/news.release/cpi.htm"/><updated>'+fetchedAt+'</updated></entry></feed>';
+  const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body)))).map(x=>x.toString(16).padStart(2,'0')).join('');
+  sources.push({id,sourceUrl,body,fetchedAt,sha256});
+ }
+ const relay=await acceptOfficialBlsRelay(new Request('https://worker.test/scanner/official-macro-relay',{method:'POST',body:JSON.stringify({sources})}),env);
+ const envelope=records.get('news:bls-official-relay:v1');
+ const relayStoredWithValueWrapper=!!envelope?.value?.records?.BLS_CPI&&envelope.expiresAt>Date.now();
+ const relaySummary=await loadNewsContext(env),relayScannerSummary=await loadNewsContext(env,{cacheFirst:true});
+ await Promise.all(pending);
+ records.set('news:bls-official-relay:v1',{...envelope,expiresAt:Date.now()-1});records.delete('news:context:v27');
+ const expiredRelaySummary=await loadNewsContext(env);
+ return Response.json({legacy,result,scanner,cold,coldReadMs,relay,relayStoredWithValueWrapper,relaySummary,relayScannerSummary,expiredRelaySummary});
 }};`);
 fs.writeFileSync(path.join(dir,'upstream.mjs'),`
+let blsOutage=false;
 export default {async fetch(req){const u=new URL(req.url),now=new Date().toISOString();
+ if(u.hostname==='fixture.invalid'){blsOutage=true;return new Response('ok');}
+ if(blsOutage&&u.hostname==='www.bls.gov')return new Response('fixture denied',{status:403});
  if(u.hostname==='mcp.jin10.com'){
   if(req.headers.get('authorization')!=='Bearer synthetic-runtime-only')return new Response('denied',{status:401});
   const b=await req.json();let result={};
@@ -58,14 +76,22 @@ let errors='';child.stderr.on('data',b=>errors+=b);
 try{
  const port=await new Promise((resolve,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('Runtime start timeout '+errors)),8000);child.on('exit',c=>{clearTimeout(timer);reject(Error('Runtime exit '+c+' '+errors));});child.stdio[3].on('data',b=>{text+=b;for(const l of text.split('\n')){try{const j=JSON.parse(l);if(j.port){clearTimeout(timer);resolve(j.port);}}catch{}}});});
  const response=await fetch('http://127.0.0.1:'+port,{signal:AbortSignal.timeout(12000)});assert.equal(response.status,200);
- const {legacy,result,scanner,cold,coldReadMs}=await response.json();assert.equal(legacy.rejected,true);assert.match(legacy.message,/Invalid redirect value/);
+ const {legacy,result,scanner,cold,coldReadMs,relay,relayStoredWithValueWrapper,relaySummary,relayScannerSummary,expiredRelaySummary}=await response.json();assert.equal(legacy.rejected,true);assert.match(legacy.message,/Invalid redirect value/);
  assert.deepEqual(Object.keys(result.sources).sort(),['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','US_TREASURY_YIELD_DAILY','NYFED_CALENDAR'].sort());
  for(const [source,r] of Object.entries(result.sources)){assert.equal(r.status,'ok',source+': '+JSON.stringify(r));assert.equal(r.httpStatus,200);assert.ok(r.fetchedAt);}
  assert.ok(result.sources.JIN10.handshakeAt);assert.ok(result.sources.JIN10.latestPublishedAt);
  assert.equal(cold.reason,'NEWS_CACHE_WARMING');assert.ok(coldReadMs<1000);
  assert.equal(scanner.cachePolicy,'CACHE_FIRST_BACKGROUND_REFRESH');
  for(const id of Object.keys(result.sources)){assert.equal(scanner.sources[id].fetchedAt,result.sources[id].fetchedAt);assert.equal(scanner.sources[id].httpStatus,200);}
+ assert.equal(relay.status,'OFFICIAL_BLS_RELAY_ACCEPTED',JSON.stringify(relay));assert.equal(relayStoredWithValueWrapper,true);
+ for(const id of ['BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR']){
+  assert.equal(relaySummary.sources[id].status,'ok',id+' accepted envelope must actually reach consumer');
+  assert.equal(relaySummary.sources[id].sourceProvenance,'AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED');
+  assert.equal(relaySummary.sources[id].fetchedAt,relayScannerSummary.sources[id].fetchedAt);
+  assert.equal(expiredRelaySummary.sources[id].status,'unavailable',id+' expired storage envelope must fail closed');
+ }
+ assert.equal(relaySummary.recentRiskHeadlines.filter(i=>i.source.startsWith('BLS_')).length,0);
  console.log(JSON.stringify({runtime:processVersion,compatibilityDate:'2026-08-22',legacyErrorReproduced:legacy,updatedSourceCount:12,updatedSourcesPassed:12,
   coldCacheReadMs:coldReadMs,scannerAndDirectSourceTimestampsMatch:true,actualScannerStateInternalRouteVerified:true,
-  result:'PASS',actualProductionNetworkVerified:false,actualJin10AuthorizationVerified:false,upstreams:'LOCAL_FIXTURES_ONLY'},null,2));
+  actualRelayEnvelopeConsumed:true,expiredRelayEnvelopeRejected:true,result:'PASS',actualProductionNetworkVerified:false,actualJin10AuthorizationVerified:false,upstreams:'LOCAL_FIXTURES_ONLY'},null,2));
 }finally{child.kill('SIGTERM');fs.rmSync(dir,{recursive:true,force:true});}

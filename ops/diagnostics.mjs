@@ -119,6 +119,19 @@ export function compareNewsBatches(sample,context){
   });
 }
 
+// Ongoing availability check, not a new trading permission or news direction.
+// The four delayed official feeds must remain inside the Worker's own 20m TTL.
+export function assessNewsReceiptCoverage(sample){
+ const now=at(sample?.readAt),consumed=at(sample?.scanner?.newsConsumedAt);
+ const rows=NEWS_IDS.map(source=>{
+  const r=sample?.consumedNewsSources?.find(x=>x.source===source),fetched=at(r?.fetchedAt);
+  const current=r?.status==='ok'&&Number.isFinite(fetched)&&fetched<=now+5000&&consumed>=fetched-5000
+   &&(!source.startsWith('BLS_')||now-fetched<=1200000);
+  return {source,status:r?.status||'missing',fetchedAt:stamp(r?.fetchedAt),current};
+ });
+ return {passed:rows.every(r=>r.current),rows,scope:'REQUIRED_SOURCE_CONSUMPTION_AVAILABILITY_NOT_PUBLICATION_RECENCY_OR_PROFIT'};
+}
+
 // Context is captured before these status reads. This prevents comparing a
 // newly fetched batch only with the scanner state from BEFORE that fetch.
 export async function observeNewsConsumption(readStatus,context,expectedBuild,{wait=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now}={}){

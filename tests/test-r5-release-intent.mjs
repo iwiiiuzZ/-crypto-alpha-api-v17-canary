@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {verifyR5ReleaseIntent} from '../ops/r5-release-intent-check.mjs';
-import {R4_BASELINE,R5_BUILD} from '../ops/r5-preflight.mjs';
+import {PRIOR_BASELINE,R5_BUILD} from '../ops/r5-preflight.mjs';
 const parentCommit='abcdef0123456789abcdef0123456789abcdef01';
-const manifest={build:R5_BUILD,status:'CANDIDATE_NOT_DEPLOYED',priorLiveBuild:R4_BASELINE.build,sourceGitBlobSha:'source-lock'};
-const intent={approved:true,purpose:'R5_STABLE_PRODUCTION_RELEASE',reviewedCommit:parentCommit,sourceGitBlobSha:'source-lock',build:R5_BUILD,priorDeploymentId:R4_BASELINE.deploymentId,rollbackOnFailure:true,noOrderExecution:true};
+const manifest={build:R5_BUILD,status:'CANDIDATE_NOT_DEPLOYED',priorLiveBuild:PRIOR_BASELINE.build,sourceGitBlobSha:'source-lock'};
+const intent={approved:true,purpose:'R5_STABLE_PRODUCTION_RELEASE',reviewedCommit:parentCommit,sourceGitBlobSha:'source-lock',build:R5_BUILD,priorDeploymentId:PRIOR_BASELINE.deploymentId,rollbackOnFailure:true,noOrderExecution:true};
 const input={intent,manifest,actualGitBlob:'source-lock',parentCommit,changedFiles:['ops/r5-release-intent.json']};
 assert.equal(verifyR5ReleaseIntent(input).passed,true);
 const cases=[

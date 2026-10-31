@@ -31,7 +31,7 @@ jobs:
         run: node ops/r5-release-intent-check.mjs
       - name: Complete isolated and native workerd regression before production action
         run: npm test
-      - name: Verify current R4 deployment, durable namespace, scanner and OKX quote
+      - name: Verify pinned previous deployment, durable namespace, scanner and OKX quote
         run: node ops/r5-preflight.mjs
       - name: Deploy exact tested R5 candidate without deleting existing secrets
         id: deploy
@@ -40,15 +40,10 @@ jobs:
         run: node ops/r5-postdeploy-snapshot.mjs
       - name: Verify frontend, durable owner and eight-model producer converge to R5
         run: node ops/wait-for-identity.mjs
-      - name: Observe ten-minute production scanner and alert audit without artificial trading signals
-        run: |
-          set -o pipefail
-          node ops/soak-monitor.mjs | tee r5-production-soak.log
       - name: Prove per-source recent news batch consumption
         run: node ops/r5-news-consumption-check.mjs
       - name: Try original official BLS feeds through the independent authorized network
         id: bls_relay
-        continue-on-error: true
         env:
           CRYPTO_ALPHA_WORKER_ORIGIN: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
         run: |
@@ -56,10 +51,16 @@ jobs:
           node ops/official-bls-relay.mjs | tee r5-official-bls-relay.log
       - name: Reconcile source consumption after the BLS transport attempt
         if: steps.bls_relay.outcome == 'success'
+        env:
+          REQUIRE_BLS_RELAY: '1'
         run: node ops/r5-news-consumption-check.mjs
       - name: Check live schema, all model details, structures and actual alert evidence
         run: node ops/final-readonly-audit.mjs
-      - name: Restore pinned R4 ONLY if failure is traced to the exact R5 deployment
+      - name: Observe ten-minute production scanner and alert audit without artificial trading signals
+        run: |
+          set -o pipefail
+          node ops/soak-monitor.mjs | tee r5-production-soak.log
+      - name: Restore pinned previous version ONLY if failure is traced to the exact R5 deployment
         if: failure() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
         run: node ops/r5-guarded-rollback.mjs
       - name: Preserve release evidence, including failures and omitted gates

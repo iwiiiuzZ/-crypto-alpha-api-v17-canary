@@ -3,6 +3,10 @@ import {collectBlsSources,deliverBlsSources,validOfficialBlSResponse} from '../o
 const now=Date.parse('2026-10-31T02:00:00Z');
 const xml='<rss><channel><item><title>CPI changed</title><link>https://www.bls.gov/news.release/cpi.htm</link><pubDate>Sat, 31 Oct 2026 01:59:00 GMT</pubDate></item></channel></rss>';
 const calendar='BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Consumer Price Index\nDTSTART:20261101T120000Z\nEND:VEVENT\nEND:VCALENDAR';
+const atom='<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>CPI</title><link href="https://www.bls.gov/news.release/cpi.htm"/><updated>2026-10-31T01:59:00Z</updated></entry></feed>';
+assert.equal(validOfficialBlSResponse({url:'https://www.bls.gov/feed/cpi.rss',source:'BLS_CPI',text:atom,contentType:'application/atom+xml; charset=utf-8'}),true);
+assert.equal(validOfficialBlSResponse({url:'https://www.bls.gov/feed/cpi.rss',source:'BLS_CPI',text:atom,contentType:'text/html'}),false);
+assert.equal(validOfficialBlSResponse({url:'https://www.bls.gov/feed/ppi.rss',source:'BLS_CPI',text:atom,contentType:'application/atom+xml'}),false);
 const validFetch=async url=>({ok:true,url,status:200,text:async()=>url.endsWith('.ics')?calendar:xml,headers:{get:()=>null}});
 const collected=await collectBlsSources(validFetch,()=>now);
 assert.equal(collected.sources.length,4);

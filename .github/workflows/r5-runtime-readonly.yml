@@ -20,67 +20,39 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
-      - name: Read fast state, scanner state and deployment settings without market refresh or notifications
+      - name: Verify exact deployment and new main-branch relay consumption using passive reads only
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          import {requestJson,summarizeSample,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from './ops/diagnostics.mjs';
+          import {requestJson,summarizeSample,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from './ops/diagnostics.mjs';
           const config=JSON.parse(fs.readFileSync('ops/config.json','utf8'));
           const scanner=process.env.SCANNER_TOKEN,token=process.env.CLOUDFLARE_API_TOKEN;
-          const code=v=>typeof v==='string'&&/^[A-Z0-9_]{1,120}$/.test(v)?v:null;
-          const [fast,status,cloudflare,buildConfiguration]=await Promise.all([
-            requestJson(fetch,config.origin+'/?view=fast'),
-            requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),
-            cloudflareSnapshot(fetch,config,token),cloudflareBuildSnapshot(fetch,config,token)
-          ]);
-          const sample=summarizeSample(fast,status),review=fast.fastMonitor?.fullReview||{};
-          const pick=(v,keys)=>Object.fromEntries(keys.filter(k=>v?.[k]!==undefined).map(k=>[k,v[k]]));
-          const evidence={mode:'READ_ONLY_FAST_AND_STATUS_NO_FOREGROUND_MARKET',sample,cloudflare,buildConfiguration,
-            timing:{actualAlarmLatenessSeconds:fast.fastMonitor?.actualAlarmLatenessSeconds??null,lastTickDurationSeconds:fast.fastMonitor?.lastTickDurationSeconds??null},
-            review:pick(review,['status','producerBuild','startedAt','checkedAt','completedAt','inspectedModels','modelDataReady','requestId','source','reason','lastSuccessfulReview','lastSharedCycle','lastCompletedReview']),
-            reviewErrorCode:code(review.lastError),
-            scanner:pick(status.heartbeat,['status','producerBuild','lastAttemptAt','lastCompletedAt','lastSuccessfulCycleAt','observationReason','lastDegradedCycle']),
-            scannerErrorCode:code(status.heartbeat?.lastError),
-            discoveryReason:code(status.discovery?.reason),
-            finalDeliveryAccepted:false};
-          const out=safeOutput(evidence,[scanner,token]);
-          fs.writeFileSync('r5-runtime-readonly-evidence.json',out);console.log(out);
-          NODE
-      - name: Validate original official BLS feed transport and authorized ingestion without test signals
-        env:
-          CRYPTO_ALPHA_WORKER_ORIGIN: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
-          EXPECTED_RELAY_BUILD: crypto-alpha-worker-v27.6.3-macro-r5f
-        run: |
-          set -o pipefail
-          node ops/official-bls-relay.mjs | tee corrected-official-bls-relay.log
-      - name: Verify actual corrected BLS source consumption
-        if: always()
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          import {requestJson,summarizeReadContext,observeNewsConsumption,safeOutput} from './ops/diagnostics.mjs';
-          const config=JSON.parse(fs.readFileSync('ops/config.json','utf8')),scanner=process.env.SCANNER_TOKEN;
-          await requestJson(fetch,config.origin+'/?view=news');
-          await new Promise(r=>setTimeout(r,16000));
-          const news=await requestJson(fetch,config.origin+'/?view=news'),context=summarizeReadContext(null,news);
-          const followup=await observeNewsConsumption(()=>requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),context,'crypto-alpha-worker-v27.6.3-macro-r5f');
-          const evidence={scope:'REAL_OFFICIAL_SOURCE_AND_BATCH_CONSUMPTION_NOT_TRADING_OR_DEVICE_PROOF',observedAt:new Date().toISOString(),newsSources:context.newsSources,calendarEvidence:{blsEventCount:news.newsContext?.sources?.BLS_CALENDAR?.eventCount??null,upcomingBySource:Object.fromEntries(['BLS_CALENDAR','NYFED_CALENDAR'].map(source=>[source,(news.newsContext?.upcomingEvents||[]).filter(e=>e.source===source).length]))},followup,finalDeliveryAccepted:false};
-          const output=safeOutput(evidence,[scanner]);fs.writeFileSync('corrected-bls-consumption.json',output);console.log(output);
+          const samples=[],began=Date.now();
+          for(const offset of [0,25000,85000]){
+            await new Promise(r=>setTimeout(r,Math.max(0,began+offset-Date.now())));
+            const [fast,status]=await Promise.all([
+              requestJson(fetch,config.origin+'/?view=fast'),
+              requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner})
+            ]);
+            samples.push(summarizeSample(fast,status));
+          }
+          const [cloudflare,buildConfiguration]=await Promise.all([cloudflareSnapshot(fetch,config,token),cloudflareBuildSnapshot(fetch,config,token)]);
+          const build='crypto-alpha-worker-v27.6.3-macro-r5f';
+          const assessment=assessSamples(samples,{...config,build});
+          const requiredNewsCoverage=assessNewsReceiptCoverage(samples.at(-1));
           const bls=['BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR'];
-          const blsAllConsumed=bls.every(id=>context.newsSources.some(s=>s.source===id&&s.status==='ok')&&followup.observations.at(-1)?.comparisons.some(c=>c.source===id&&(c.verified||c.newerSuccessfulBatchConsumed)));
-          console.log(JSON.stringify({result:'CORRECTED_BLS_FOUR_SOURCES_ACTUALLY_CONSUMED',passed:blsAllConsumed}));
-          if(!followup.passed||!blsAllConsumed)process.exitCode=1;
+          const newMainRelayConsumed=bls.every(id=>samples.at(-1).consumedNewsSources.some(s=>s.source===id&&s.status==='ok'&&Date.parse(s.fetchedAt)>=Date.parse('2026-10-31T10:55:00Z')));
+          const exactDeployment=cloudflare.deploymentId==='f11b44aa-0e29-4260-8104-c12fef44a68a'&&cloudflare.singleVersion&&cloudflare.versions?.[0]?.id==='f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe'&&cloudflare.binding?.namespaceFingerprint==='aedfbcd14cd1';
+          const passed=assessment.operationalPassed&&requiredNewsCoverage.passed&&newMainRelayConsumed&&exactDeployment;
+          const evidence={mode:'PASSIVE_POST_MAIN_BUILD_AND_NEW_RELAY_BATCH_NO_FOREGROUND_REFRESH',mainCommit:'ea07d2ee454c950495bdc1ad574697797b66ae11',observedAt:new Date().toISOString(),samples,cloudflare,buildConfiguration,assessment,requiredNewsCoverage,newMainRelayConsumed,exactDeployment,passed,finalDeliveryAccepted:false};
+          const out=safeOutput(evidence,[scanner,token]);fs.writeFileSync('post-main-runtime-evidence.json',out);console.log(out);
+          if(!passed)process.exitCode=1;
           NODE
-      - name: Preserve current real evidence
+      - name: Preserve passive evidence including failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: R5_INDEPENDENT_RUNTIME_READONLY
-          path: |
-            r5-runtime-readonly-evidence.json
-            official-macro-alternatives.json
-            corrected-official-bls-relay.log
-            corrected-bls-consumption.json
+          name: R5_POST_MAIN_PASSIVE_RUNTIME
+          path: post-main-runtime-evidence.json
+          if-no-files-found: warn
           retention-days: 30
-
-# Refresh real official feeds while verified source reconciliation awaits default-branch CI.

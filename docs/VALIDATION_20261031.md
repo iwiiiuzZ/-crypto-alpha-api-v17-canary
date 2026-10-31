@@ -1,3 +1,5 @@
+> 历史记录：本文中旧构建、组数及当时部署仅适用于对应日期。当前唯一源码以ops/release-manifest.json为准，实际运行证据以ops/production-baseline.json及最新验收记录为准；旧通过不替代当前版本。
+
 # 本轮可核查验证记录
 
 ## 源码与原件

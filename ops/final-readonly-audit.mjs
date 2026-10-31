@@ -27,7 +27,7 @@ const identity=sample.identity;
 evidence.gates={allReadsSucceeded:errors.length===0,
  sourceSchemaMatches:schemaMatches,
  frontendOwnerIdentity:sample.build===R5_BUILD&&identity.frontendBuild===R5_BUILD&&identity.stateOwnerBuild===R5_BUILD&&identity.matched&&identity.stateOwnerContract===config.stateContract,
- sixRequiredStructureSeries:evidence.context.structure.length===6&&evidence.context.structure.every(r=>r.qualityPassed&&r.newestClosedAt===r.expectedClosedAt),
+ sixRequiredStructureSeries:evidence.context.structure.length===6&&evidence.context.structure.every(r=>r.status==='ok'&&r.qualityPassed&&!!r.newestClosedAt&&!!r.expectedClosedAt&&r.newestClosedAt===r.expectedClosedAt&&Number.isFinite(r.collectionAgeSeconds)&&r.collectionAgeSeconds>=-2&&r.collectionAgeSeconds<=({'15m':180,'1h':420,'4h':660})[r.timeframe]),
  allEightModelsReturned:JSON.stringify(models)===JSON.stringify(['A1','A2','B1','B2','C1','C2','D1','D2']),
  currentOKXQuote:sample.health.quote&&sample.health.sampling&&sample.health.flow,
  authenticatedStateRead:sample.scanner.stateReadSucceeded&&sample.scanner.identityMatched};

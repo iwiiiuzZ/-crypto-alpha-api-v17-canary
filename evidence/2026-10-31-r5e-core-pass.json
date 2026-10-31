@@ -1,0 +1,79 @@
+{
+  "scope": "ACTUAL_R5E_CORE_RUNTIME_PASS_BLS_CONSUMPTION_NOT_FIXED",
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41172864307",
+  "sourceGitBlobSha": "092aa22c41dc3da0c7d47856f472a28343e0c764",
+  "sourceSha256": "293417959d8b6c136720f29a39b04a35c3f8b3a00fca16c87f94ad7167f0e63b",
+  "startAt": "2026-10-31T05:41:53.125Z",
+  "endAt": "2026-10-31T05:52:05.356Z",
+  "soak": {
+    "result": "SOAK_COMPLETE",
+    "expectedBuild": "crypto-alpha-worker-v27.6.3-macro-r5e",
+    "assessment": {
+      "gates": {
+        "observationWindow": true,
+        "versionIdentity": true,
+        "independentHealth": true,
+        "autonomousSamples": true,
+        "minuteScanner": true,
+        "newEightModelReview": true,
+        "newsConsumer": true,
+        "heartbeatProgresses": true,
+        "modelReviewProgresses": true,
+        "fullDuration": true,
+        "noReadGap": true,
+        "allMinuteHeartbeats": true,
+        "allModelReceipts": true,
+        "deploymentUnchanged": true,
+        "namespacePreserved": true
+      },
+      "passed": true,
+      "failedGates": [],
+      "sampleCount": 37,
+      "observedSeconds": 612.231,
+      "scope": "TEN_MINUTE_SAMPLED_PRODUCTION_WINDOW_NOT_LONG_TERM_OR_PROFITABILITY_PROOF"
+    },
+    "before": {
+      "deploymentId": "575d0441-9d7b-4db6-86e4-fe62e341613e",
+      "deployedAt": "2026-10-31T05:36:10.184Z",
+      "versions": [
+        {
+          "id": "29fe23fb-12b2-45aa-9cb3-8167d586dada",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "after": {
+      "deploymentId": "575d0441-9d7b-4db6-86e4-fe62e341613e",
+      "deployedAt": "2026-10-31T05:36:10.184Z",
+      "versions": [
+        {
+          "id": "29fe23fb-12b2-45aa-9cb3-8167d586dada",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "errors": [],
+    "deviceReceiptVerified": false,
+    "preparedNotificationLiveVerified": false
+  },
+  "blsRelayTransportAcceptedButConsumptionVerified": false,
+  "preparedNotificationLiveVerified": false,
+  "gptInstalledVerified": false,
+  "finalDeliveryAccepted": false
+}

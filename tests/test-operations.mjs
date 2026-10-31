@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
+import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
 import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
 import fs from 'node:fs';
 const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
@@ -82,5 +82,15 @@ await test('news follow-up reads later scanner batches and distinguishes exact m
   assert.equal(r.observations[0].comparisons[0].newerSuccessfulBatchConsumed,mode==='newer');
   assert.equal(clock-start,r.passed?15000:75000);
  }
+});
+await test('ongoing checks cannot let eight healthy feeds hide stale, missing or unconsumed BLS data',()=>{
+ const ids=['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','US_TREASURY_YIELD_DAILY','NYFED_CALENDAR'];
+ const good={readAt:iso(start),scanner:{newsConsumedAt:iso(start-1000)},consumedNewsSources:ids.map(source=>({source,status:'ok',fetchedAt:iso(start-60000)}))};
+ assert.equal(assessNewsReceiptCoverage(good).passed,true);
+ for(const change of[v=>v.consumedNewsSources.splice(6,4),v=>v.consumedNewsSources[6].status='unavailable',v=>v.consumedNewsSources[6].fetchedAt=iso(start-1200001),v=>v.scanner.newsConsumedAt=iso(start-120000)]){
+  const value=structuredClone(good);change(value);assert.equal(assessNewsReceiptCoverage(value).passed,false);
+ }
+ const daily=structuredClone(good);daily.consumedNewsSources.find(r=>r.source==='US_TREASURY_YIELD_DAILY').fetchedAt=iso(start-6*3600000);
+ assert.equal(assessNewsReceiptCoverage(daily).passed,true,'daily reference age is not a false seconds-level outage');
 });
 console.log(JSON.stringify({passed,failed:0,mode:'LOCAL_FIXTURES_ONLY'}));

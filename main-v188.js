@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5c";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5f";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -90,6 +90,7 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   owner.publicReady ||= (async()=>{
     const saved = await owner.ctx.storage.get(PUBLIC_MARKET_STATE_KEY);
     owner.publicRecords = {entries:saved?.entries&&typeof saved.entries==="object"?saved.entries:{},cooldowns:saved?.cooldowns&&typeof saved.cooldowns==="object"?saved.cooldowns:{},cooldownDiagnostics:saved?.cooldownDiagnostics||{}};
+    owner.publicPersistedJson=saved?JSON.stringify(publicMarketPersistable(owner.publicRecords)):null;
     owner.publicInflight = new Map();
   })();
   try {await owner.publicReady;} catch(error) {owner.publicReady=null;throw error;}
@@ -97,7 +98,13 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   const work=(async()=>{
     const state=owner.publicRecords, old=state.entries[path], family=cooldownKey(OKX_BASE+path);
     const age=old?(Date.now()-old.storedAt)/1000:Infinity;
-    if(old && !force && age>=0 && age<=policy.freshSeconds)return {...old,state:"shared-fresh-cache"};
+    if(old && !force && age>=0 && age<=policy.freshSeconds){
+      const flowPaths=orderflowPaths(),tradeFlow=path===flowPaths[1],bookFlow=path===flowPaths[2]||path==="/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400";
+      const exchangeAt=tradeFlow?Math.max(...(old.rows||[]).map(r=>Number(r.ts))):bookFlow?Number(old.rows?.[0]?.ts):null;
+      // Collection age alone is insufficient: a cached response can already
+      // contain older exchange trades. Reserve room for the next delayed tick.
+      if((!tradeFlow&&!bookFlow)||usableTimestamp(exchangeAt,3))return {...old,state:"shared-fresh-cache"};
+    }
     try {
       if(state.cooldowns[family]>Date.now())throw cooldownError(state.cooldowns[family]);
       const rows=await fetchJson(OKX_BASE+path,"OKX coordinated public market",1,true,body=>{
@@ -162,6 +169,17 @@ async function coordinatedOrderflowEndpoint(owner,path,policy,force=false) {
 function publicMarketPersistable(records) {
   const ephemeral=new Set(orderflowPaths().slice(1));
   return {...records,entries:Object.fromEntries(Object.entries(records.entries).filter(([path])=>!ephemeral.has(path)))};
+}
+async function persistPublicMarketIfChanged(owner) {
+  const previous=owner.publicPersistWork||Promise.resolve();
+  const work=previous.catch(()=>{}).then(async()=>{
+    const payload=publicMarketPersistable(owner.publicRecords),serialized=JSON.stringify(payload);
+    if(serialized===owner.publicPersistedJson)return false;
+    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,payload);
+    owner.publicPersistedJson=serialized;return true;
+  });
+  owner.publicPersistWork=work;
+  try{return await work;}finally{if(owner.publicPersistWork===work)owner.publicPersistWork=null;}
 }
 function restorePublicRows(item) {
   if(!Array.isArray(item?.rows))throw new Error(item?.error||"Public market module unavailable");
@@ -584,15 +602,16 @@ const SCANNER_REVIEW_REQUEST_KEY='scanner:review-request:v2761';
 const SCANNER_CYCLE_RESULT_KEY='scanner:last-cycle-result:v2761';
 const PROGRESS_ALERT_KEY='scanner:opportunity-progress:v1';
 const FAST_INTERVAL_MS=10000;
-const FAST_QUOTE_REFRESH_RESERVE_MS=3000;
+// 2.5s bounded feed timeout + 4s observed platform scheduling allowance.
+// This is a refresh budget, never permission to use a quote older than 10s.
+const FAST_QUOTE_REFRESH_RESERVE_MS=6500;
 const FAST_MIN_INTERVAL_MS=2500;
 function nextFastAlarmAt(state,now=Date.now()){
  const anchor=Number.isFinite(state.lastTickAt)?state.lastTickAt:now;
  const quote=state.executionQuote,times=[quote?.exchangeTimestamp,quote?.lastTradeTimestamp,quote?.bookTimestamp].map(x=>Date.parse(x)).filter(Number.isFinite);
  // Full samples and independent ticker quotes keep the same ten-second
  // freshness limit. Flow cooldowns do not postpone a quote refresh.
- // Start before expiry by the 2500ms feed timeout plus 500ms scheduling margin.
- // Scheduling at age nine left just one second for a still-valid slow response.
+ // Account for both feed latency and the measured late alarm invocation.
  const expiry=times.length?Math.min(...times)+10000-FAST_QUOTE_REFRESH_RESERVE_MS:Infinity;
  const quoteDue=['ok','partial'].includes(state.status)?expiry:Infinity;
  let deadline=Math.min(anchor+FAST_INTERVAL_MS,quoteDue);
@@ -621,7 +640,7 @@ function compactFastMonitor(state,review=null,now=Date.now()){
  return {...identity,status:state.status,lastAttemptAt:state.lastAttemptAt||null,lastSuccessAt:state.lastSuccessAt||null,dataAgeSeconds:Number.isFinite(age)?round(age,3):null,
   samplingHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,targetCadenceSeconds:10,actualLastGapSeconds:state.actualLastGapSeconds??null,nextAlarmAt:state.nextAlarmAt||null,
   executionQuote:state.executionQuote||null,quoteHealthy:genuineExecutionQuote(state.executionQuote,10),quoteLastSuccessAt:state.quoteLastSuccessAt||null,flowHealthy:state.status==='ok'&&Number.isFinite(age)&&age>=0&&age<=25,
-  flowRetryAt:state.nextFlowAttemptAt?new Date(state.nextFlowAttemptAt).toISOString():null,feedDiagnostics:state.feedDiagnostics||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
+  flowRetryAt:state.nextFlowAttemptAt?new Date(state.nextFlowAttemptAt).toISOString():null,actualAlarmLatenessSeconds:state.actualAlarmLatenessSeconds??null,lastTickDurationSeconds:state.lastTickDurationSeconds??null,feedDiagnostics:state.feedDiagnostics||null,window:state.window||null,materialEvent:state.materialEvent||null,lastAlert:state.lastAlert||null,pendingAlert:state.pendingAlert?{eventId:state.pendingAlert.eventId,attempts:state.pendingAlert.attempts,nextAttemptAt:state.pendingAlert.nextAttemptAt}:null,
   lastError:state.lastError||null,lastAlertFailure:state.lastAlertFailure||null,failureCount:state.failureCount||0,reviewSchedulingError:state.reviewSchedulingError||null,fullReview:review?{...review}:null,partialSampledTape:true,continuousCoverageVerified:false,fixedLatencyGuaranteed:false,phoneReceiptVerified:false,openNowAllowed:false};
 }
 function fastWindowFromTrades(previous,venue,now=Date.now()){
@@ -760,6 +779,12 @@ async function syncFastModelReview(owner){
  else if(pending)next={...review,status:'pending',requestId:request.requestId,requestedAt:request.requestedAt,reason:request.reason,awaitingReview:true,inspectedModels:null,modelDataReady:false,
    nextCondition:'WAIT_FOR_SHARED_SCANNER_RESULT',lastCompletedReview:actual,lastCompletedAt:review.lastCompletedAt||null};
  else next={...review,lastSharedCycle:actual};
+ // A pending request or a failed cycle is current status, never a replacement
+ // for the timestamped last successful receipt. Keep both kinds of evidence.
+ const successful=[actual,review.lastSuccessfulReview,review,review.lastSharedCycle,review.lastCompletedReview]
+  .filter(r=>r&&r.producerBuild===BUILD&&r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady===true&&Number.isFinite(Date.parse(r.completedAt)))
+  .sort((a,b)=>Date.parse(b.completedAt)-Date.parse(a.completedAt))[0];
+ if(successful){const {lastSuccessfulReview,lastSharedCycle,lastCompletedReview,legacyReview,...receiptOnly}=successful;next.lastSuccessfulReview=receiptOnly;}
  if(JSON.stringify(next)!==JSON.stringify(review))await owner.ctx.storage.put(FAST_REVIEW_KEY,next);
  return next;
 }
@@ -814,8 +839,10 @@ async function runFastMonitorAlarm(owner){
   const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
   // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
   if(state.lastTickAt&&now-state.lastTickAt<FAST_MIN_INTERVAL_MS){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
+  const scheduledAt=Date.parse(state.nextAlarmAt);
+  state.actualAlarmLatenessSeconds=Number.isFinite(scheduledAt)?round(Math.max(0,now-scheduledAt)/1000,3):null;
   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
-  state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(now+FAST_INTERVAL_MS);
+  state.nextAlarmAt=new Date(now+FAST_INTERVAL_MS).toISOString();
   try{
    if(state.nextFlowAttemptAt>now)throw Error('FLOW_RETRY_SCHEDULED');
    // Manual analysis, entry recheck and fast monitoring share the canonical feeds.
@@ -831,9 +858,11 @@ async function runFastMonitorAlarm(owner){
    const mid=(quote.bid+quote.ask)/2;if((quote.ask-quote.bid)/mid*10000>20||Math.abs(quote.last/mid-1)*10000>25)throw Error('FAST_EXECUTION_SPREAD_OR_TRADE_BOOK_MISMATCH');
    const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,event=fastMaterialEvent(window.window,quote.last,model?.atr15);
    state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.quoteLastSuccessAt=state.lastSuccessAt;state.nextFlowAttemptAt=0;state.lastError=null;state.failureCount=0;
+   const noticeBefore=JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]);
    await fastSendPending(owner,state,event);
-   // Publish an accepted alert before the full review reads shared notification state.
-   await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
+   // An accepted or changed alert must be visible before shared model review.
+   // Ordinary ticks publish atomically in finally, without a duplicate row write.
+   if(noticeBefore!==JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]))await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
   }catch(e){state.status='degraded';state.failureCount=(state.failureCount||0)+1;if(e?.message!=='FLOW_RETRY_SCHEDULED')state.lastError=String(e?.message||e).slice(0,180);
    const feedDeadline=Math.max(0,...(state.feedDiagnostics||[]).map(r=>Date.parse(r.retryAt)||0));
    if(e?.message!=='FLOW_RETRY_SCHEDULED')state.nextFlowAttemptAt=feedDeadline>Date.now()?feedDeadline:state.failureCount>=3?Date.now()+30000:0;
@@ -842,10 +871,11 @@ async function runFastMonitorAlarm(owner){
    // Review requests are independent of flow collection. A book cooldown must not freeze model work.
    try{await maintainFastModelReview(owner,state);}catch(e){state.reviewSchedulingError=String(e?.message||e).slice(0,180);}
    while(state.trades?.length&&jsonUtf8Size(JSON.stringify(state))>90000)state.trades.shift();
+   state.lastTickDurationSeconds=round((Date.now()-now)/1000,3);
    const next=nextFastAlarmAt(state);state.nextAlarmAt=new Date(next).toISOString();
    if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);
    await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
-   if(owner.publicRecords)await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
+   if(owner.publicRecords)await persistPublicMarketIfChanged(owner);
   }
   return compactFastMonitor(state,await owner.ctx.storage.get(FAST_REVIEW_KEY));
  })();owner.fastTickWork=work;try{return await work;}finally{owner.fastTickWork=null;}
@@ -1261,7 +1291,10 @@ async function coordinatedNewsContext(owner) {
   if(owner.newsWork)return owner.newsWork;
   const task=(async()=>{
     const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{},now=Date.now(),fetchedAt=new Date(now).toISOString();
-    const relay=(await owner.ctx.storage.get(BLS_RELAY_STATE_KEY))?.records||{};
+    // The authenticated generic state API stores {value, expiresAt}. Read the
+    // same durable contract; an accepted envelope is not a consumed news batch.
+    const relayEnvelope=await owner.ctx.storage.get(BLS_RELAY_STATE_KEY);
+    const relay=Number.isFinite(relayEnvelope?.expiresAt)&&relayEnvelope.expiresAt>Date.now()?relayEnvelope.value?.records||{}:{};
     owner.newsDeadlineAt=now+30000;
     const sources=[{id:"JIN10",seconds:60,jin10:true},...NEWS_SOURCES,{...TREASURY_DAILY_SOURCE,url:treasuryDailyUrl(now)},{id:"NYFED_CALENDAR",seconds:3600,nyfed:true}];let index=0;
     const refresh=async s=>{
@@ -2291,15 +2324,28 @@ async function updateForwardStudy(env,snapshot,selected) {
 function scannerCycle(env,options={}) {
   let snapshot;
   const prices = new Map();
+  const deadlineAt=Date.now()+45_000;
   return {
     forceDiscovery:options.forceDiscovery===true,
-    deadlineAt: Date.now() + 45_000,
+    deadlineAt,
     getSnapshot() { return snapshot ||= buildSnapshot({ env, scannerMode: true, coinalyzeApiKey: env?.COINALYZE_API_KEY }); },
     getPrices(symbol) {
       // Broad zone affects only the sampling helper's flag. Each consumer checks its own zone.
       const cached = prices.get(symbol);
       if (!cached || Date.now() - cached.startedAt > 8000) {
-        prices.set(symbol, { startedAt: Date.now(), promise: verifyOkxScannerZone(symbol, { min: 0, max: Number.MAX_VALUE }, env) });
+        const entry={startedAt:Date.now()};
+        entry.promise=(async()=>{
+          for(let attempt=0;;attempt++){
+            try{return await verifyOkxScannerZone(symbol,{min:0,max:Number.MAX_VALUE},env);}
+            catch(error){
+              if(attempt||Date.now()+3000>=deadlineAt)throw error;
+              // Retry the whole independent pair, retaining endpoint cooldowns
+              // and all original spread, deviation and quote-age checks.
+              await delay(500);
+            }
+          }
+        })().catch(error=>{if(prices.get(symbol)===entry)prices.delete(symbol);throw error;});
+        prices.set(symbol,entry);
       }
       return prices.get(symbol).promise;
     },
@@ -2348,14 +2394,14 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const evaluations = [], notifications = [];
   let verification = null, priceError = null;
   if (active.some(r => Date.parse(r.expiresAt) > now)) {
-    try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { priceError = String(error?.message || error); }
+    try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { priceError = String(error?.message || error); }
     // Closed-candle invalidation is checked even when price is outside a zone.
     if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
     // Slow upstream recovery must not turn earlier samples into a current-price alert.
-    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); } catch (error) { verification = null; priceError = String(error?.message || error); } }
+    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { verification = null; priceError = String(error?.message || error); } }
     if(full?.assets?.ETHUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
       await attachArrivalLiquidity(env,full);
-      try{verification=await cycle.getPrices("ETHUSDT");}catch{verification=null;}
+      try{verification=await cycle.getPrices("ETHUSDT");priceError=null;}catch(error){verification=null;priceError=String(error?.message||error);}
     }
     if (full?.assets?.ETHUSDT && verification?.current) {
       full.assets.ETHUSDT.ticker = verification.current;
@@ -6348,13 +6394,21 @@ async function runScanner(env,options={}) {
     const completedAt = new Date(Date.now()).toISOString();
     const degraded = result.status === "error" || result.observations?.status === "error"
       || result.evaluation?.state === "DATA_BLOCKED" || result.observations?.discoveryError || result.observations?.priceError;
+    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
+    const lastDegradedCycle=degraded?{producerBuild:BUILD,startedAt,completedAt,
+      planError:result.status==='error'?String(result.reason||'').slice(0,180):null,
+      discoveryError:String(result.observations?.discoveryError||'').slice(0,180)||null,
+      priceError:String(result.observations?.priceError||'').slice(0,180)||null,
+      observationError:result.observations?.status==='error'?String(result.observations.reason||'').slice(0,180):null,
+      modelDataReady:receipt.modelDataReady,inspectedModels:receipt.inspectedModels,
+      blockedModels:(result.observations?.opportunityAudit?.models||[]).filter(m=>m.state==='DATA_BLOCKED').map(m=>({submodel:m.submodel,reason:m.failedGate||null}))}:old.lastDegradedCycle||null;
     await scannerStatePut(env, SCANNER_HEARTBEAT_KEY, { producerBuild:BUILD,status: degraded ? "degraded" : "completed", lastAttemptAt: startedAt,
       lastCompletedAt: completedAt, lastSuccessfulCycleAt: degraded ? old.lastSuccessfulCycleAt || null : completedAt,
+      lastDegradedCycle,
       nextScheduledCheckAt: new Date(Date.now() + 60_000).toISOString(),
       planState: result.evaluation?.state || result.reason || result.status,
       observationReason: result.observations?.reason || null, observationError: result.observations?.discoveryError || result.observations?.priceError || null,
       lastError: result.status === "error" ? result.reason : result.observations?.status === "error" ? result.observations.reason : null });
-    const receipt=scannerCycleReceipt(result,startedAt,completedAt,claimed?.requestId||null);
     await scannerStatePut(env,SCANNER_CYCLE_RESULT_KEY,receipt,3600);
     if(claimed){
       const current=await scannerStateGet(env,SCANNER_REVIEW_REQUEST_KEY);
@@ -6375,7 +6429,7 @@ async function runScanner(env,options={}) {
 
 function boundedScannerStatus(result) {
   const pick=(v,keys)=>v&&typeof v==="object"?Object.fromEntries(keys.filter(k=>v[k]!==undefined).map(k=>[k,compactStatusValue(v[k])])):v??null;
-  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError"]);
+  result.heartbeat=pick(result.heartbeat,["producerBuild","status","lastAttemptAt","lastCompletedAt","lastSuccessfulCycleAt","lastFailedAt","nextScheduledCheckAt","planState","observationReason","observationError","lastError","lastDegradedCycle"]);
   result.responseMode="COMPACT_V26";
   result.generatedAt=new Date(Date.now()).toISOString();
   result.runtime=pick(result.runtime,["planId","state","checkedAt","lastAlertAt","lastAttemptAt","lastObservedPrice","notification"]);

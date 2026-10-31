@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
-import {assessR5Preflight,R4_BASELINE,R5_BUILD} from '../ops/r5-preflight.mjs';
+import {assessR5Preflight,PRIOR_BASELINE,R5_BUILD} from '../ops/r5-preflight.mjs';
 
 const now=Date.parse('2026-10-31T01:00:00Z');
 const tick=new Date(now-22000).toISOString();
-const manifest={build:R5_BUILD,status:'CANDIDATE_NOT_DEPLOYED',priorLiveBuild:R4_BASELINE.build,sourceGitBlobSha:'locked',apiVersion:'7.6.0',stateOwnerContract:'owner-local-dispatch-v1'};
-const cloudflare={deploymentId:R4_BASELINE.deploymentId,singleVersion:true,
+const manifest={build:R5_BUILD,status:'CANDIDATE_NOT_DEPLOYED',priorLiveBuild:PRIOR_BASELINE.build,sourceGitBlobSha:'locked',apiVersion:'7.6.0',stateOwnerContract:'owner-local-dispatch-v1'};
+const cloudflare={deploymentId:PRIOR_BASELINE.deploymentId,singleVersion:true,
  versions:[{id:'01234567-89ab-cdef-0123-456789abcdef',percentage:100}],
- bindingMatches:true,binding:{namespaceFingerprint:R4_BASELINE.namespaceFingerprint}};
-const fast={build:R4_BASELINE.build,apiVersion:'7.6.0',
- backendIdentity:{matched:true,frontendBuild:R4_BASELINE.build,stateOwnerBuild:R4_BASELINE.build,stateOwnerContract:'owner-local-dispatch-v1'},
- fastMonitor:{quoteHealthy:true,samplingHealthy:true,lastSuccessAt:tick,fullReview:{producerBuild:R4_BASELINE.build,status:'completed',inspectedModels:8,modelDataReady:true,completedAt:tick}}};
-const status={build:R4_BASELINE.build,backendIdentity:{matched:true,stateOwnerBuild:R4_BASELINE.build},diagnostics:{stateReadSucceeded:true},
- heartbeat:{producerBuild:R4_BASELINE.build,status:'completed',lastSuccessfulCycleAt:tick}};
+ bindingMatches:true,binding:{namespaceFingerprint:PRIOR_BASELINE.namespaceFingerprint}};
+const fast={build:PRIOR_BASELINE.build,apiVersion:'7.6.0',
+ backendIdentity:{matched:true,frontendBuild:PRIOR_BASELINE.build,stateOwnerBuild:PRIOR_BASELINE.build,stateOwnerContract:'owner-local-dispatch-v1'},
+ fastMonitor:{quoteHealthy:true,samplingHealthy:true,lastSuccessAt:tick,fullReview:{producerBuild:PRIOR_BASELINE.build,status:'completed',inspectedModels:8,modelDataReady:true,completedAt:tick}}};
+const status={build:PRIOR_BASELINE.build,backendIdentity:{matched:true,stateOwnerBuild:PRIOR_BASELINE.build},diagnostics:{stateReadSucceeded:true},
+ heartbeat:{producerBuild:PRIOR_BASELINE.build,status:'completed',lastSuccessfulCycleAt:tick}};
 const base={manifest,sourceGitBlobSha:'locked',cloudflare,fast,status,now};
 const ok=assessR5Preflight(base);
 assert.equal(ok.passed,true,JSON.stringify(ok.failedGates));
@@ -26,7 +26,7 @@ duringMinuteCycle.status.heartbeat.status='failed';
 assert.equal(assessR5Preflight(duringMinuteCycle).passed,false,'failed scanner status must fail closed');
 const cases=[
  o=>o.sourceGitBlobSha='different',
- o=>o.manifest.build=R4_BASELINE.build,
+ o=>o.manifest.build=PRIOR_BASELINE.build,
  o=>o.manifest.status='DEPLOYED',
  o=>o.cloudflare.deploymentId='different',
  o=>o.cloudflare.versions[0].percentage=90,
