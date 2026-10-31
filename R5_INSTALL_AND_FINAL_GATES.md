@@ -1,18 +1,18 @@
-# Crypto Alpha Pro Ultimate — R5b 受控交付说明（待重新生产验收）
+# Crypto Alpha Pro Ultimate — R5 内部候选受控交付说明（待重新生产验收）
 
 > **注意**：此文件是部署/验收操作说明，不代表 R5 已经上线。不得用线上 R4 的结果冒充 R5；不能以代码测试通过宣称交易盈利。
 
 ## 交付身份（只对应唯一源代码）
 
 - 源码分支：`integration/r5-freeze-candidate-20261031`
-- Worker 构建：`crypto-alpha-worker-v27.6.3-macro-r5b`
+- Worker 构建：`crypto-alpha-worker-v27.6.3-macro-r5c`
 - 接口协议：`7.6.0`；状态拥有者协议：`owner-local-dispatch-v1`
 - Wrangler 唯一入口：`main-v188.js`
 - 文件精确源码 SHA：见 `ops/release-manifest.json`，经 `test-release-identity.mjs` 强制核对。
 - Cloudflare Worker: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
 - GPT Action 架构：https://crypto-alpha-api-v17-canary.id-mranran.workers.dev/openapi.json?v=27.6.0
 - GPT 编辑器现有入口：https://chatgpt.com/g/g-6a7aa3acb8e48191a49c95d59396fa77-crypto-alpha-pro-ultimate-v13-1
-- 开场白：`GPT_OPENING_V27_6_3_CANDIDATE.txt`，长度为 438 个 Unicode 字符（不超过500字）。该文件是开场白，不替代原完整核心指令或原知识库。
+- 开场白：`GPT_OPENING_V27_6_3_CANDIDATE.txt`，长度为 403 个 Unicode 字符（不超过500字）。该文件是开场白，不替代原完整核心指令或原知识库；三级提醒能力保留，普通研究到区默认静默。
 
 ## 最小必要改动位置
 
@@ -23,7 +23,7 @@
 ## 发布步骤（GitHub Actions 自动运行）
 
 1. 完成完整 Node（节点环境）/ native workerd（原生 Cloudflare 运行环境）回归、官方新闻源解析及故障注入测试。
-2. 检查当前生产仍为 R4，Cloudflare 部署 ID `8da5ba83-2c4d-49ab-a0b6-022e06438c7e`，Durable Object（持久对象）指纹 `aedfbcd14cd1`，实时 OKX 买卖盘和八模型回执正常。
+2. 检查当前生产仍为 R4，Cloudflare 部署 ID `f323a8f7-f7fe-48a4-b97a-bd601d3aea26`，Durable Object（持久对象）指纹 `aedfbcd14cd1`，实时 OKX 买卖盘和八模型回执正常。
 3. **仅当上述门槛满足**，由 `.github/workflows/r5-controlled-release.yml` 中「经审核唯一源提交」的发布意图触发生产更新。审核文件必须是唯一修改，不能夹带其他文件。
 4. 记录部署前 R4 的实际 Cloudflare 版本 UUID（不是臆测），部署后记录新部署 UUID、运行版本和状态绑定。
 5. 核验前后台构建/状态协议匹配，观察超过10分钟的分钟扫描与八模型回执持续推进（不能只看180秒新鲜度）。

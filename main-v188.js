@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5b";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5c";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -132,6 +132,33 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
   owner.publicInflight.set(path,work);
   try{return await work;}finally{owner.publicInflight.delete(path);}
 }
+// Same OKX instrument/depth/units. Independent documented endpoint quotas;
+// never clear the primary circuit, rotate hosts, or accept an aged snapshot.
+async function coordinatedOrderflowEndpoint(owner,path,policy,force=false) {
+  const primary=await coordinatedPublicEndpoint(owner,path,policy,force);
+  if(path!==orderflowPaths()[2])return primary;
+  const valid=item=>!item?.error&&["live","shared-fresh-cache"].includes(item?.state)
+    &&usableTimestamp(item.rows?.[0]?.ts,10)&&Number(item.rows[0].bids?.[0]?.[0])>0
+    &&Number(item.rows[0].asks?.[0]?.[0])>0&&Number(item.rows[0].bids[0][0])<=Number(item.rows[0].asks[0][0]);
+  if(valid(primary))return primary;
+  const fallbackPath="/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400";
+  const fallback=await coordinatedPublicEndpoint(owner,fallbackPath,policy,force);
+  // Full-depth fallback has three columns (price, contracts, order count).
+  // Normalize to the existing four-column organic-book contract, never RPI.
+  const result={...fallback,rows:fallback.rows?.map(row=>({...row,
+    bids:row.bids?.map(level=>level.length===3?[level[0],level[1],"0",level[2]]:level),
+    asks:row.asks?.map(level=>level.length===3?[level[0],level[1],"0",level[2]]:level)}))};
+  const failover={primaryEndpoint:path,primaryHttpStatus:primary.httpStatus||null,
+    primaryError:primary.error||"PRIMARY_BOOK_INVALID_OR_EXPIRED",primaryRetryAt:primary.retryAt||null,
+    fallbackEndpoint:fallbackPath,fallbackSucceeded:valid(result)};
+  // Canonical flow keys are intentionally excluded from persistent bulky rows.
+  // Retain only the existing four-second in-memory shared cache; circuits persist.
+  if(owner.publicRecords)delete owner.publicRecords.entries[fallbackPath];
+  if(!failover.fallbackSucceeded)return {...primary,failover};
+  const recovered={...result,canonicalEndpoint:path,failover};
+  if(owner.publicRecords)owner.publicRecords.entries[path]=recovered;
+  return recovered;
+}
 function publicMarketPersistable(records) {
   const ephemeral=new Set(orderflowPaths().slice(1));
   return {...records,entries:Object.fromEntries(Object.entries(records.entries).filter(([path])=>!ephemeral.has(path)))};
@@ -176,7 +203,7 @@ async function coordinatedMarketBundle(owner) {
   if(owner.marketBundleWork)return owner.marketBundleWork;
   const work=(async()=>{
     const defs=publicMarketDefinitions();
-    const values=await Promise.all(defs.map(d=>coordinatedPublicEndpoint(owner,d.path,d.policy)));
+    const values=await Promise.all(defs.map(d=>coordinatedOrderflowEndpoint(owner,d.path,d.policy)));
     const modules=Object.fromEntries(defs.map((d,i)=>[d.path,values[i]]));
     const key="/api/v5/market/tickers?instType=SWAP", original=modules[key], recovered=[];
     for(const a of Object.values(ASSETS)){
@@ -379,7 +406,7 @@ async function collectCrossVenueLiquidity(owner,modules){
  const defs=liquidityFeedDefinitions();
  const wave=async force=>{
   const paths=orderflowPaths();let okxItems=paths.map(p=>modules[p]);
-  if(force){const d=publicMarketDefinitions();okxItems=await Promise.all(paths.map(p=>coordinatedPublicEndpoint(owner,p,d.find(x=>x.path===p).policy,p!==paths[0])));}
+  if(force){const d=publicMarketDefinitions();okxItems=await Promise.all(paths.map(p=>coordinatedOrderflowEndpoint(owner,p,d.find(x=>x.path===p).policy,p!==paths[0])));}
   const okxInput=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:okxItems[i]?.rows,error:okxItems[i]?.error||(!okxItems[i]?.rows?'OKX_PUBLIC_FEED_MISSING':null),fetchedAt:okxItems[i]?.storedAt}]));
   const peers=await Promise.all(Object.entries(defs).map(async([venue,d])=>{const[meta,book,trades]=await Promise.all([liquidityFeed(owner,d.meta,true),liquidityFeed(owner,d.book,false,force),liquidityFeed(owner,d.trades,false,force)]);return normalizeLiquidityVenue(venue,{meta,book,trades});}));
   return [normalizeLiquidityVenue("OKX",okxInput),...peers];
@@ -793,8 +820,8 @@ async function runFastMonitorAlarm(owner){
    if(state.nextFlowAttemptAt>now)throw Error('FLOW_RETRY_SCHEDULED');
    // Manual analysis, entry recheck and fast monitoring share the canonical feeds.
    const defs=orderflowPaths();
-   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:4,staleSeconds:0},false)));
-   state.feedDiagnostics=rows.map((r,i)=>({path:defs[i],state:r.state,error:r.error||null,httpStatus:r.httpStatus||null,localCooldown:r.localCooldown||false,retryAt:r.retryAt||null,upstreamFailedAt:r.upstreamFailedAt||null}));
+   const rows=await Promise.all(defs.map((p,i)=>coordinatedOrderflowEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:4,staleSeconds:0},false)));
+   state.feedDiagnostics=rows.map((r,i)=>({path:defs[i],actualEndpoint:r.endpoint||defs[i],failover:r.failover||null,state:r.state,error:r.error||null,httpStatus:r.httpStatus||null,localCooldown:r.localCooldown||false,retryAt:r.retryAt||null,upstreamFailedAt:r.upstreamFailedAt||null}));
    const input=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:rows[i].rows,error:rows[i].error||(!rows[i].rows?'MISSING_PUBLIC_FEED':null),fetchedAt:rows[i].storedAt}]));
    const venue=normalizeLiquidityVenue('OKX',input);
    if(venue.status!=='ok'||!venue.tradeFresh)throw Error(venue.reason||'FRESH_EXECUTED_TRADES_AND_BOOK_REQUIRED');

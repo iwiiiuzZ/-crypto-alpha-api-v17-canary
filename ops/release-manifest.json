@@ -1,9 +1,9 @@
 {
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5b",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5c",
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
   "entry": "main-v188.js",
-  "sourceGitBlobSha": "7223295a8761598bff67445e8566f48a2fe8efd1",
+  "sourceGitBlobSha": "4771ff162e360eff75b6a1e8a41c33e4751ba2bb",
   "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r4",
   "status": "CANDIDATE_NOT_DEPLOYED"
 }

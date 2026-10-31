@@ -39,7 +39,7 @@ await test('execution blocked but observation preserved on quote failure',()=>{c
 await test('BTC missing execution quote alone does not veto ETH',()=>{const f=fx(),a=readyAssets(f);a.BTCUSDT.ticker={status:'unavailable'};assert.equal(f.t.snapshotReadiness(a).criticalReady,true);a.BTCUSDT.timeframes['4h'].quality.passed=false;assert.equal(f.t.snapshotReadiness(a).criticalReady,false);});
 await test('cached response recomputes execution quote age',()=>{const f=fx(),s={assets:readyAssets(f),coverage:{},decisionState:'DATA_READY'};f.advance(36000);assert.equal(f.t.refreshServedSnapshot(s).decisionState,'DATA_BLOCKED');});
 await test('ten concurrent consumers share sixteen shared public requests with multi-venue recheck kept separate',async()=>{
- const f=fx();f.setHandler(u=>u.pathname==='/api/v5/market/tickers'&&u.searchParams.get('instType')==='SWAP'?ok([f.ticker('BTC-USDT-SWAP'),f.ticker()]):ok([]));
+ const f=fx();f.setHandler(u=>u.pathname==='/api/v5/market/tickers'&&u.searchParams.get('instType')==='SWAP'?ok([f.ticker('BTC-USDT-SWAP'),f.ticker()]):u.pathname==='/api/v5/market/books'?ok([{ts:String(f.now()),bids:[['99.99','100','0','1']],asks:[['100.01','100','0','1']]}]):ok([]));
  const r=await Promise.all(Array.from({length:10},()=>f.t.coordinatedMarketBundle(f.owner)));
  assert.equal(f.calls.length,16);assert.ok(r.every(x=>x.modules['/api/v5/market/tickers?instType=SWAP'].rows.length===2));
  const freshOwner=new f.t.ScannerState({storage:f.storage});await f.t.coordinatedMarketBundle(freshOwner);assert.equal(f.calls.length,18,'Object restart refreshes only short-lived raw feeds');

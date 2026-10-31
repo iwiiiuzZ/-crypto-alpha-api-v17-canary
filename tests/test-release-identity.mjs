@@ -15,6 +15,6 @@ assert.equal(manifest.build,build);
 assert.equal(manifest.apiVersion,apiVersion);
 assert.equal(manifest.stateOwnerContract,stateContract);
 assert.notEqual(build,manifest.priorLiveBuild,'Changed candidate must never impersonate currently deployed build');
-assert.equal(build,'crypto-alpha-worker-v27.6.3-macro-r5b');
+assert.equal(build,'crypto-alpha-worker-v27.6.3-macro-r5c');
 assert.equal(manifest.status,'CANDIDATE_NOT_DEPLOYED');
 console.log('PASS candidate unique-build identity and immutable source lock',JSON.stringify({build,sourceGitBlobSha:gitBlob}));

@@ -18,7 +18,10 @@ export function summarizeFastFailures(f={}){
   feeds:(Array.isArray(f.feedDiagnostics)?f.feedDiagnostics:[]).map(r=>({feed:FAST_FEEDS[r.path]||'OTHER',
    state:['live','cache','cooldown','stale-on-error','unavailable'].includes(r.state)?r.state:null,
    httpStatus:Number.isInteger(r.httpStatus)&&r.httpStatus>=100&&r.httpStatus<=599?r.httpStatus:null,
-   localCooldown:r.localCooldown===true,retryAt:stamp(r.retryAt),upstreamFailedAt:stamp(r.upstreamFailedAt)}))};
+   localCooldown:r.localCooldown===true,retryAt:stamp(r.retryAt),upstreamFailedAt:stamp(r.upstreamFailedAt),
+   bookFallback:r.failover?{primaryHttpStatus:number(r.failover.primaryHttpStatus),primaryRetryAt:stamp(r.failover.primaryRetryAt),
+    fallbackSource:r.failover.fallbackEndpoint==='/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400'?'OKX_OFFICIAL_FULL_BOOK_400':null,
+    succeeded:r.failover.fallbackSucceeded===true}:null}))};
 }
 export class OpsError extends Error {constructor(code){super(code);this.code=code;}}
 

@@ -13,9 +13,9 @@ export default {async fetch(req,env,ctx){const u=new URL(req.url);
  return app.fetch(req,env,ctx);
 }};`);
 fs.writeFileSync(path.join(dir,'upstream.mjs'),`
-let now=Date.now(),barkFail=false,quoteFail=false,newsFail=false,blsFail=false,pushes=[],quote=2400,bookCounter=0;const counts={};
+let now=Date.now(),barkFail=false,quoteFail=false,newsFail=false,blsFail=false,pushes=[],quote=2400,bookCounter=0,bookOnlyFail=false;const counts={};
 export default {async fetch(req){now=Date.now();const u=new URL(req.url);counts[u.hostname]=(counts[u.hostname]||0)+1;
- if(u.hostname==='fixtures.invalid'){const b=await req.json();if(b.now)now=b.now;if(b.barkFail!==undefined)barkFail=b.barkFail;if(b.quoteFail!==undefined)quoteFail=b.quoteFail;if(b.newsFail!==undefined)newsFail=b.newsFail;if(b.blsFail!==undefined)blsFail=b.blsFail;if(b.quote)quote=b.quote;return Response.json({now,pushes,counts});}
+ if(u.hostname==='fixtures.invalid'){const b=await req.json();if(b.now)now=b.now;if(b.barkFail!==undefined)barkFail=b.barkFail;if(b.quoteFail!==undefined)quoteFail=b.quoteFail;if(b.newsFail!==undefined)newsFail=b.newsFail;if(b.blsFail!==undefined)blsFail=b.blsFail;if(b.quote)quote=b.quote;if(b.bookOnlyFail!==undefined)bookOnlyFail=b.bookOnlyFail;return Response.json({now,pushes,counts});}
  if(u.hostname==='api.day.app'){const b=await req.json();if(barkFail)return Response.json({code:500},{status:503});pushes.push({title:b.title,body:b.body,isArchive:b.isArchive});return Response.json({code:200});}
  if(u.hostname==='mcp.jin10.com'){if(newsFail)return new Response('temporary upstream error',{status:503});const b=await req.json();if(req.headers.get('authorization')!=='Bearer fixture-news')return new Response('denied',{status:401});let result={};
   if(b.method==='initialize')result={protocolVersion:'2025-03-26',capabilities:{tools:{}}};if(b.method==='notifications/initialized')return new Response(null,{status:202});
@@ -48,6 +48,7 @@ export default {async fetch(req){now=Date.now();const u=new URL(req.url);counts[
  }
  if(u.hostname.includes('okx')){if(u.pathname.endsWith('/books'))await new Promise(r=>setTimeout(r,1800));const p=u.pathname,inst=u.searchParams.get('instId')||'ETH-USDT-SWAP',btc=inst.startsWith('BTC'),price=btc?80000:quote;
   const tick=id=>({instId:id,last:String(id.startsWith('BTC')?80000:quote),bidPx:String((id.startsWith('BTC')?80000:quote)-.01),askPx:String((id.startsWith('BTC')?80000:quote)+.01),ts:String(now),open24h:String(price),high24h:String(price*1.02),low24h:String(price*.98),vol24h:'10000',volCcy24h:'1000000'});
+  if(bookOnlyFail&&p.endsWith('/books')&&inst==='ETH-USDT-SWAP'&&u.searchParams.get('sz')==='400')return new Response('',{status:429,headers:{'Retry-After':'30'}});
   if(quoteFail&&/tickers|ticker$|trades$|books/.test(p))return Response.json({code:'50011',data:[]},{status:429});
   let data=[];
   if(p.endsWith('/instruments'))data=[{instId:inst,ctType:'linear',ctVal:'0.1',ctValCcy:'ETH',settleCcy:'USDT',ctMult:'1'}];
@@ -97,6 +98,11 @@ try{
  // If a bar ran first, allow the documented 30s review throttle + 10s tick + 5s runtime budget.
  const materialReview=await until(async()=>{status=(await call('/?view=fast')).body.fastMonitor;return [...materialReviews.values()].find(r=>Date.parse(r.requestedAt)>=Date.parse(initial)&&Date.parse(r.completedAt)>=Date.parse(r.requestedAt));},45000);
  assert.equal(materialReview.inspectedModels,8,JSON.stringify(materialReview));assert.equal(materialReview.modelDataReady,true,JSON.stringify(materialReview));assert.equal(materialReview.openNowAllowed,false);checks.push('same object completes forced eight-model and fresh structure review without self-call deadlock');
+ await call('/__fixture/control',{bookOnlyFail:true});
+ status=await until(async()=>{const r=(await call('/?view=fast')).body.fastMonitor;return r.feedDiagnostics?.some(f=>f.failover?.fallbackSucceeded)?r:null;},20000);
+ assert.equal(status.samplingHealthy,true);assert.equal(status.flowHealthy,true);assert.equal(status.quoteHealthy,true);
+ const recovered=status.feedDiagnostics.find(f=>f.failover?.fallbackSucceeded);assert.equal(recovered.failover.primaryHttpStatus,429);assert.match(recovered.actualEndpoint,/books-full/);
+ checks.push('real native alarm survives primary-depth 429 using a fresh official full-depth fallback and retains failure evidence');
  assert.ok(!JSON.stringify(status).includes('fixture-device'));assert.ok(!JSON.stringify(status).includes('trades":['));checks.push('compact public telemetry omits secrets, raw tape and private observation identifiers');
  console.log(JSON.stringify({runtime:execFileSync(bin,['--version'],{encoding:'utf8'}).trim(),nativeAlarms:true,targetCadenceSeconds:10,observedLastGapSeconds:status.actualLastGapSeconds,realDurableObject:true,productionHandlers:true,materialReviewRequestId:materialReview.requestId,materialReviewCompletedAt:materialReview.completedAt,checks,passed:checks.length,failed:0,externalUpstreams:'LOCAL_FIXTURES_ONLY',realDeviceDeliveryVerified:false,productionDeploymentVerified:false},null,2));
 }finally{child.kill('SIGTERM');fs.rmSync(dir,{recursive:true,force:true});}

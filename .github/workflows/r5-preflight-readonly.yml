@@ -27,11 +27,16 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Verify source-locked R5 candidate against unchanged live R4
         run: node ops/r5-preflight.mjs
+      - name: Check both official book sources without changing production
+        if: always()
+        run: node ops/official-book-live-probe.mjs
       - name: Retain read-only baseline evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: R5_READONLY_PREFLIGHT
-          path: r5-preflight-evidence.json
+          path: |
+            r5-preflight-evidence.json
+            official-book-live-probe.json
           if-no-files-found: warn
           retention-days: 30

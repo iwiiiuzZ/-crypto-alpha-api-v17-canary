@@ -14,4 +14,6 @@ The final assembled release must additionally contain the original files from `C
 
 Also include four operation IDs, sub-500-character opening prompt, release manifest, a read-only acceptance script, exact production source/deployment identity, rollback instructions and a limitations report. Never imply that unit tests prove production data feeds, notification delivery, installed GPT configuration, or strategy profitability.
 
-R5 deployment is prohibited until a separate source-locked approval and full production acceptance are recorded. Do not modify production while generating the candidate package.
+Use `ops/assemble-delivery.py` with the privately held original ZIP and an output directory outside this public repository. It verifies full original SHA-256 values, the source Git blob, all regression suites including native runtime tests, the four original starters, the 403-character opening and the exact generated four-operation API. It preserves the original ZIP for rollback. Only the obsolete build identifier in the full opening changes; core instructions and course knowledge remain byte-identical. Assembly alone is explicitly `ASSEMBLED_NOT_FINAL`.
+
+R5 deployment requires a separate source-locked release-intent commit; final production acceptance is performed after that controlled deployment. Do not modify production while merely generating a candidate package. The previous wording incorrectly required postdeployment evidence before deployment itself.
