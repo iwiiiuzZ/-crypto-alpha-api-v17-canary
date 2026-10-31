@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5b";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -72,7 +72,7 @@ function orderflowPaths() {
 }
 function publicMarketDefinitions() {
   return [
-    ...orderflowPaths().map((path,i)=>({path,policy:i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0}})),
+    ...orderflowPaths().map((path,i)=>({path,policy:i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:6,staleSeconds:0}})),
     {path:"/api/v5/market/tickers?instType=SWAP",policy:CACHE_POLICY.ticker},
     {path:"/api/v5/public/mark-price?instType=SWAP",policy:CACHE_POLICY.markPrice},
     {path:"/api/v5/market/index-tickers?quoteCcy=USDT",policy:{freshSeconds:8,staleSeconds:30}},
@@ -793,7 +793,7 @@ async function runFastMonitorAlarm(owner){
    if(state.nextFlowAttemptAt>now)throw Error('FLOW_RETRY_SCHEDULED');
    // Manual analysis, entry recheck and fast monitoring share the canonical feeds.
    const defs=orderflowPaths();
-   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:2,staleSeconds:0},false)));
+   const rows=await Promise.all(defs.map((p,i)=>coordinatedPublicEndpoint(owner,p,i===0?{freshSeconds:86400,staleSeconds:86400}:{freshSeconds:6,staleSeconds:0},false)));
    state.feedDiagnostics=rows.map((r,i)=>({path:defs[i],state:r.state,error:r.error||null,httpStatus:r.httpStatus||null,localCooldown:r.localCooldown||false,retryAt:r.retryAt||null,upstreamFailedAt:r.upstreamFailedAt||null}));
    const input=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:rows[i].rows,error:rows[i].error||(!rows[i].rows?'MISSING_PUBLIC_FEED':null),fetchedAt:rows[i].storedAt}]));
    const venue=normalizeLiquidityVenue('OKX',input);
