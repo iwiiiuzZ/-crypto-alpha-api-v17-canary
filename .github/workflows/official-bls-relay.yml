@@ -1,0 +1,29 @@
+name: Official BLS free fallback relay (R5 only)
+on:
+  schedule:
+    - cron: '3,13,23,33,43,53 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/official-bls-relay.yml'
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-official-bls-relay
+  cancel-in-progress: false
+jobs:
+  official-bls-source-collector:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CRYPTO_ALPHA_WORKER_ORIGIN: https://crypto-alpha-api-v17-canary.id-mranran.workers.dev
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+    steps:
+      - name: Checkout pinned official source relay only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Fetch official BLS RSS from GitHub network and POST only to authenticated R5 Worker
+        run: node ops/official-bls-relay.mjs
