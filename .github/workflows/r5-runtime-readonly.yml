@@ -37,9 +37,9 @@ jobs:
           const pick=(v,keys)=>Object.fromEntries(keys.filter(k=>v?.[k]!==undefined).map(k=>[k,v[k]]));
           const evidence={mode:'READ_ONLY_FAST_AND_STATUS_NO_FOREGROUND_MARKET',sample,cloudflare,buildConfiguration,
             timing:{actualAlarmLatenessSeconds:fast.fastMonitor?.actualAlarmLatenessSeconds??null,lastTickDurationSeconds:fast.fastMonitor?.lastTickDurationSeconds??null},
-            review:pick(review,['status','producerBuild','startedAt','checkedAt','completedAt','inspectedModels','modelDataReady','requestId','source','reason']),
+            review:pick(review,['status','producerBuild','startedAt','checkedAt','completedAt','inspectedModels','modelDataReady','requestId','source','reason','lastSuccessfulReview','lastSharedCycle','lastCompletedReview']),
             reviewErrorCode:code(review.lastError),
-            scanner:pick(status.heartbeat,['status','producerBuild','lastAttemptAt','lastCompletedAt','lastSuccessfulCycleAt','observationReason']),
+            scanner:pick(status.heartbeat,['status','producerBuild','lastAttemptAt','lastCompletedAt','lastSuccessfulCycleAt','observationReason','lastDegradedCycle']),
             scannerErrorCode:code(status.heartbeat?.lastError),
             discoveryReason:code(status.discovery?.reason),
             finalDeliveryAccepted:false};
