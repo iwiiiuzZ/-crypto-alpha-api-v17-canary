@@ -6313,6 +6313,20 @@ function boundedScannerStatus(result) {
   return result;
 }
 
+// Preserve compact per-source production news receipts even if the 24KB status
+// response drops large discovery details. No headline content, tokens, or URLs.
+function compactNewsSourceReceipts(newsStatus){
+  const available=newsStatus?.sources||{};
+  const ids=["JIN10",...NEWS_SOURCES.map(v=>v.id),TREASURY_DAILY_SOURCE.id,"NYFED_CALENDAR"];
+  const receiptAt=value=>typeof value==="string"&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():null;
+  return Object.fromEntries(ids.filter(id=>available[id]&&typeof available[id]==="object")
+    .map(id=>[id,{
+      status:typeof available[id].status==="string"?available[id].status.slice(0,32):"unknown",
+      fetchedAt:receiptAt(available[id].fetchedAt),
+      parserRevision:typeof available[id].parserRevision==="string"?available[id].parserRevision.slice(0,64):null
+    }]));
+}
+
 async function scannerStatus(env) {
   try {
     const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY,PUSH_AUDIT_KEY]);
@@ -6337,6 +6351,7 @@ async function scannerStatus(env) {
         pendingProgressPushes:Object.values(state[PROGRESS_ALERT_KEY]?.pending||{}).filter(p=>p.expiresAt>Date.now()).length,
         newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
           parserAudit:state[DISCOVERY_STATE_KEY]?.newsStatus?.parserAudit||null,coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
+        newsSourceReceipts:compactNewsSourceReceipts(state[DISCOVERY_STATE_KEY]?.newsStatus),
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true,fastSamplingHealthy:fastMonitor?.samplingHealthy===true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
     result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes+result.diagnostics.pendingFastPushes+result.diagnostics.pendingProgressPushes;
