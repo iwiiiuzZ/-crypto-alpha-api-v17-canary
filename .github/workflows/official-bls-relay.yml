@@ -27,3 +27,5 @@ jobs:
           node-version: '22'
       - name: Fetch official BLS RSS from GitHub network and POST only to authenticated R5 Worker
         run: node ops/official-bls-relay.mjs
+
+# R5 first-production-source-proof: run same official-source collector on deployment day.
