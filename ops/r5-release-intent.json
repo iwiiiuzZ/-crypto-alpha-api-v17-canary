@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "2292dd3149e17117499398e82a0c655213a190a5",
-  "sourceGitBlobSha": "4771ff162e360eff75b6a1e8a41c33e4751ba2bb",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5c",
-  "priorDeploymentId": "f323a8f7-f7fe-48a4-b97a-bd601d3aea26",
+  "reviewedCommit": "6c2dd258cb588eae66e8c5b074ad239b9d02817a",
+  "sourceGitBlobSha": "722a144cfdb3f799cee9cd2ff17f174c11a47c43",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5d",
+  "priorDeploymentId": "0de180ec-7494-4b34-a0fc-8095277148ee",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "Continue user's existing authorized repair and final acceptance. Exact reviewed source; 52 isolated/native suites and read-only R4 preflight passed. Preserve primary rate-limit cooldown; verified official full-book fallback, unchanged freshness/model/RR rules. Controlled strict ten-minute production acceptance and source-locked guarded rollback. No artificial signal, test push, or order execution. Final GPT/macro/real alert gaps remain independent."
+  "notes": "Continue the user's authorized engineering repair. 53 complete isolated/native suites passed, including exact R5c late-quote replay, exchange-time-aware bounded flow cache and write-amplification/recovery checks. Strict original 10-second validity, net RR>=2 and eight models preserved. Coalesced normal tick baseline two durable writes; no paid plan or data dependency. Controlled real-source, schema and strict autonomous 10-minute acceptance; guarded rollback to the exact current R4. No artificial signals, test pushes or order execution."
 }
