@@ -94,6 +94,7 @@ export async function requestJson(fetcher,url,headers={}){
 
 export function summarizeSample(fast,status,now=Date.now()){
   const f=fast?.fastMonitor||{},d=status?.diagnostics||{},identity=fast?.backendIdentity||{},review=f.fullReview||{};
+  const newsSourceReceipts=status?.diagnostics?.newsSourceReceipts||status?.discovery?.newsStatus?.sources||{};
   const receipts=[review,review.lastSharedCycle,review.lastCompletedReview].filter(Boolean).map(r=>({producerBuild:word(r.producerBuild),status:word(r.status),inspectedModels:number(r.inspectedModels),modelDataReady:r.modelDataReady===true,checkedAt:stamp(r.checkedAt),completedAt:stamp(r.completedAt||r.lastCompletedAt)}));
   const kinds=new Set(['OBSERVATION','NEWS','DYNAMIC_PRICE','PLAN','FAST_FLOW','OPPORTUNITY_PROGRESS','CONTROL']);
   return {readAt:new Date(now).toISOString(),build:word(fast?.build),apiVersion:word(fast?.apiVersion),
@@ -102,7 +103,7 @@ export function summarizeSample(fast,status,now=Date.now()){
     failures:summarizeFastFailures(f),receipts,
     scanner:{build:word(status?.build),stateReadSucceeded:d.stateReadSucceeded===true,identityMatched:status?.backendIdentity?.matched===true,status:word(status?.heartbeat?.status),producerBuild:word(status?.heartbeat?.producerBuild),lastCompletedAt:stamp(status?.heartbeat?.lastCompletedAt),lastSuccessfulCycleAt:stamp(status?.heartbeat?.lastSuccessfulCycleAt),newsConsumedAt:stamp(d.newsConsumption?.consumedAt),pendingPushes:number(d.pendingPushes)},
     notifications:{auditStatus:word(status?.notificationAudit?.status),channels:(status?.notificationAudit?.channels||[]).filter(c=>kinds.has(c.kind)).map(c=>({kind:c.kind,attempts:number(c.attempts),accepted:number(c.accepted),failures:number(c.failures)})),deviceReceiptVerified:false},
-    consumedNewsSources:NEWS_IDS.filter(k=>status?.discovery?.newsStatus?.sources?.[k]).map(source=>({source,status:word(status.discovery.newsStatus.sources[source].status),fetchedAt:stamp(status.discovery.newsStatus.sources[source].fetchedAt)})),
+    consumedNewsSources:NEWS_IDS.filter(k=>newsSourceReceipts[k]).map(source=>({source,status:word(newsSourceReceipts[source].status),fetchedAt:stamp(newsSourceReceipts[source].fetchedAt)})),
     candidateChain:summarizeCandidateChain(status)};
 }
 
