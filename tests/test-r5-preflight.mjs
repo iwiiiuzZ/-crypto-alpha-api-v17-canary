@@ -16,6 +16,14 @@ const base={manifest,sourceGitBlobSha:'locked',cloudflare,fast,status,now};
 const ok=assessR5Preflight(base);
 assert.equal(ok.passed,true,JSON.stringify(ok.failedGates));
 assert.equal(ok.priorVersionId,cloudflare.versions[0].id);
+const duringMinuteCycle=structuredClone(base);
+duringMinuteCycle.status.heartbeat.status='running';
+assert.equal(assessR5Preflight(duringMinuteCycle).passed,true,'running scanner with fresh last-success and complete model receipt is healthy');
+duringMinuteCycle.status.heartbeat.lastSuccessfulCycleAt=new Date(now-200000).toISOString();
+assert.equal(assessR5Preflight(duringMinuteCycle).passed,false,'running scanner with stale last-success must fail closed');
+duringMinuteCycle.status.heartbeat.lastSuccessfulCycleAt=tick;
+duringMinuteCycle.status.heartbeat.status='failed';
+assert.equal(assessR5Preflight(duringMinuteCycle).passed,false,'failed scanner status must fail closed');
 const cases=[
  o=>o.sourceGitBlobSha='different',
  o=>o.manifest.build=R4_BASELINE.build,
