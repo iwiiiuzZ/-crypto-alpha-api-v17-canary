@@ -3,7 +3,7 @@
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
   "entry": "main-v188.js",
-  "sourceGitBlobSha": "761ebddd46ce4b3a9db7fdcd4e1c182726265242",
+  "sourceGitBlobSha": "72c7fdcff7848aae97e5add6e3db22b7713ff55c",
   "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r4",
   "status": "CANDIDATE_NOT_DEPLOYED"
 }
