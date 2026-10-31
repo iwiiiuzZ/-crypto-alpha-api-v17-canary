@@ -5,7 +5,7 @@
 ## 交付身份（只对应唯一源代码）
 
 - 源码分支：`integration/r5-freeze-candidate-20261031`
-- Worker 构建：`crypto-alpha-worker-v27.6.3-macro-r5c`
+- Worker 构建：`crypto-alpha-worker-v27.6.3-macro-r5d`
 - 接口协议：`7.6.0`；状态拥有者协议：`owner-local-dispatch-v1`
 - Wrangler 唯一入口：`main-v188.js`
 - 文件精确源码 SHA：见 `ops/release-manifest.json`，经 `test-release-identity.mjs` 强制核对。
@@ -23,7 +23,7 @@
 ## 发布步骤（GitHub Actions 自动运行）
 
 1. 完成完整 Node（节点环境）/ native workerd（原生 Cloudflare 运行环境）回归、官方新闻源解析及故障注入测试。
-2. 检查当前生产仍为 R4，Cloudflare 部署 ID `f323a8f7-f7fe-48a4-b97a-bd601d3aea26`，Durable Object（持久对象）指纹 `aedfbcd14cd1`，实时 OKX 买卖盘和八模型回执正常。
+2. 检查当前生产仍为 R4，Cloudflare 部署 ID `0de180ec-7494-4b34-a0fc-8095277148ee`，Durable Object（持久对象）指纹 `aedfbcd14cd1`，实时 OKX 买卖盘和八模型回执正常。
 3. **仅当上述门槛满足**，由 `.github/workflows/r5-controlled-release.yml` 中「经审核唯一源提交」的发布意图触发生产更新。审核文件必须是唯一修改，不能夹带其他文件。
 4. 记录部署前 R4 的实际 Cloudflare 版本 UUID（不是臆测），部署后记录新部署 UUID、运行版本和状态绑定。
 5. 核验前后台构建/状态协议匹配，观察超过10分钟的分钟扫描与八模型回执持续推进（不能只看180秒新鲜度）。

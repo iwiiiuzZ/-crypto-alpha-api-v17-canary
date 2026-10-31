@@ -1,0 +1,54 @@
+name: R5 independent runtime evidence only
+on:
+  push:
+    branches: [ops/r5-runtime-diagnostics-20261031]
+    paths: [.github/workflows/r5-runtime-readonly.yml]
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-r5-independent-readonly
+  cancel-in-progress: false
+jobs:
+  runtime-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read fast state, scanner state and deployment settings without market refresh or notifications
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {requestJson,summarizeSample,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from './ops/diagnostics.mjs';
+          const config=JSON.parse(fs.readFileSync('ops/config.json','utf8'));
+          const scanner=process.env.SCANNER_TOKEN,token=process.env.CLOUDFLARE_API_TOKEN;
+          const code=v=>typeof v==='string'&&/^[A-Z0-9_]{1,120}$/.test(v)?v:null;
+          const [fast,status,cloudflare,buildConfiguration]=await Promise.all([
+            requestJson(fetch,config.origin+'/?view=fast'),
+            requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),
+            cloudflareSnapshot(fetch,config,token),cloudflareBuildSnapshot(fetch,config,token)
+          ]);
+          const sample=summarizeSample(fast,status),review=fast.fastMonitor?.fullReview||{};
+          const pick=(v,keys)=>Object.fromEntries(keys.filter(k=>v?.[k]!==undefined).map(k=>[k,v[k]]));
+          const evidence={mode:'READ_ONLY_FAST_AND_STATUS_NO_FOREGROUND_MARKET',sample,cloudflare,buildConfiguration,
+            review:pick(review,['status','producerBuild','startedAt','checkedAt','completedAt','inspectedModels','modelDataReady','requestId','source','reason']),
+            reviewErrorCode:code(review.lastError),
+            scanner:pick(status.heartbeat,['status','producerBuild','lastAttemptAt','lastCompletedAt','lastSuccessfulCycleAt','observationReason']),
+            scannerErrorCode:code(status.heartbeat?.lastError),
+            discoveryReason:code(status.discovery?.reason),
+            finalDeliveryAccepted:false};
+          const out=safeOutput(evidence,[scanner,token]);
+          fs.writeFileSync('r5-runtime-readonly-evidence.json',out);console.log(out);
+          NODE
+      - name: Preserve current real evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R5_INDEPENDENT_RUNTIME_READONLY
+          path: r5-runtime-readonly-evidence.json
+          retention-days: 30

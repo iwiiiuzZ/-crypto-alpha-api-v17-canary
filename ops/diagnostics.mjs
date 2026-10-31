@@ -14,7 +14,7 @@ const FAST_FEEDS={'/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP
  '/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400':'BOOK'};
 export function summarizeFastFailures(f={}){
  return {status:['ok','partial','degraded'].includes(f.status)?f.status:null,
-  lastAttemptAt:stamp(f.lastAttemptAt),nextAlarmAt:stamp(f.nextAlarmAt),flowRetryAt:stamp(f.flowRetryAt),failureCount:number(f.failureCount),
+  lastAttemptAt:stamp(f.lastAttemptAt),nextAlarmAt:stamp(f.nextAlarmAt),flowRetryAt:stamp(f.flowRetryAt),failureCount:number(f.failureCount),actualAlarmLatenessSeconds:number(f.actualAlarmLatenessSeconds),lastTickDurationSeconds:number(f.lastTickDurationSeconds),
   feeds:(Array.isArray(f.feedDiagnostics)?f.feedDiagnostics:[]).map(r=>({feed:FAST_FEEDS[r.path]||'OTHER',
    state:['live','cache','cooldown','stale-on-error','unavailable'].includes(r.state)?r.state:null,
    httpStatus:Number.isInteger(r.httpStatus)&&r.httpStatus>=100&&r.httpStatus<=599?r.httpStatus:null,

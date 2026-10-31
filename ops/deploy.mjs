@@ -11,7 +11,7 @@ if(tests.status!==0)process.exit(tests.status||1);
 // The R4 candidate must not deploy over a changed production identity or state binding.
 // A missing scanner credential or inaccessible production endpoint fails closed.
 const manifest=JSON.parse(fs.readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
-if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5c'){
+if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5d'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
 }
