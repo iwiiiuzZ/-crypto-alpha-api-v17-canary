@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, 'codex/**']
+    branches: [main, 'codex/**', 'integration/**']
 permissions:
   contents: read
 jobs:
@@ -17,3 +17,19 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      - name: Package candidate only after complete regression passes
+        if: success() && github.ref == 'refs/heads/integration/r3-macro-news-20261030'
+        run: |
+          mkdir -p release/ops release/tests
+          cp main-v188.js wrangler.jsonc package.json package-lock.json GPT_OPENING_V27_6_3_CANDIDATE.txt V27_6_3_INSTALL_AND_RELEASE.md PROJECT_REQUIREMENTS_AND_ACCEPTANCE.md ACCEPTANCE.md RELEASE_READINESS.md release/
+          cp -R ops/. release/ops/
+          cp -R tests/. release/tests/
+          (cd release && zip -qr ../CryptoAlpha_V27_6_3_R4_CANDIDATE_TESTED.zip .)
+      - name: Retain tested candidate for download (not production)
+        if: success() && github.ref == 'refs/heads/integration/r3-macro-news-20261030'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CryptoAlpha_V27_6_3_R4_CANDIDATE_TESTED
+          path: CryptoAlpha_V27_6_3_R4_CANDIDATE_TESTED.zip
+          if-no-files-found: error
+          retention-days: 30

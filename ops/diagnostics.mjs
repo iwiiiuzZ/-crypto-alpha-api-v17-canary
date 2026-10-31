@@ -8,7 +8,7 @@ const number=v=>typeof v==='number'&&Number.isFinite(v)?v:null;
 const enumCode=v=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{0,119}$/.test(v)?v:null;
 const age=(v,now)=>Number.isFinite(at(v))?(now-at(v))/1000:null;
 const fresh=(v,now,max)=>{const a=age(v,now);return a!==null&&a>=-5&&a<=max;};
-const NEWS_IDS=['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR','NYFED_CALENDAR'];
+const NEWS_IDS=['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','US_TREASURY_YIELD_DAILY','NYFED_CALENDAR'];
 const FAST_FEEDS={'/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP':'CONTRACT',
  '/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500':'TRADES',
  '/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400':'BOOK'};

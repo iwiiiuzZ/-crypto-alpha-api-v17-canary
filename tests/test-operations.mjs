@@ -14,6 +14,15 @@ await test('news consumption needs matching successful source batches, not a new
  s.consumedNewsSources[0].fetchedAt=iso(start);assert.equal(compareNewsBatches(s,c)[0].verified,true);
  s.consumedNewsSources[0].status='unavailable';assert.equal(compareNewsBatches(s,c)[0].verified,false);
 });
+await test('official BEA and BOJ source consumption is visible to acceptance audit',()=>{
+ const identity={matched:true,frontendBuild:'current',stateOwnerBuild:'current',stateOwnerContract:config.stateContract};
+ const status={build:'current',backendIdentity:identity,diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:iso(start+1000)}},
+  discovery:{newsStatus:{sources:{BEA_RELEASES:{status:'ok',fetchedAt:iso(start)},BOJ_RELEASES:{status:'ok',fetchedAt:iso(start)}}}}};
+ const row=summarizeSample({build:'current',apiVersion:'7.6.0',backendIdentity:identity},status,start+2000);
+ assert.deepEqual(row.consumedNewsSources.map(x=>x.source).sort(),['BEA_RELEASES','BOJ_RELEASES']);
+ const context={newsSources:[{source:'BEA_RELEASES',status:'ok',fetchedAt:iso(start)},{source:'BOJ_RELEASES',status:'ok',fetchedAt:iso(start)}]};
+ assert.deepEqual(compareNewsBatches(row,context).map(x=>x.verified),[true,true]);
+});
 await test('build configuration audit only reads the target and excludes commands and credentials',async()=>{
  const urls=[];const r=await cloudflareBuildSnapshot(async(url,init)=>{urls.push(url);assert.equal(init.method,'GET');return Response.json({success:true,result:url.endsWith('/scripts')?[{id:'other',tag:'unrelated'},{id:'worker',tag:'target-tag'}]:[{trigger_uuid:'target-trigger',branch_includes:['main'],branch_excludes:[],root_directory:'/',deploy_command:'npm run deploy:checked',environment_variables:{TOKEN:'private-key'},build_token_uuid:'private-token'}]});},config,'token');
  assert.ok(urls[1].includes('/target-tag/'));assert.equal(r.triggers[0].checkedDeployCommand,true);assert.equal(r.triggers[0].exactMainOnly,true);assert.ok(!JSON.stringify(r).includes('private-'));assert.ok(!JSON.stringify(r).includes('unrelated'));

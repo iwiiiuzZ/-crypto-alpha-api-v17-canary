@@ -1,0 +1,9 @@
+{
+  "purpose": "READ_ONLY_R4_CURRENT_PRODUCTION_NEWS_CONSUMPTION_AUDIT",
+  "requestedAt": "2026-10-31",
+  "expectedDeployedBuild": "crypto-alpha-worker-v27.6.3-macro-r4",
+  "avoidWrites": true,
+  "includesAutonomousWindow": true,
+  "includesLatestNewsBatchComparison": true,
+  "notes": "Do not push synthetic trade/communication tests. Confirm source timestamps; research R5 deployment gate."
+}

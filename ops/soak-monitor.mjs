@@ -6,7 +6,15 @@ export function assessSoak(samples,expected,before,after,requiredMs=600000){
  const result=assessSamples(samples,expected);
  const time=v=>Date.parse(v),end=time(samples.at(-1)?.readAt),start=time(samples[0]?.readAt);
  const fresh=(v,now)=>Number.isFinite(time(v))&&now-time(v)>=-5000&&now-time(v)<=180000;
+ const progresses=(select,maxIdleMs=110000)=>{
+  if(!samples.length)return false;
+  const stamps=samples.map(select).map(time);
+  return stamps.every((stamp,i)=>Number.isFinite(stamp)&&stamp<=time(samples[i].readAt)+5000&&time(samples[i].readAt)-stamp<=maxIdleMs&&(!i||stamp>=stamps[i-1]))&&stamps.at(-1)>stamps[0];
+ };
+ const latestReceipt=s=>s.receipts.filter(r=>r.producerBuild===expected.build&&r.inspectedModels===8&&r.modelDataReady&&r.status==='completed').sort((a,b)=>time(b.completedAt)-time(a.completedAt))[0]?.completedAt;
  const gates={...result.gates,
+  heartbeatProgresses:progresses(s=>s.scanner.lastSuccessfulCycleAt),
+  modelReviewProgresses:progresses(latestReceipt),
   fullDuration:samples.length>=36&&end-start>=requiredMs,
   noReadGap:samples.every((s,i)=>!i||time(s.readAt)-time(samples[i-1].readAt)<=35000),
   allMinuteHeartbeats:samples.every(s=>s.scanner.stateReadSucceeded&&s.scanner.identityMatched&&s.scanner.producerBuild===expected.build&&['completed','running'].includes(s.scanner.status)&&fresh(s.scanner.lastSuccessfulCycleAt,time(s.readAt))),

@@ -1,0 +1,37 @@
+name: R4 production news and scanner consumption audit
+on:
+  push:
+    branches:
+      - integration/r3-macro-news-20261030
+    paths:
+      - ops/r4-news-audit-intent.json
+permissions:
+  contents: read
+jobs:
+  readonly-consumption:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+      EXPECTED_DEPLOYED_BUILD: crypto-alpha-worker-v27.6.3-macro-r4
+      INCLUDE_READ_CONTEXT: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Observe autonomous scanner then fetch independent news context and prove subsequent consumption
+        run: npm run ops:diagnose
+      - name: Save redacted evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: R4_PRODUCTION_NEWS_CONSUMPTION_EVIDENCE
+          path: |
+            ops-report.json
+            ops-report.md
+          if-no-files-found: warn
+          retention-days: 30
