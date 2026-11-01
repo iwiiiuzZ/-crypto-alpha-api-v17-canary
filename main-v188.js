@@ -5497,7 +5497,7 @@ function scannerAuthorized(request, env) {
 function scannerConfiguration(env) {
   return {
     barkConfigured: Boolean(String(env?.BARK_DEVICE_KEY || "").trim()),
-    news:{jin10Configured:Boolean(String(env?.JIN10_MCP_TOKEN||"").trim()),blsRelayDispatchConfigured:Boolean(String(env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim()),publicFeeds:NEWS_SOURCES.length,secondsLevelDeliveryGuaranteed:false},
+    news:{jin10Configured:Boolean(String(env?.JIN10_MCP_TOKEN||"").trim()),publicFeeds:NEWS_SOURCES.length,secondsLevelDeliveryGuaranteed:false},
     scannerTokenConfigured: Boolean(String(env?.SCANNER_TOKEN || "").trim()),
     stateConfigured: Boolean(scannerStateStub(env) || (env?.ALERT_STATE?.get && env?.ALERT_STATE?.put)),
     stateBackend: scannerStateStub(env) ? "DURABLE_OBJECT" : env?.ALERT_STATE?.get ? "KV" : "MISSING",
