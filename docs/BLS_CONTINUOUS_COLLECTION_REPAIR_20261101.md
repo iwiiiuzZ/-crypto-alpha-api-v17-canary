@@ -37,3 +37,13 @@
 [创建细粒度授权（已预填工作流读写）](https://github.com/settings/personal-access-tokens/new?name=CryptoAlpha-BLS-Dispatch&target_name=iwiiiuzZ&actions=write)：选择Only select repositories（仅选指定仓库），只选-crypto-alpha-api-v17-canary，保留Actions Read and write（工作流读写），核对到期日后生成。只将值填入[本仓库密钥入口](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/settings/secrets/actions)，名称GITHUB_ACTIONS_DISPATCH_TOKEN（持续触发密钥）。不要把值发到聊天、代码或截图。配置后由助手核验权限、部署、续采和回归，用户不承担基础测试。
 
 依据：[细粒度权限与触发接口](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)、[作业令牌生命周期](https://docs.github.com/en/actions/concepts/security/github_token)、[代码与密钥同时上传](https://developers.cloudflare.com/workers/configuration/secrets/#upload-secrets-alongside-code)。
+
+## 最终代码与真实单轮核验（2026-11-01 17:38，北京时间）
+
+代码提交[e64208ca38f861ee20705ae79e9c2c5d168eacb5](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/tree/e64208ca38f861ee20705ae79e9c2c5d168eacb5)，Worker源码Git blob为75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e，SHA-256为e5b5b43bf3364d408c1d308f94be361a104c34fe90f8afbadc61f5078b29e5b6。本地和[CI41293876705](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41293876705)实际59组全部通过，含8组原生workerd检查；隔离夹具不算生产验证。
+
+[最终隔离实测41293876720](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41293876720)使用上述精确候选函数。真实受控触发[41293910898](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41293910898)固定到crypto-alpha-collector-r5f-20261031标签及d5083d1ead0dbb2ea19ed624d11792bdfcbab7e0提交，任务成功；四源抓取17:37:14.877—17:37:14.913，扫描消费17:38:25.153，17:38:38.766观察确认四源均ok。起始观察时四源仍为15:22:43批次且过期；恢复后状态与先前失败一并保留。去重未额外发第二次请求，临时Worker删除确认，生产精确部署、版本和原绑定不变，无交易信号、无设备推送。
+
+此轮实际检查仓库专用密钥存在=false、生产同名密钥存在=false，使用EPHEMERAL_TEST_JOB_ONLY（仅测试作业临时授权）。它没有装入生产；因此不能把兼容性/真实单轮消费判为G生产安装或持续续采已通过。G默认来源标签、长期权限、25分钟两次自主续采仍待受控上线验证。
+
+[修复PR5](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/pull/5)保持草稿。发布意图未修改，主分支与生产仍F。最终单轮、CI和隔夜失败JSON均保存在本分支evidence/，没有用绿色结果覆盖失败。
