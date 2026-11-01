@@ -1,0 +1,112 @@
+{
+  "scope": "ISOLATED_TEMPORARY_STATELESS_WORKER_NO_PRODUCTION_MUTATION",
+  "startedAt": "2026-11-01T03:54:24.603Z",
+  "probeWorker": "crypto-alpha-bls-probe-20261101-06fc3f59",
+  "productionWorker": "crypto-alpha-api-v17-canary",
+  "errors": [],
+  "created": true,
+  "cleanupConfirmed": true,
+  "productionBefore": {
+    "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+    "deployedAt": "2026-10-31T10:16:55.913Z",
+    "versions": [
+      {
+        "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "sourceGitBlobSha": "e34d8e85864fba66cc0a331b77be7c817288242e",
+  "preflight": {
+    "alreadyDeployed": true,
+    "gates": {
+      "verifiedWindow": true,
+      "immutableSource": true,
+      "sameBuild": true,
+      "exactDeployment": true,
+      "exactVersion": true,
+      "sameNamespace": true,
+      "ownerMatches": true,
+      "correctApi": true
+    },
+    "failedGates": [],
+    "scope": "EXACT_PREVIOUSLY_VERIFIED_PHYSICAL_SOURCE_NO_REDEPLOYMENT_NOT_NEW_ACCEPTANCE"
+  },
+  "measurement": {
+    "scope": "ISOLATED_CLOUDFLARE_EGRESS_OFFICIAL_URLS_NOT_PRODUCTION_OR_TRADING",
+    "observedAt": "2026-11-01T03:54:28.343Z",
+    "control": {
+      "source": "BLS_CPI",
+      "identified": false,
+      "httpStatus": 403,
+      "contentType": "text/html",
+      "valid": false,
+      "elapsedMs": 245
+    },
+    "identified": [
+      {
+        "source": "BLS_CPI",
+        "identified": true,
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "valid": false,
+        "elapsedMs": 26
+      },
+      {
+        "source": "BLS_PPI",
+        "identified": true,
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "valid": false,
+        "elapsedMs": 53
+      },
+      {
+        "source": "BLS_EMPLOYMENT",
+        "identified": true,
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "valid": false,
+        "elapsedMs": 23
+      },
+      {
+        "source": "BLS_CALENDAR",
+        "identified": true,
+        "httpStatus": 403,
+        "contentType": "text/html",
+        "valid": false,
+        "elapsedMs": 25
+      }
+    ],
+    "identifiedAllValid": false
+  },
+  "productionAfter": {
+    "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+    "deployedAt": "2026-10-31T10:16:55.913Z",
+    "versions": [
+      {
+        "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "productionUnchanged": true,
+  "identifiedOfficialAccessVerified": false,
+  "passed": false,
+  "completedAt": "2026-11-01T03:54:28.992Z"
+}

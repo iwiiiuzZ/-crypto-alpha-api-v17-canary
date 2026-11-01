@@ -972,9 +972,11 @@ const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
 const BLS_DISPATCH_STATE_KEY = "news:bls-dispatch:v1";
 const BLS_DISPATCH_REFRESH_MS = 10*60*1000;
 const BLS_DISPATCH_IDS = ["BLS_CPI","BLS_PPI","BLS_EMPLOYMENT","BLS_CALENDAR"];
+const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5g-20261101";
+function validBlsCollectorRef(ref){return ref==="main"||/^crypto-alpha-collector-r5[a-z]-\d{8}$/.test(ref);}
 function compactBlsRelayDispatch(state,configured){
  const stamp=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null;
- return {configured,status:configured?(state?.status||"NOT_CHECKED"):"AUTHORIZATION_REQUIRED",
+ return {configured,status:configured?(state?.status||"NOT_CHECKED"):"AUTHORIZATION_REQUIRED",collectorRef:validBlsCollectorRef(state?.collectorRef)?state.collectorRef:null,
   lastAttemptAt:stamp(state?.lastAttemptAt),lastRequestAcceptedAt:stamp(state?.lastRequestAcceptedAt),
   lastObservedRelayReceivedAt:stamp(state?.lastObservedRelayReceivedAt),
   nextAttemptAt:Number.isFinite(state?.nextAttemptAt)&&Number.isFinite(new Date(state.nextAttemptAt).getTime())?new Date(state.nextAttemptAt).toISOString():null,
@@ -985,13 +987,14 @@ function compactBlsRelayDispatch(state,configured){
   awaitingReceiptAttempts:Number.isSafeInteger(state?.awaitingReceiptAttempts)?state.awaitingReceiptAttempts:0,
   scope:"DISPATCH_ACK_IS_NOT_SOURCE_FETCH_OR_SCANNER_CONSUMPTION",deviceNotificationSent:false,tradeSignalGenerated:false};
 }
-async function requestOfficialBlsCollection(token,fetcher=fetch){
+async function requestOfficialBlsCollection(token,fetcher=fetch,collectorRef=BLS_COLLECTOR_REF){
+ if(!validBlsCollectorRef(collectorRef))return {acknowledged:false,httpStatus:null,workflowRunId:null,reason:"DISPATCH_COLLECTOR_REF_INVALID"};
  const endpoint="https://api.github.com/repos/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/workflows/official-bls-relay.yml/dispatches";
  try{
   const r=await fetcher(endpoint,{method:"POST",redirect:"manual",signal:AbortSignal.timeout(2500),
    headers:{authorization:"Bearer "+token,accept:"application/vnd.github+json","content-type":"application/json",
     "User-Agent":"CryptoAlphaRelayDispatcher/1.0","X-GitHub-Api-Version":"2026-03-10"},
-   body:JSON.stringify({ref:"main",return_run_details:true})});
+   body:JSON.stringify({ref:collectorRef,return_run_details:true})});
   const rawRetry=r.headers.get("retry-after"),reset=Number(r.headers.get("x-ratelimit-reset"));
   const retry=rawRetry&&/^\d+$/.test(rawRetry)?Number(rawRetry):rawRetry?Math.ceil((Date.parse(rawRetry)-Date.now())/1000):null;
   const rateLimited=r.status===429||(r.status===403&&(r.headers.get("x-ratelimit-remaining")==="0"||rawRetry!==null));
@@ -1008,14 +1011,16 @@ async function requestOfficialBlsCollection(token,fetcher=fetch){
 async function maintainOfficialBlsRelay(owner,options={}){
  const token=String(owner.env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim();
  if(!token)return compactBlsRelayDispatch(null,false);
+ const collectorRef=options.collectorRef??BLS_COLLECTOR_REF;
+ if(!validBlsCollectorRef(collectorRef))return compactBlsRelayDispatch({status:"DISPATCH_COLLECTOR_REF_INVALID"},true);
  if(owner.blsRelayDispatchWork)return owner.blsRelayDispatchWork;
  const task=(async()=>{
   const now=options.now??Date.now(),storage=owner.ctx.storage;
   const [saved,relay]=await Promise.all([storage.get(BLS_DISPATCH_STATE_KEY),storage.get(BLS_RELAY_STATE_KEY)]);
   const prior=saved?.expiresAt>now&&saved.value&&typeof saved.value==='object'?saved.value:{};
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token+'\0'+collectorRef));
   const credentialFingerprint=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
-  let state=prior.credentialFingerprint===credentialFingerprint?{...prior}:{attemptCount:prior.attemptCount||0,credentialFingerprint};
+  let state=prior.credentialFingerprint===credentialFingerprint?{...prior}:{attemptCount:prior.attemptCount||0,credentialFingerprint,collectorRef};
   const records=relay?.expiresAt>now?relay.value?.records||{}:{};
   const valid=BLS_DISPATCH_IDS.every(id=>officialBlsRelayRecord(records[id],id,now));
   const oldest=valid?Math.min(...BLS_DISPATCH_IDS.map(id=>Date.parse(records[id].fetchedAt))):null;
@@ -1033,7 +1038,7 @@ async function maintainOfficialBlsRelay(owner,options={}){
   state={...state,status:"REQUEST_IN_FLIGHT",lastAttemptAt:new Date(now).toISOString(),nextAttemptAt:now+120000,
    attemptCount:Math.min(1000000000,(Number.isSafeInteger(state.attemptCount)?state.attemptCount:0)+1)};
   await put(state);
-  const result=await requestOfficialBlsCollection(token,options.fetcher||fetch);
+  const result=await requestOfficialBlsCollection(token,options.fetcher||fetch,collectorRef);
   if(result.acknowledged){
    const attempts=Math.min(8,(Number.isSafeInteger(state.awaitingReceiptAttempts)&&state.awaitingReceiptAttempts>=0?state.awaitingReceiptAttempts:0)+1);
    state={...state,status:"AWAITING_SOURCE_RECEIPT",lastRequestAcceptedAt:new Date(options.now??Date.now()).toISOString(),

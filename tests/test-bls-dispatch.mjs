@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
-const {maintainOfficialBlsRelay,requestOfficialBlsCollection,compactBlsRelayDispatch}=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {maintainOfficialBlsRelay,requestOfficialBlsCollection,compactBlsRelayDispatch};').toString('base64'));
+const {maintainOfficialBlsRelay:actualMaintain,requestOfficialBlsCollection,compactBlsRelayDispatch}=await import('data:text/javascript;base64,'+Buffer.from(source+'\nexport {maintainOfficialBlsRelay,requestOfficialBlsCollection,compactBlsRelayDispatch};').toString('base64'));
+const maintainOfficialBlsRelay=(o,options={})=>actualMaintain(o,{collectorRef:'main',...options});
 const NOW=Date.parse('2026-11-01T04:00:00Z'),KEY='news:bls-dispatch:v1',RELAY='news:bls-official-relay:v1';
 let passed=0;
 async function test(name,fn){await fn();passed++;console.log('PASS '+name);}
@@ -31,4 +32,5 @@ await test('network errors and provider bodies cannot leak credentials into stat
 await test('failed durable lease prevents any network call',async()=>{const o=owner();o.ctx.storage.put=async()=>{throw Error('STORAGE_FAILED');};let calls=0;await assert.rejects(maintainOfficialBlsRelay(o,{now:NOW,fetcher:()=>{calls++;}}));assert.equal(calls,0);});
 await test('post-ack persistence failure retains the pre-network lease across restart',async()=>{const o=owner(),put=o.ctx.storage.put;let writes=0,calls=0;o.ctx.storage.put=async(k,v)=>{if(++writes===2)throw Error('AFTER_ACK_FAILURE');return put(k,v);};await assert.rejects(maintainOfficialBlsRelay(o,{now:NOW,fetcher:async()=>{calls++;return ack();}}));const restarted={env:o.env,ctx:o.ctx};await maintainOfficialBlsRelay(restarted,{now:NOW+1000,fetcher:async()=>{calls++;return ack();}});assert.equal(calls,1);});
 await test('corrupt or expired diagnostic state never leaks raw data or breaks formatting',async()=>{assert.equal(compactBlsRelayDispatch({nextAttemptAt:1e100,credentialFingerprint:'private',lastAttemptAt:'garbage'},true).nextAttemptAt,null);const o=owner();await maintainOfficialBlsRelay(o,{now:NOW,fetcher:ack});o.records.get(KEY).expiresAt=NOW;let calls=0;await maintainOfficialBlsRelay(o,{now:NOW+1000,fetcher:async()=>{calls++;return ack();}});assert.equal(calls,1);});
+await test('collector reference is pinned to a reviewed transport tag and invalid references never dispatch',async()=>{const o=owner(),collectorRef='crypto-alpha-collector-r5g-20261101';let calls=0;const r=await actualMaintain(o,{now:NOW,fetcher:async(_u,options)=>{calls++;assert.equal(JSON.parse(options.body).ref,collectorRef);return ack();}});assert.equal(calls,1);assert.equal(r.collectorRef,collectorRef);const invalid=await actualMaintain(o,{collectorRef:'unreviewed-branch',now:NOW+1000,fetcher:()=>{throw Error('NO_FETCH_ALLOWED');}});assert.equal(invalid.status,'DISPATCH_COLLECTOR_REF_INVALID');assert.equal(calls,1);});
 console.log(JSON.stringify({passed,failed:0,scope:'ISOLATED_DISPATCH_AND_PERSISTENCE_FIXTURES_NOT_PRODUCTION'}));

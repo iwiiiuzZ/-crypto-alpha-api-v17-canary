@@ -1,0 +1,1966 @@
+{
+  "scope": "OVERNIGHT_SAMPLED_RUNS_NOT_COMPLETE_CONTINUOUS_TELEMETRY",
+  "observedAt": "2026-11-01T03:50:55Z",
+  "sourceMainCommit": "d5083d1ead0dbb2ea19ed624d11792bdfcbab7e0",
+  "expectedCollectorIntervalSeconds": 600,
+  "expectedOperationsIntervalSeconds": 300,
+  "scheduledRuns": [
+    {
+      "id": 41211333962,
+      "name": "Official BLS free fallback relay (R5 only)",
+      "event": "schedule",
+      "createdAt": "2026-10-31T14:41:58Z",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 41217200376,
+      "name": "Managed operations",
+      "event": "schedule",
+      "createdAt": "2026-10-31T15:56:05Z",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 41231223013,
+      "name": "Official BLS free fallback relay (R5 only)",
+      "event": "schedule",
+      "createdAt": "2026-10-31T18:48:54Z",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 41235370960,
+      "name": "Managed operations",
+      "event": "schedule",
+      "createdAt": "2026-10-31T19:41:07Z",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 41245971082,
+      "name": "Official BLS free fallback relay (R5 only)",
+      "event": "schedule",
+      "createdAt": "2026-10-31T21:57:34Z",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 41249881235,
+      "name": "Managed operations",
+      "event": "schedule",
+      "createdAt": "2026-10-31T22:49:28Z",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 41259065243,
+      "name": "Official BLS free fallback relay (R5 only)",
+      "event": "schedule",
+      "createdAt": "2026-11-01T00:58:10Z",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 41261448904,
+      "name": "Managed operations",
+      "event": "schedule",
+      "createdAt": "2026-11-01T01:31:36Z",
+      "status": "completed",
+      "conclusion": "failure"
+    }
+  ],
+  "observedCollectorIntervalsSeconds": [
+    14816,
+    11320,
+    10836
+  ],
+  "findings": [
+    {
+      "runId": 41217200376,
+      "jobId": 124584108090,
+      "createdAt": "2026-10-31T15:56:05Z",
+      "result": "DEGRADED",
+      "errors": [
+        {
+          "stage": "news-source-consumption",
+          "code": "REQUIRED_SOURCE_UNAVAILABLE_OR_STALE"
+        }
+      ],
+      "failedRuntimeGates": [],
+      "sourceCoverage": {
+        "passed": false,
+        "rows": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:55:25.356Z",
+            "current": true
+          },
+          {
+            "source": "BEA_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:54:23.634Z",
+            "current": true
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:54:23.858Z",
+            "current": true
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:55:24.967Z",
+            "current": true
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:55:24.253Z",
+            "current": true
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:55:24.840Z",
+            "current": true
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T14:42:03.333Z",
+            "current": false
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T14:42:03.360Z",
+            "current": false
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T14:42:03.394Z",
+            "current": false
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T14:42:03.418Z",
+            "current": false
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T11:41:24.406Z",
+            "current": true
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T15:46:24.144Z",
+            "current": true
+          }
+        ],
+        "scope": "REQUIRED_SOURCE_CONSUMPTION_AVAILABILITY_NOT_PUBLICATION_RECENCY_OR_PROFIT"
+      },
+      "samples": [
+        {
+          "readAt": "2026-10-31T15:56:16.491Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T15:56:16.092Z",
+            "lastTradeAt": "2026-10-31T15:56:13.555Z",
+            "bookAt": "2026-10-31T15:56:13.457Z",
+            "dataAgeSeconds": 0.091,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T15:56:15.851Z",
+            "nextAlarmAt": "2026-10-31T15:56:18.351Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.241,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T15:55:28.166Z",
+            "lastSuccessfulCycleAt": "2026-10-31T15:55:28.166Z",
+            "newsConsumedAt": "2026-10-31T15:55:28.166Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T12:10:23.452Z",
+              "completedAt": "2026-10-31T12:10:26.859Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-10-31T15:56:41.657Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T15:56:41.535Z",
+            "lastTradeAt": "2026-10-31T15:56:37.652Z",
+            "bookAt": "2026-10-31T15:56:38.907Z",
+            "dataAgeSeconds": 0.026,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T15:56:41.294Z",
+            "nextAlarmAt": "2026-10-31T15:56:43.794Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.241,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T15:56:25.405Z",
+            "lastSuccessfulCycleAt": "2026-10-31T15:56:25.405Z",
+            "newsConsumedAt": "2026-10-31T15:56:25.405Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T12:10:23.452Z",
+              "completedAt": "2026-10-31T12:10:26.859Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-10-31T15:57:41.645Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T15:57:39.250Z",
+            "lastTradeAt": "2026-10-31T15:57:36.094Z",
+            "bookAt": "2026-10-31T15:57:36.607Z",
+            "dataAgeSeconds": 2.335,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T15:57:39.004Z",
+            "nextAlarmAt": "2026-10-31T15:57:41.504Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.246,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T15:57:25.911Z",
+            "lastSuccessfulCycleAt": "2026-10-31T15:57:25.911Z",
+            "newsConsumedAt": "2026-10-31T15:57:25.911Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T12:10:23.452Z",
+              "completedAt": "2026-10-31T12:10:26.859Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        }
+      ],
+      "productionIdentity": {
+        "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+        "deployedAt": "2026-10-31T10:16:55.913Z",
+        "versions": [
+          {
+            "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+            "percentage": 100
+          }
+        ],
+        "binding": {
+          "present": true,
+          "className": "ScannerState",
+          "scriptName": null,
+          "namespaceFingerprint": "aedfbcd14cd1"
+        },
+        "bindingMatches": true,
+        "singleVersion": true
+      }
+    },
+    {
+      "runId": 41235370960,
+      "jobId": 124637907032,
+      "createdAt": "2026-10-31T19:41:07Z",
+      "result": "DEGRADED",
+      "errors": [
+        {
+          "stage": "news-source-consumption",
+          "code": "REQUIRED_SOURCE_UNAVAILABLE_OR_STALE"
+        }
+      ],
+      "failedRuntimeGates": [
+        "independentHealth"
+      ],
+      "sourceCoverage": {
+        "passed": false,
+        "rows": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T19:41:38.387Z",
+            "current": true
+          },
+          {
+            "source": "BEA_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T19:41:04.622Z",
+            "current": true
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T19:41:04.729Z",
+            "current": true
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T19:41:37.113Z",
+            "current": true
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T19:41:36.942Z",
+            "current": true
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T19:41:37.064Z",
+            "current": true
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T18:49:00.155Z",
+            "current": false
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T18:49:00.226Z",
+            "current": false
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T18:49:00.270Z",
+            "current": false
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T18:49:00.297Z",
+            "current": false
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T17:42:24.109Z",
+            "current": true
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T18:47:35.756Z",
+            "current": true
+          }
+        ],
+        "scope": "REQUIRED_SOURCE_CONSUMPTION_AVAILABILITY_NOT_PUBLICATION_RECENCY_OR_PROFIT"
+      },
+      "samples": [
+        {
+          "readAt": "2026-10-31T19:41:23.968Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T19:41:21.846Z",
+            "lastTradeAt": "2026-10-31T19:41:14.903Z",
+            "bookAt": "2026-10-31T19:41:20.002Z",
+            "dataAgeSeconds": 2.074,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T19:41:21.602Z",
+            "nextAlarmAt": "2026-10-31T19:41:24.102Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.244,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": {
+                  "primaryHttpStatus": 429,
+                  "primaryRetryAt": "2026-10-31T19:41:31.838Z",
+                  "fallbackSource": "OKX_OFFICIAL_FULL_BOOK_400",
+                  "succeeded": true
+                }
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "running",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T19:41:11.348Z",
+            "lastSuccessfulCycleAt": "2026-10-31T19:41:11.348Z",
+            "newsConsumedAt": "2026-10-31T19:41:11.348Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-10-31T19:41:49.100Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T19:41:46.921Z",
+            "lastTradeAt": "2026-10-31T19:41:43.603Z",
+            "bookAt": "2026-10-31T19:41:44.202Z",
+            "dataAgeSeconds": 2.124,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T19:41:46.602Z",
+            "nextAlarmAt": "2026-10-31T19:41:49.102Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.319,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T19:41:40.947Z",
+            "lastSuccessfulCycleAt": "2026-10-31T19:41:40.947Z",
+            "newsConsumedAt": "2026-10-31T19:41:40.947Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-10-31T19:42:49.129Z",
+          "health": {
+            "sampling": true,
+            "quote": false,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T19:42:46.839Z",
+            "lastTradeAt": "2026-10-31T19:42:38.677Z",
+            "bookAt": "2026-10-31T19:42:46.352Z",
+            "dataAgeSeconds": 2.242,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T19:42:46.602Z",
+            "nextAlarmAt": "2026-10-31T19:42:49.102Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.237,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T19:42:47.440Z",
+            "lastSuccessfulCycleAt": "2026-10-31T19:42:47.440Z",
+            "newsConsumedAt": "2026-10-31T19:42:47.440Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        }
+      ],
+      "productionIdentity": {
+        "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+        "deployedAt": "2026-10-31T10:16:55.913Z",
+        "versions": [
+          {
+            "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+            "percentage": 100
+          }
+        ],
+        "binding": {
+          "present": true,
+          "className": "ScannerState",
+          "scriptName": null,
+          "namespaceFingerprint": "aedfbcd14cd1"
+        },
+        "bindingMatches": true,
+        "singleVersion": true
+      }
+    },
+    {
+      "runId": 41249881235,
+      "jobId": 124680985671,
+      "createdAt": "2026-10-31T22:49:28Z",
+      "result": "DEGRADED",
+      "errors": [
+        {
+          "stage": "news-source-consumption",
+          "code": "REQUIRED_SOURCE_UNAVAILABLE_OR_STALE"
+        }
+      ],
+      "failedRuntimeGates": [],
+      "sourceCoverage": {
+        "passed": false,
+        "rows": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T22:49:25.051Z",
+            "current": true
+          },
+          {
+            "source": "BEA_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T22:48:23.665Z",
+            "current": true
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T22:48:23.953Z",
+            "current": true
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T22:49:24.567Z",
+            "current": true
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T22:48:24.098Z",
+            "current": true
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T22:47:23.501Z",
+            "current": true
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T21:57:42.738Z",
+            "current": false
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T21:57:42.751Z",
+            "current": false
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T21:57:42.764Z",
+            "current": false
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-10-31T21:57:42.779Z",
+            "current": false
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T17:42:24.109Z",
+            "current": true
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T21:50:24.024Z",
+            "current": true
+          }
+        ],
+        "scope": "REQUIRED_SOURCE_CONSUMPTION_AVAILABILITY_NOT_PUBLICATION_RECENCY_OR_PROFIT"
+      },
+      "samples": [
+        {
+          "readAt": "2026-10-31T22:49:42.178Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T22:49:40.788Z",
+            "lastTradeAt": "2026-10-31T22:49:38.963Z",
+            "bookAt": "2026-10-31T22:49:38.154Z",
+            "dataAgeSeconds": 1.245,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T22:49:40.538Z",
+            "nextAlarmAt": "2026-10-31T22:49:43.038Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.25,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T22:49:26.744Z",
+            "lastSuccessfulCycleAt": "2026-10-31T22:49:26.744Z",
+            "newsConsumedAt": "2026-10-31T22:49:26.744Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-10-31T22:50:07.596Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T22:50:06.055Z",
+            "lastTradeAt": "2026-10-31T22:50:05.285Z",
+            "bookAt": "2026-10-31T22:50:03.404Z",
+            "dataAgeSeconds": 1.238,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T22:50:05.817Z",
+            "nextAlarmAt": "2026-10-31T22:50:08.317Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.238,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T22:49:26.744Z",
+            "lastSuccessfulCycleAt": "2026-10-31T22:49:26.744Z",
+            "newsConsumedAt": "2026-10-31T22:49:26.744Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-10-31T22:51:07.807Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-10-31T22:51:06.541Z",
+            "lastTradeAt": "2026-10-31T22:51:04.885Z",
+            "bookAt": "2026-10-31T22:51:03.904Z",
+            "dataAgeSeconds": 0.81,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-10-31T22:51:06.304Z",
+            "nextAlarmAt": "2026-10-31T22:51:08.804Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.237,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-10-31T22:50:26.744Z",
+            "lastSuccessfulCycleAt": "2026-10-31T22:50:26.744Z",
+            "newsConsumedAt": "2026-10-31T22:50:26.744Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        }
+      ],
+      "productionIdentity": {
+        "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+        "deployedAt": "2026-10-31T10:16:55.913Z",
+        "versions": [
+          {
+            "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+            "percentage": 100
+          }
+        ],
+        "binding": {
+          "present": true,
+          "className": "ScannerState",
+          "scriptName": null,
+          "namespaceFingerprint": "aedfbcd14cd1"
+        },
+        "bindingMatches": true,
+        "singleVersion": true
+      }
+    },
+    {
+      "runId": 41261448904,
+      "jobId": 124715379138,
+      "createdAt": "2026-11-01T01:31:36Z",
+      "result": "DEGRADED",
+      "errors": [
+        {
+          "stage": "news-source-consumption",
+          "code": "REQUIRED_SOURCE_UNAVAILABLE_OR_STALE"
+        }
+      ],
+      "failedRuntimeGates": [],
+      "sourceCoverage": {
+        "passed": false,
+        "rows": [
+          {
+            "source": "JIN10",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T01:30:34.360Z",
+            "current": true
+          },
+          {
+            "source": "BEA_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T01:28:24.076Z",
+            "current": true
+          },
+          {
+            "source": "BOJ_RELEASES",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T01:28:24.218Z",
+            "current": true
+          },
+          {
+            "source": "COINDESK",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T01:30:33.193Z",
+            "current": true
+          },
+          {
+            "source": "FED_PRESS",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T01:30:33.148Z",
+            "current": true
+          },
+          {
+            "source": "FED_SPEECH",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T01:29:24.138Z",
+            "current": true
+          },
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T00:58:16.120Z",
+            "current": false
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T00:58:16.132Z",
+            "current": false
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T00:58:16.142Z",
+            "current": false
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T00:58:16.153Z",
+            "current": false
+          },
+          {
+            "source": "US_TREASURY_YIELD_DAILY",
+            "status": "ok",
+            "fetchedAt": "2026-10-31T23:43:24.189Z",
+            "current": true
+          },
+          {
+            "source": "NYFED_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T00:52:23.597Z",
+            "current": true
+          }
+        ],
+        "scope": "REQUIRED_SOURCE_CONSUMPTION_AVAILABILITY_NOT_PUBLICATION_RECENCY_OR_PROFIT"
+      },
+      "samples": [
+        {
+          "readAt": "2026-11-01T01:31:49.010Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-11-01T01:31:46.460Z",
+            "lastTradeAt": "2026-11-01T01:31:42.900Z",
+            "bookAt": "2026-11-01T01:31:46.304Z",
+            "dataAgeSeconds": 2.373,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-11-01T01:31:46.170Z",
+            "nextAlarmAt": "2026-11-01T01:31:48.670Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.29,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-11-01T01:31:24.554Z",
+            "lastSuccessfulCycleAt": "2026-11-01T01:31:24.554Z",
+            "newsConsumedAt": "2026-11-01T01:31:24.554Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-11-01T01:32:14.228Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-11-01T01:32:12.111Z",
+            "lastTradeAt": "2026-11-01T01:32:10.786Z",
+            "bookAt": "2026-11-01T01:32:09.454Z",
+            "dataAgeSeconds": 2.001,
+            "gapSeconds": 2.5
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-11-01T01:32:11.866Z",
+            "nextAlarmAt": "2026-11-01T01:32:14.366Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0,
+            "lastTickDurationSeconds": 0.245,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-11-01T01:31:24.554Z",
+            "lastSuccessfulCycleAt": "2026-11-01T01:31:24.554Z",
+            "newsConsumedAt": "2026-11-01T01:31:24.554Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        },
+        {
+          "readAt": "2026-11-01T01:33:14.242Z",
+          "health": {
+            "sampling": true,
+            "quote": true,
+            "flow": true,
+            "lastSuccessAt": "2026-11-01T01:33:10.783Z",
+            "lastTradeAt": "2026-11-01T01:33:10.199Z",
+            "bookAt": "2026-11-01T01:33:08.004Z",
+            "dataAgeSeconds": 3.338,
+            "gapSeconds": 2.501
+          },
+          "failures": {
+            "status": "ok",
+            "lastAttemptAt": "2026-11-01T01:33:10.417Z",
+            "nextAlarmAt": "2026-11-01T01:33:12.917Z",
+            "flowRetryAt": null,
+            "failureCount": 0,
+            "actualAlarmLatenessSeconds": 0.001,
+            "lastTickDurationSeconds": 0.366,
+            "feeds": [
+              {
+                "feed": "CONTRACT",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "TRADES",
+                "state": "live",
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": null
+              },
+              {
+                "feed": "BOOK",
+                "state": null,
+                "httpStatus": null,
+                "localCooldown": false,
+                "retryAt": null,
+                "upstreamFailedAt": null,
+                "bookFallback": {
+                  "primaryHttpStatus": 429,
+                  "primaryRetryAt": "2026-11-01T01:33:17.693Z",
+                  "fallbackSource": "OKX_OFFICIAL_FULL_BOOK_400",
+                  "succeeded": true
+                }
+              }
+            ]
+          },
+          "scanner": {
+            "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "stateReadSucceeded": true,
+            "identityMatched": true,
+            "status": "completed",
+            "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+            "lastCompletedAt": "2026-11-01T01:32:25.697Z",
+            "lastSuccessfulCycleAt": "2026-11-01T01:32:25.697Z",
+            "newsConsumedAt": "2026-11-01T01:32:25.697Z",
+            "pendingPushes": 0,
+            "lastDegradedCycle": {
+              "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+              "startedAt": "2026-10-31T18:01:00.263Z",
+              "completedAt": "2026-10-31T18:01:03.139Z",
+              "planError": null,
+              "discoveryError": null,
+              "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+              "observationError": null,
+              "modelDataReady": false,
+              "inspectedModels": 8,
+              "blockedModels": []
+            }
+          },
+          "preparedNotificationLiveVerified": false,
+          "notificationChannels": [
+            {
+              "kind": "OBSERVATION",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "NEWS",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "DYNAMIC_PRICE",
+              "attempts": 12,
+              "accepted": 12,
+              "failures": null
+            },
+            {
+              "kind": "PLAN",
+              "attempts": 0,
+              "accepted": 0,
+              "failures": 0
+            },
+            {
+              "kind": "FAST_FLOW",
+              "attempts": 4,
+              "accepted": 4,
+              "failures": null
+            },
+            {
+              "kind": "OPPORTUNITY_PROGRESS",
+              "attempts": 8,
+              "accepted": 8,
+              "failures": null
+            },
+            {
+              "kind": "CONTROL",
+              "attempts": 1,
+              "accepted": 1,
+              "failures": null
+            }
+          ]
+        }
+      ],
+      "productionIdentity": {
+        "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+        "deployedAt": "2026-10-31T10:16:55.913Z",
+        "versions": [
+          {
+            "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+            "percentage": 100
+          }
+        ],
+        "binding": {
+          "present": true,
+          "className": "ScannerState",
+          "scriptName": null,
+          "namespaceFingerprint": "aedfbcd14cd1"
+        },
+        "bindingMatches": true,
+        "singleVersion": true
+      }
+    }
+  ],
+  "allFourScheduledOperationsFailedOnRequiredSources": true,
+  "finalDeliveryAccepted": false
+}

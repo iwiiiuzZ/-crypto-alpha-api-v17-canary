@@ -10,6 +10,8 @@ const baseline=JSON.parse(fs.readFileSync(new URL('./production-baseline.json',i
 const token=process.env.CLOUDFLARE_API_TOKEN;
 const dispatchCheck=process.argv.includes('--dispatch-check');
 const ephemeralActionsToken=dispatchCheck?process.env.EPHEMERAL_ACTIONS_TEST_TOKEN:null;
+const persistentActionsToken=dispatchCheck?String(process.env.GITHUB_ACTIONS_DISPATCH_TOKEN||'').trim():null;
+const dispatchActionsToken=persistentActionsToken||ephemeralActionsToken;
 if(!token)throw Error('CF_PROBE_TOKEN_REQUIRED');
 const apiBase='https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/';
 const ownershipPath='bls-isolated-probe-ownership.json';
@@ -49,14 +51,16 @@ if(process.argv.includes('--cleanup-only')){
    owner:fast.build===baseline.build&&fast.backendIdentity?.matched===true&&fast.backendIdentity?.stateOwnerBuild===baseline.build,
    sourceLock:sourceGitBlobSha===manifest.sourceGitBlobSha};
   if(!Object.values(report.preflight).every(Boolean))throw Error('PRODUCTION_CHANGED_BEFORE_PROBE');
-  if(dispatchCheck&&!ephemeralActionsToken)throw Error('EPHEMERAL_ACTIONS_TEST_TOKEN_REQUIRED');
+  if(dispatchCheck&&!dispatchActionsToken)throw Error('ACTIONS_DISPATCH_TEST_AUTHORIZATION_REQUIRED');
+  if(dispatchCheck){report.persistentRepositoryDispatchSecretPresent=Boolean(persistentActionsToken);report.dispatchCredentialKind=persistentActionsToken?'PERSISTENT_REPOSITORY_SECRET':'EPHEMERAL_TEST_JOB_ONLY';}
   const secrets=await requestJson(fetch,apiBase+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+token});
   report.productionDispatcherSecretPresent=Array.isArray(secrets.result)&&secrets.result.some(s=>s.name==='GITHUB_ACTIONS_DISPATCH_TOKEN');
   if(await api(name,'','GET',undefined,true)!==null)throw Error('PROBE_NAME_ALREADY_EXISTS');
   fs.writeFileSync(ownershipPath,JSON.stringify({accountId:config.accountId,name,reserved:true}));reserved=true;
   const sourceText=dispatchCheck?await buildDispatchProbe(source.toString('utf8')):fs.readFileSync(new URL('./bls-egress-probe-worker.mjs',import.meta.url),'utf8');
   const bindings=[{type:'secret_text',name:'PROBE_TOKEN',text:probeToken}];
-  if(dispatchCheck)bindings.push({type:'secret_text',name:'DISPATCH_TOKEN',text:ephemeralActionsToken});
+  if(dispatchCheck)bindings.push({type:'secret_text',name:'DISPATCH_TOKEN',text:dispatchActionsToken});
+  if(dispatchCheck)bindings.push({type:'plain_text',name:'COLLECTOR_REF',text:'crypto-alpha-collector-r5f-20261031'});
   const form=new FormData();form.append('metadata',new Blob([JSON.stringify({main_module:'probe.mjs',compatibility_date:'2026-10-01',bindings})],{type:'application/json'}));
   form.append('probe.mjs',new Blob([sourceText],{type:'application/javascript+module'}),'probe.mjs');
   await api(name,'','PUT',form);report.created=true;
@@ -94,7 +98,7 @@ if(process.argv.includes('--cleanup-only')){
   report.identifiedOfficialAccessVerified=report.measurement?.identifiedAllValid===true;
   report.passed=report.productionUnchanged&&report.cleanupConfirmed&&(dispatchCheck?report.measurement?.requestAcknowledged&&report.measurement?.deduplicated&&report.newOfficialBatchesConsumed:report.identifiedOfficialAccessVerified)&&!report.errors.length;
   report.completedAt=new Date().toISOString();
-  const output=safeOutput(report,[token,probeToken,ephemeralActionsToken]);fs.writeFileSync(dispatchCheck?'bls-dispatch-egress-evidence.json':'bls-isolated-egress-evidence.json',output);console.log(output);
+  const output=safeOutput(report,[token,probeToken,ephemeralActionsToken,persistentActionsToken]);fs.writeFileSync(dispatchCheck?'bls-dispatch-egress-evidence.json':'bls-isolated-egress-evidence.json',output);console.log(output);
  }
  if(!report.passed)process.exitCode=1;
 }

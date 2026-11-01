@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {validateTarget,wranglerCLI} from './deployment.mjs';
 import {assessCurrentRelease} from './current-release.mjs';
 import {cloudflareSnapshot,requestJson} from './diagnostics.mjs';
+import {withDispatchSecretFile} from './dispatch-secret-file.mjs';
 const root=new URL('../',import.meta.url);
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const wrangler=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
@@ -34,11 +35,12 @@ if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5g'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
  const secrets=await requestJson(fetch,'https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/'+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN});
- if(!Array.isArray(secrets.result)||!secrets.result.some(s=>s.name==='GITHUB_ACTIONS_DISPATCH_TOKEN'))throw Error('PERSISTENT_GITHUB_DISPATCH_SECRET_REQUIRED_BEFORE_DEPLOYMENT');
+ if(!String(process.env.GITHUB_ACTIONS_DISPATCH_TOKEN||'').trim()&&(!Array.isArray(secrets.result)||!secrets.result.some(s=>s.name==='GITHUB_ACTIONS_DISPATCH_TOKEN')))throw Error('PERSISTENT_GITHUB_DISPATCH_SECRET_REQUIRED_BEFORE_DEPLOYMENT');
 }
 if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r4'){
  const preflight=spawnSync(process.execPath,[new URL('./r4-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
 }
-const result=spawnSync(process.execPath,[wranglerCLI(),'deploy','--config','wrangler.jsonc','--keep-vars'],{cwd:root,stdio:'inherit',env:{...process.env,CLOUDFLARE_ACCOUNT_ID:config.accountId,CI:'true'}});
+const result=withDispatchSecretFile(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5g'?process.env.GITHUB_ACTIONS_DISPATCH_TOKEN:null,file=>
+ spawnSync(process.execPath,[wranglerCLI(),'deploy','--config','wrangler.jsonc','--keep-vars',...(file?['--secrets-file',file]:[])],{cwd:root,stdio:'inherit',env:{...process.env,CLOUDFLARE_ACCOUNT_ID:config.accountId,CI:'true'}}));
 process.exitCode=result.status===0?0:(result.status||1);

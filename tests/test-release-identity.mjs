@@ -14,6 +14,9 @@ assert.equal(manifest.sourceGitBlobSha,gitBlob,'Worker source changed without up
 assert.equal(manifest.build,build);
 assert.equal(manifest.apiVersion,apiVersion);
 assert.equal(manifest.stateOwnerContract,stateContract);
+const wranglerBytes=fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url));
+assert.equal(manifest.wranglerSha256,createHash('sha256').update(wranglerBytes).digest('hex'),'Deployment configuration must match its reviewed manifest');
+assert.equal(content.match(/^const BLS_COLLECTOR_REF = "([^"]+)";/m)?.[1],manifest.collectorRef);
 assert.notEqual(build,manifest.priorLiveBuild,'Changed candidate must never impersonate currently deployed build');
 assert.equal(build,'crypto-alpha-worker-v27.6.3-macro-r5g');
 assert.ok(['CANDIDATE_NOT_DEPLOYED','DEPLOYED_AWAITING_FINAL_ACCEPTANCE'].includes(manifest.status));

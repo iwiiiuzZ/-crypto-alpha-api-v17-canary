@@ -1,0 +1,236 @@
+{
+  "scope": "PRODUCTION_CODE_AND_CONFIG_READ_ONLY_REAL_OFFICIAL_SOURCE_REFRESH",
+  "startedAt": "2026-11-01T04:07:40.719Z",
+  "probeWorker": "crypto-alpha-bls-probe-20261101-c34de93b",
+  "productionWorker": "crypto-alpha-api-v17-canary",
+  "errors": [],
+  "created": true,
+  "cleanupConfirmed": true,
+  "productionBefore": {
+    "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+    "deployedAt": "2026-10-31T10:16:55.913Z",
+    "versions": [
+      {
+        "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "sourceGitBlobSha": "dc4b5604c2a5dabadd70933005e86182dde1f105",
+  "preflight": {
+    "deployment": true,
+    "version": true,
+    "binding": true,
+    "owner": true,
+    "sourceLock": true
+  },
+  "productionDispatcherSecretPresent": false,
+  "measurement": {
+    "scope": "EXACT_CANDIDATE_DISPATCH_FUNCTIONS_EPHEMERAL_TEST_TOKEN_NOT_PRODUCTION_INSTALLATION",
+    "first": {
+      "configured": true,
+      "status": "AWAITING_SOURCE_RECEIPT",
+      "lastAttemptAt": "2026-11-01T04:07:44.369Z",
+      "lastRequestAcceptedAt": "2026-11-01T04:07:45.766Z",
+      "lastObservedRelayReceivedAt": null,
+      "nextAttemptAt": "2026-11-01T04:09:44.369Z",
+      "httpStatus": 200,
+      "workflowRunId": 41271851069,
+      "attemptCount": 1,
+      "failureCount": 0,
+      "awaitingReceiptAttempts": 1,
+      "scope": "DISPATCH_ACK_IS_NOT_SOURCE_FETCH_OR_SCANNER_CONSUMPTION",
+      "deviceNotificationSent": false,
+      "tradeSignalGenerated": false
+    },
+    "second": {
+      "configured": true,
+      "status": "AWAITING_SOURCE_RECEIPT",
+      "lastAttemptAt": "2026-11-01T04:07:44.369Z",
+      "lastRequestAcceptedAt": "2026-11-01T04:07:45.766Z",
+      "lastObservedRelayReceivedAt": null,
+      "nextAttemptAt": "2026-11-01T04:09:44.369Z",
+      "httpStatus": 200,
+      "workflowRunId": 41271851069,
+      "attemptCount": 1,
+      "failureCount": 0,
+      "awaitingReceiptAttempts": 1,
+      "scope": "DISPATCH_ACK_IS_NOT_SOURCE_FETCH_OR_SCANNER_CONSUMPTION",
+      "deviceNotificationSent": false,
+      "tradeSignalGenerated": false
+    },
+    "requestAcknowledged": true,
+    "deduplicated": true,
+    "sourceReceiptVerified": false,
+    "deviceNotificationSent": false,
+    "tradeSignalGenerated": false
+  },
+  "sourceConsumptionObservations": [
+    {
+      "readAt": "2026-11-01T04:07:46.630Z",
+      "consumedAt": "2026-11-01T04:07:26.151Z",
+      "rows": [
+        {
+          "source": "BLS_CPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.132Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.142Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.153Z"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "readAt": "2026-11-01T04:08:01.623Z",
+      "consumedAt": "2026-11-01T04:07:26.151Z",
+      "rows": [
+        {
+          "source": "BLS_CPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.132Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.142Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.153Z"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "readAt": "2026-11-01T04:08:31.596Z",
+      "consumedAt": "2026-11-01T04:08:24.784Z",
+      "rows": [
+        {
+          "source": "BLS_CPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.132Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.142Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.153Z"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "readAt": "2026-11-01T04:09:16.908Z",
+      "consumedAt": "2026-11-01T04:08:24.784Z",
+      "rows": [
+        {
+          "source": "BLS_CPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.132Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.142Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "unavailable",
+          "fetchedAt": "2026-11-01T00:58:16.153Z"
+        }
+      ],
+      "passed": false
+    },
+    {
+      "readAt": "2026-11-01T04:10:11.597Z",
+      "consumedAt": "2026-11-01T04:09:26.655Z",
+      "rows": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T04:07:51.235Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T04:07:51.246Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T04:07:51.264Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T04:07:51.276Z"
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "newOfficialBatchesConsumed": true,
+  "productionAfter": {
+    "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+    "deployedAt": "2026-10-31T10:16:55.913Z",
+    "versions": [
+      {
+        "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "productionUnchanged": true,
+  "identifiedOfficialAccessVerified": false,
+  "passed": true,
+  "completedAt": "2026-11-01T04:10:11.806Z"
+}

@@ -53,6 +53,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const expected=process.env.EXPECTED_RELAY_BUILD||(fs.existsSync(manifestUrl)?JSON.parse(fs.readFileSync(manifestUrl,'utf8')).build:null);
  if(!/^crypto-alpha-worker-v27\.6\.3-macro-r5[a-z]?$/.test(expected||''))throw Error('EXACT_RELAY_BUILD_REQUIRED');
  if(current.build!==expected){
+  if(process.env.GITHUB_EVENT_NAME==='workflow_dispatch')throw Error('EXPLICIT_RELAY_TARGET_BUILD_MISMATCH');
   console.log(JSON.stringify({status:'SKIPPED_R5_NOT_DEPLOYED',currentBuild:current.build||'unknown'}));process.exit(0);
  }
  const data=await collectBlsSources();

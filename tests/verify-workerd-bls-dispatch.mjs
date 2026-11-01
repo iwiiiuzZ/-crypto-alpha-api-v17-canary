@@ -8,6 +8,7 @@ const binary=process.argv[2];if(!binary)throw Error('workerd binary required');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'crypto-bls-dispatch-'));
 const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 const build=source.match(/const BUILD = "([^"]+)"/)?.[1];
+const collectorRef=source.match(/const BLS_COLLECTOR_REF = "([^"]+)"/)?.[1];
 fs.writeFileSync(path.join(dir,'app.mjs'),source+'\nexport {maintainOfficialBlsRelay};');
 fs.writeFileSync(path.join(dir,'entry.mjs'),`
 import app,{ScannerState,maintainOfficialBlsRelay} from './app.mjs';
@@ -41,7 +42,7 @@ export default {async fetch(request){const u=new URL(request.url);
  if(u.href!=='https://api.github.com/repos/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/workflows/official-bls-relay.yml/dispatches')return new Response('unexpected fixture target',{status:400});
  if(request.headers.get('authorization')!=='Bearer local-fixture-token')return new Response(null,{status:401});
  if(request.headers.get('user-agent')!=='CryptoAlphaRelayDispatcher/1.0')return new Response(null,{status:400});
- const body=await request.json();if(body.ref!=='main'||body.return_run_details!==true)return new Response(null,{status:422});
+ const body=await request.json();if(body.ref!==${JSON.stringify(collectorRef)}||body.return_run_details!==true)return new Response(null,{status:422});
  calls++;return Response.json({workflow_run_id:1000+calls});
 }};`);
 fs.writeFileSync(path.join(dir,'config.capnp'),`using Workerd = import "/workerd/workerd.capnp";
