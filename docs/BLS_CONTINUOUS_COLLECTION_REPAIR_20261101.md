@@ -22,7 +22,7 @@
 
 ## 凭据与受控上线
 
-专用凭据名称GITHUB_ACTIONS_DISPATCH_TOKEN（持续触发密钥）。目前生产中未发现此项。当前连接工具的授权不能作为Cloudflare后台永久凭据；GitHub作业令牌在任务结束失效。代码只从这个明确的仓库密钥取持续授权，绝不把作业测试令牌装入生产。
+GitHub仓库专用凭据名称BLS_DISPATCH_TOKEN（持续触发密钥）。工作流将其映射到既有运行环境变量，Worker源码和Cloudflare绑定名称不变。目前生产中未安装持续授权。当前连接工具的授权不能作为Cloudflare后台永久凭据；GitHub作业令牌在任务结束失效。代码只从这个明确的仓库密钥取持续授权，绝不把作业测试令牌装入生产。
 
 用户仅需在GitHub仓库的Settings（设置）→ Secrets and variables（密钥与变量）→ Actions（工作流）增加一个同名repository secret（仓库密钥）。凭据为仅选择本仓库、Actions Read and write（工作流读写）的fine-grained token（细粒度令牌）；不需要Contents Write（代码写入）或交易所权限。令牌只填GitHub密钥页面，不发聊天。到期/撤销会停止触发并报告授权问题，不继续将旧数据认作新鲜。
 
@@ -34,7 +34,7 @@
 
 ## 最少一次配置入口
 
-[创建细粒度授权（已预填工作流读写）](https://github.com/settings/personal-access-tokens/new?name=CryptoAlpha-BLS-Dispatch&target_name=iwiiiuzZ&actions=write)：选择Only select repositories（仅选指定仓库），只选-crypto-alpha-api-v17-canary，保留Actions Read and write（工作流读写），核对到期日后生成。只将值填入[本仓库密钥入口](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/settings/secrets/actions)，名称GITHUB_ACTIONS_DISPATCH_TOKEN（持续触发密钥）。不要把值发到聊天、代码或截图。配置后由助手核验权限、部署、续采和回归，用户不承担基础测试。
+[创建细粒度授权（已预填工作流读写）](https://github.com/settings/personal-access-tokens/new?name=CryptoAlpha-BLS-Dispatch&target_name=iwiiiuzZ&actions=write)：选择Only select repositories（仅选指定仓库），只选-crypto-alpha-api-v17-canary，保留Actions Read and write（工作流读写），核对到期日后生成。只将值填入[本仓库密钥入口](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/settings/secrets/actions)，名称BLS_DISPATCH_TOKEN（持续触发密钥）。不要把值发到聊天、代码或截图。配置后由助手核验权限、部署、续采和回归，用户不承担基础测试。
 
 依据：[细粒度权限与触发接口](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)、[作业令牌生命周期](https://docs.github.com/en/actions/concepts/security/github_token)、[代码与密钥同时上传](https://developers.cloudflare.com/workers/configuration/secrets/#upload-secrets-alongside-code)。
 
@@ -47,3 +47,7 @@
 此轮实际检查仓库专用密钥存在=false、生产同名密钥存在=false，使用EPHEMERAL_TEST_JOB_ONLY（仅测试作业临时授权）。它没有装入生产；因此不能把兼容性/真实单轮消费判为G生产安装或持续续采已通过。G默认来源标签、长期权限、25分钟两次自主续采仍待受控上线验证。
 
 [修复PR5](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/pull/5)保持草稿。发布意图未修改，主分支与生产仍F。最终单轮、CI和隔夜失败JSON均保存在本分支evidence/，没有用绿色结果覆盖失败。
+
+## 仓库密钥名称修正
+
+此前要求用户在GitHub创建GITHUB_ACTIONS_DISPATCH_TOKEN仓库密钥不符合平台规则：用户密钥不能以GITHUB_开头。正确仓库名称统一为BLS_DISPATCH_TOKEN；三个工作流已明确映射到既有运行环境变量。已增加遍历全部工作流的保留前缀校验及三条映射检查。此次不修改Worker源码、交易规则或生产部署，已有令牌值可以继续使用。依据：[GitHub官方密钥命名规则](https://docs.github.com/en/actions/reference/security/secrets#naming-your-secrets)。
