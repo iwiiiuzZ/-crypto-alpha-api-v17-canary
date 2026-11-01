@@ -30,9 +30,11 @@ if(fs.existsSync(baselineUrl)){
   process.exit(0);
  }
 }
-if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5f'){
+if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5g'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
+ const secrets=await requestJson(fetch,'https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/'+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN});
+ if(!Array.isArray(secrets.result)||!secrets.result.some(s=>s.name==='GITHUB_ACTIONS_DISPATCH_TOKEN'))throw Error('PERSISTENT_GITHUB_DISPATCH_SECRET_REQUIRED_BEFORE_DEPLOYMENT');
 }
 if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r4'){
  const preflight=spawnSync(process.execPath,[new URL('./r4-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});

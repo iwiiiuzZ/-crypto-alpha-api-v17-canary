@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5f";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5g";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -691,6 +691,7 @@ async function localScannerOperation(owner,input){
  if(input.op==='directQuote')return coordinatedDirectQuote(owner,input.symbol);
  if(input.op==='newsContext')return coordinatedNewsContext(owner);
  if(input.op==='newsSnapshot')return cachedNewsContext(owner);
+ if(input.op==='officialBlsRelayMaintenance')return maintainOfficialBlsRelay(owner);
  if(input.op==='liquidityRecheck')return coordinatedLiquidityRecheck(owner);
  if(input.op==='fastMonitorEnsure')return ensureFastMonitor(owner);
  if(input.op==='fastMonitorStatus')return compactFastMonitor(await storage.get(FAST_MONITOR_KEY),await syncFastModelReview(owner));
@@ -967,6 +968,89 @@ function refreshServedSnapshot(snapshot) {
 const NEWS_STATE_KEY = "news:context:v27";
 const BLS_RELAY_STATE_KEY = "news:bls-official-relay:v1";
 const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
+// Bounded collector dispatch. A GitHub acknowledgement is not a source receipt.
+const BLS_DISPATCH_STATE_KEY = "news:bls-dispatch:v1";
+const BLS_DISPATCH_REFRESH_MS = 10*60*1000;
+const BLS_DISPATCH_IDS = ["BLS_CPI","BLS_PPI","BLS_EMPLOYMENT","BLS_CALENDAR"];
+function compactBlsRelayDispatch(state,configured){
+ const stamp=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null;
+ return {configured,status:configured?(state?.status||"NOT_CHECKED"):"AUTHORIZATION_REQUIRED",
+  lastAttemptAt:stamp(state?.lastAttemptAt),lastRequestAcceptedAt:stamp(state?.lastRequestAcceptedAt),
+  lastObservedRelayReceivedAt:stamp(state?.lastObservedRelayReceivedAt),
+  nextAttemptAt:Number.isFinite(state?.nextAttemptAt)&&Number.isFinite(new Date(state.nextAttemptAt).getTime())?new Date(state.nextAttemptAt).toISOString():null,
+  httpStatus:Number.isInteger(state?.httpStatus)?state.httpStatus:null,
+  workflowRunId:Number.isSafeInteger(state?.workflowRunId)?state.workflowRunId:null,
+  attemptCount:Number.isSafeInteger(state?.attemptCount)?state.attemptCount:0,
+  failureCount:Number.isSafeInteger(state?.failureCount)?state.failureCount:0,
+  awaitingReceiptAttempts:Number.isSafeInteger(state?.awaitingReceiptAttempts)?state.awaitingReceiptAttempts:0,
+  scope:"DISPATCH_ACK_IS_NOT_SOURCE_FETCH_OR_SCANNER_CONSUMPTION",deviceNotificationSent:false,tradeSignalGenerated:false};
+}
+async function requestOfficialBlsCollection(token,fetcher=fetch){
+ const endpoint="https://api.github.com/repos/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/workflows/official-bls-relay.yml/dispatches";
+ try{
+  const r=await fetcher(endpoint,{method:"POST",redirect:"manual",signal:AbortSignal.timeout(2500),
+   headers:{authorization:"Bearer "+token,accept:"application/vnd.github+json","content-type":"application/json",
+    "User-Agent":"CryptoAlphaRelayDispatcher/1.0","X-GitHub-Api-Version":"2026-03-10"},
+   body:JSON.stringify({ref:"main",return_run_details:true})});
+  const rawRetry=r.headers.get("retry-after"),reset=Number(r.headers.get("x-ratelimit-reset"));
+  const retry=rawRetry&&/^\d+$/.test(rawRetry)?Number(rawRetry):rawRetry?Math.ceil((Date.parse(rawRetry)-Date.now())/1000):null;
+  const rateLimited=r.status===429||(r.status===403&&(r.headers.get("x-ratelimit-remaining")==="0"||rawRetry!==null));
+  const retryAfterSeconds=rateLimited?Math.max(60,Number.isFinite(retry)?retry:0,Number.isFinite(reset)?Math.ceil((reset*1000-Date.now())/1000):0):null;
+  if(r.status===200){
+   const text=await r.text();if(text.length>8192)throw Error("DISPATCH_RESPONSE_TOO_LARGE");
+   const data=JSON.parse(text);if(!Number.isSafeInteger(data.workflow_run_id)||data.workflow_run_id<=0)throw Error("DISPATCH_RUN_ID_MISSING");
+   return {acknowledged:true,httpStatus:200,workflowRunId:data.workflow_run_id};
+  }
+  await r.body?.cancel().catch(()=>{});
+  return {acknowledged:r.status===204,httpStatus:r.status,workflowRunId:null,rateLimited,retryAfterSeconds};
+ }catch{return {acknowledged:false,httpStatus:null,workflowRunId:null,reason:"DISPATCH_NETWORK_TIMEOUT_OR_INVALID_RESPONSE"};}
+}
+async function maintainOfficialBlsRelay(owner,options={}){
+ const token=String(owner.env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim();
+ if(!token)return compactBlsRelayDispatch(null,false);
+ if(owner.blsRelayDispatchWork)return owner.blsRelayDispatchWork;
+ const task=(async()=>{
+  const now=options.now??Date.now(),storage=owner.ctx.storage;
+  const [saved,relay]=await Promise.all([storage.get(BLS_DISPATCH_STATE_KEY),storage.get(BLS_RELAY_STATE_KEY)]);
+  const prior=saved?.expiresAt>now&&saved.value&&typeof saved.value==='object'?saved.value:{};
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token));
+  const credentialFingerprint=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  let state=prior.credentialFingerprint===credentialFingerprint?{...prior}:{attemptCount:prior.attemptCount||0,credentialFingerprint};
+  const records=relay?.expiresAt>now?relay.value?.records||{}:{};
+  const valid=BLS_DISPATCH_IDS.every(id=>officialBlsRelayRecord(records[id],id,now));
+  const oldest=valid?Math.min(...BLS_DISPATCH_IDS.map(id=>Date.parse(records[id].fetchedAt))):null;
+  const received=valid?new Date(Math.max(...BLS_DISPATCH_IDS.map(id=>Date.parse(records[id].receivedAt)))).toISOString():null;
+  const put=async value=>storage.put(BLS_DISPATCH_STATE_KEY,{value,expiresAt:now+7*86400000});
+  if(valid&&now-oldest<BLS_DISPATCH_REFRESH_MS){
+   if(state.status!=="SOURCE_RECEIPT_FRESH"||state.lastObservedRelayReceivedAt!==received){
+    state={...state,status:"SOURCE_RECEIPT_FRESH",lastObservedRelayReceivedAt:received,nextAttemptAt:oldest+BLS_DISPATCH_REFRESH_MS,failureCount:0,awaitingReceiptAttempts:0};await put(state);
+   }
+   return compactBlsRelayDispatch(state,true);
+  }
+  if(!valid&&state.status==="SOURCE_RECEIPT_FRESH")state={...state,status:"SOURCE_RECEIPT_MISSING",nextAttemptAt:0};
+  if(Number.isFinite(state.nextAttemptAt)&&state.nextAttemptAt>now)return compactBlsRelayDispatch(state,true);
+  // Persist a short lease before networking; a restart must not dispatch again immediately.
+  state={...state,status:"REQUEST_IN_FLIGHT",lastAttemptAt:new Date(now).toISOString(),nextAttemptAt:now+120000,
+   attemptCount:Math.min(1000000000,(Number.isSafeInteger(state.attemptCount)?state.attemptCount:0)+1)};
+  await put(state);
+  const result=await requestOfficialBlsCollection(token,options.fetcher||fetch);
+  if(result.acknowledged){
+   const attempts=Math.min(8,(Number.isSafeInteger(state.awaitingReceiptAttempts)&&state.awaitingReceiptAttempts>=0?state.awaitingReceiptAttempts:0)+1);
+   state={...state,status:"AWAITING_SOURCE_RECEIPT",lastRequestAcceptedAt:new Date(options.now??Date.now()).toISOString(),
+    httpStatus:result.httpStatus,workflowRunId:result.workflowRunId,awaitingReceiptAttempts:attempts,failureCount:0,
+    nextAttemptAt:now+Math.min(600000,120000*2**Math.min(attempts-1,3))};
+  }else{
+   const failures=Math.min(20,(Number.isSafeInteger(state.failureCount)&&state.failureCount>=0?state.failureCount:0)+1);
+   const denied=[401,403,404,422].includes(result.httpStatus)&&!result.rateLimited;
+   const redirect=result.httpStatus>=300&&result.httpStatus<400;
+   const delay=result.rateLimited?result.retryAfterSeconds*1000:denied||redirect?3600000:Math.min(600000,60000*2**Math.min(failures-1,4));
+   state={...state,status:denied?"AUTHORIZATION_OR_TARGET_REQUIRED":redirect?"DISPATCH_REDIRECT_REJECTED":result.rateLimited?"DISPATCH_RATE_LIMITED":"DISPATCH_FAILED",
+    httpStatus:result.httpStatus,failureCount:failures,nextAttemptAt:now+delay};
+  }
+  await put(state);return compactBlsRelayDispatch(state,true);
+ })();owner.blsRelayDispatchWork=task;
+ try{return await task;}finally{if(owner.blsRelayDispatchWork===task)owner.blsRelayDispatchWork=null;}
+}
 const NEWS_TRANSPORT_REVISION = "27.0.2";
 const NEWS_PARSER_REVISION = "27.6.3-macro-news-r5";
 const NEWS_SOURCES = [
@@ -5413,7 +5497,7 @@ function scannerAuthorized(request, env) {
 function scannerConfiguration(env) {
   return {
     barkConfigured: Boolean(String(env?.BARK_DEVICE_KEY || "").trim()),
-    news:{jin10Configured:Boolean(String(env?.JIN10_MCP_TOKEN||"").trim()),publicFeeds:NEWS_SOURCES.length,secondsLevelDeliveryGuaranteed:false},
+    news:{jin10Configured:Boolean(String(env?.JIN10_MCP_TOKEN||"").trim()),blsRelayDispatchConfigured:Boolean(String(env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim()),publicFeeds:NEWS_SOURCES.length,secondsLevelDeliveryGuaranteed:false},
     scannerTokenConfigured: Boolean(String(env?.SCANNER_TOKEN || "").trim()),
     stateConfigured: Boolean(scannerStateStub(env) || (env?.ALERT_STATE?.get && env?.ALERT_STATE?.put)),
     stateBackend: scannerStateStub(env) ? "DURABLE_OBJECT" : env?.ALERT_STATE?.get ? "KV" : "MISSING",
@@ -6474,7 +6558,7 @@ function compactNewsSourceReceipts(newsStatus){
 
 async function scannerStatus(env) {
   try {
-    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY,PUSH_AUDIT_KEY]);
+    const state=await scannerStateBundle(env,[ACTIVE_PLAN_KEY,SCANNER_RUNTIME_KEY,SCANNER_FAILURE_HISTORY_KEY,OBSERVATIONS_KEY,DISCOVERY_STATE_KEY,SCANNER_HEARTBEAT_KEY,PROGRESS_ALERT_KEY,PUSH_AUDIT_KEY,BLS_DISPATCH_STATE_KEY]);
     const stored=state[OBSERVATIONS_KEY], malformed=Boolean(stored)&&(!Array.isArray(stored.records)||stored.records.some(r=>!r||typeof r!=="object"||Array.isArray(r)));
     const records=Array.isArray(stored?.records)?stored.records.filter(r=>r&&typeof r==="object"&&!Array.isArray(r)):[];
     const heartbeat=compactStatusValue(state[SCANNER_HEARTBEAT_KEY]||null);
@@ -6497,6 +6581,7 @@ async function scannerStatus(env) {
         newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
           parserAudit:state[DISCOVERY_STATE_KEY]?.newsStatus?.parserAudit||null,coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
         newsSourceReceipts:compactNewsSourceReceipts(state[DISCOVERY_STATE_KEY]?.newsStatus),
+        blsRelayDispatch:compactBlsRelayDispatch(state[BLS_DISPATCH_STATE_KEY],Boolean(String(env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim())),
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true,fastSamplingHealthy:fastMonitor?.samplingHealthy===true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};
     result.diagnostics.pendingPushes=result.diagnostics.pendingObservationPushes+result.diagnostics.pendingNewsPushes+result.diagnostics.pendingDynamicPushes+result.diagnostics.pendingPlanPushes+result.diagnostics.pendingFastPushes+result.diagnostics.pendingProgressPushes;
@@ -7109,6 +7194,7 @@ export class ScannerState {
     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
     if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
     if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
+    if(input?.op==="officialBlsRelayMaintenance")return Response.json(await maintainOfficialBlsRelay(this));
     if(input?.op==="pushAuditAppend")return Response.json(await appendPushAuditStorage(this.ctx.storage,input.attempt,input.patch));
     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
     if(input?.op==="newsSnapshot"){try{return Response.json(await cachedNewsContext(this));}catch{return Response.json({error:"NEWS_CACHE_READ_FAILED"},{status:503});}}
@@ -7299,6 +7385,8 @@ export default {
   },
 
   async scheduled(_controller, env, ctx) {
+    // Independent of market success; no credential means no dispatch or state mutation.
+    const relayTask=String(env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim()?durableStateCall(env,{op:'officialBlsRelayMaintenance'}).catch(()=>({status:'DISPATCH_COORDINATOR_FAILED'})):Promise.resolve(null);
     // Monitoring must continue during manual queries; shared endpoint/structure coordination deduplicates upstream work.
     const task = (async () => {
       // A single external hop; state, structures and model review stay inside the owner.
@@ -7306,7 +7394,7 @@ export default {
       if(result?.stateOwnerBuild!==BUILD||result?.stateOwnerContract!==STATE_OWNER_CONTRACT)throw Error('SCANNER_STATE_OWNER_VERSION_MISMATCH');
       return result;
     })().catch((error) => console.error("scheduled scanner failed", error));
-    if (ctx?.waitUntil) ctx.waitUntil(task);
-    else await task;
+    if (ctx?.waitUntil) {ctx.waitUntil(task);ctx.waitUntil(relayTask);}
+    else await Promise.all([task,relayTask]);
   },
 };

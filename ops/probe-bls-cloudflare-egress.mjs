@@ -3,11 +3,13 @@
 import fs from 'node:fs';
 import {randomBytes,createHash} from 'node:crypto';
 import {cloudflareSnapshot,requestJson,safeOutput} from './diagnostics.mjs';
-import {assessCurrentRelease} from './current-release.mjs';
+import {buildDispatchProbe} from './build-bls-dispatch-probe.mjs';
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const manifest=JSON.parse(fs.readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
 const baseline=JSON.parse(fs.readFileSync(new URL('./production-baseline.json',import.meta.url),'utf8'));
 const token=process.env.CLOUDFLARE_API_TOKEN;
+const dispatchCheck=process.argv.includes('--dispatch-check');
+const ephemeralActionsToken=dispatchCheck?process.env.EPHEMERAL_ACTIONS_TEST_TOKEN:null;
 if(!token)throw Error('CF_PROBE_TOKEN_REQUIRED');
 const apiBase='https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/';
 const ownershipPath='bls-isolated-probe-ownership.json';
@@ -34,19 +36,28 @@ if(process.argv.includes('--cleanup-only')){
 }else{
  const name='crypto-alpha-bls-probe-20261101-'+randomBytes(4).toString('hex');
  const probeToken=randomBytes(24).toString('hex');
- const report={scope:'ISOLATED_TEMPORARY_STATELESS_WORKER_NO_PRODUCTION_MUTATION',startedAt:new Date().toISOString(),probeWorker:name,productionWorker:config.worker,errors:[],created:false,cleanupConfirmed:false};
+ const report={scope:dispatchCheck?'PRODUCTION_CODE_AND_CONFIG_READ_ONLY_REAL_OFFICIAL_SOURCE_REFRESH':'ISOLATED_TEMPORARY_STATELESS_WORKER_NO_PRODUCTION_MUTATION',startedAt:new Date().toISOString(),probeWorker:name,productionWorker:config.worker,errors:[],created:false,cleanupConfirmed:false};
  let reserved=false;
  try{
   const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url));
   const sourceGitBlobSha=createHash('sha1').update(Buffer.from('blob '+source.length+'\0')).update(source).digest('hex');
   const [before,fast]=await Promise.all([cloudflareSnapshot(fetch,config,token),requestJson(fetch,config.origin+'/?view=fast')]);
   report.productionBefore=before;report.sourceGitBlobSha=sourceGitBlobSha;
-  report.preflight=assessCurrentRelease({manifest,sourceGitBlobSha,baseline,cloudflare:before,fast});
-  if(!report.preflight.alreadyDeployed)throw Error('PRODUCTION_CHANGED_BEFORE_PROBE');
+  // Candidate code is intentionally not deployed. Pin the previously observed physical baseline.
+  report.preflight={deployment:before.deploymentId===baseline.deploymentId,version:before.singleVersion&&before.versions?.[0]?.id===baseline.versionId,
+   binding:before.bindingMatches&&before.binding?.namespaceFingerprint===baseline.namespaceFingerprint,
+   owner:fast.build===baseline.build&&fast.backendIdentity?.matched===true&&fast.backendIdentity?.stateOwnerBuild===baseline.build,
+   sourceLock:sourceGitBlobSha===manifest.sourceGitBlobSha};
+  if(!Object.values(report.preflight).every(Boolean))throw Error('PRODUCTION_CHANGED_BEFORE_PROBE');
+  if(dispatchCheck&&!ephemeralActionsToken)throw Error('EPHEMERAL_ACTIONS_TEST_TOKEN_REQUIRED');
+  const secrets=await requestJson(fetch,apiBase+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+token});
+  report.productionDispatcherSecretPresent=Array.isArray(secrets.result)&&secrets.result.some(s=>s.name==='GITHUB_ACTIONS_DISPATCH_TOKEN');
   if(await api(name,'','GET',undefined,true)!==null)throw Error('PROBE_NAME_ALREADY_EXISTS');
   fs.writeFileSync(ownershipPath,JSON.stringify({accountId:config.accountId,name,reserved:true}));reserved=true;
-  const sourceText=fs.readFileSync(new URL('./bls-egress-probe-worker.mjs',import.meta.url),'utf8');
-  const form=new FormData();form.append('metadata',new Blob([JSON.stringify({main_module:'probe.mjs',compatibility_date:'2026-10-01',bindings:[{type:'secret_text',name:'PROBE_TOKEN',text:probeToken}]})],{type:'application/json'}));
+  const sourceText=dispatchCheck?await buildDispatchProbe(source.toString('utf8')):fs.readFileSync(new URL('./bls-egress-probe-worker.mjs',import.meta.url),'utf8');
+  const bindings=[{type:'secret_text',name:'PROBE_TOKEN',text:probeToken}];
+  if(dispatchCheck)bindings.push({type:'secret_text',name:'DISPATCH_TOKEN',text:ephemeralActionsToken});
+  const form=new FormData();form.append('metadata',new Blob([JSON.stringify({main_module:'probe.mjs',compatibility_date:'2026-10-01',bindings})],{type:'application/json'}));
   form.append('probe.mjs',new Blob([sourceText],{type:'application/javascript+module'}),'probe.mjs');
   await api(name,'','PUT',form);report.created=true;
   await api(name,'/subdomain','POST',JSON.stringify({enabled:true,previews_enabled:false}));
@@ -62,12 +73,28 @@ if(process.argv.includes('--cleanup-only')){
  }catch(e){report.errors.push(/^[A-Z0-9_]+$/.test(e.message)?e.message:'ISOLATED_PROBE_FAILED');}
  finally{
   if(reserved){try{report.cleanupConfirmed=await cleanup(name);}catch{report.errors.push('PROBE_CLEANUP_NOT_CONFIRMED');}}
+  if(dispatchCheck&&report.measurement?.requestAcknowledged&&report.cleanupConfirmed){
+   report.sourceConsumptionObservations=[];
+   const began=Date.now(),threshold=Date.parse(report.measurement.first.lastAttemptAt)-5000;
+   for(const offset of [0,15000,45000,90000,145000]){
+    await new Promise(r=>setTimeout(r,Math.max(0,began+offset-Date.now())));
+    try{
+     const status=await requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+process.env.SCANNER_TOKEN});
+     const receipts=status.diagnostics?.newsSourceReceipts||{},consumedAt=status.diagnostics?.newsConsumption?.consumedAt;
+     const rows=['BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR'].map(source=>({source,status:receipts[source]?.status||null,fetchedAt:receipts[source]?.fetchedAt||null}));
+     const passed=rows.every(r=>r.status==='ok'&&Date.parse(r.fetchedAt)>=threshold&&Date.parse(consumedAt)>=Date.parse(r.fetchedAt)-5000);
+     report.sourceConsumptionObservations.push({readAt:new Date().toISOString(),consumedAt,rows,passed});
+     if(passed)break;
+    }catch{report.sourceConsumptionObservations.push({readAt:new Date().toISOString(),passed:false,reason:'STATUS_READ_FAILED'});}
+   }
+   report.newOfficialBatchesConsumed=report.sourceConsumptionObservations.at(-1)?.passed===true;
+  }
   try{report.productionAfter=await cloudflareSnapshot(fetch,config,token);}catch{report.errors.push('PRODUCTION_AFTER_READ_FAILED');}
   report.productionUnchanged=!!report.productionBefore&&report.productionAfter?.deploymentId===report.productionBefore.deploymentId&&JSON.stringify(report.productionAfter?.versions)===JSON.stringify(report.productionBefore.versions)&&report.productionAfter?.bindingMatches===true;
   report.identifiedOfficialAccessVerified=report.measurement?.identifiedAllValid===true;
-  report.passed=report.productionUnchanged&&report.cleanupConfirmed&&report.identifiedOfficialAccessVerified&&!report.errors.length;
+  report.passed=report.productionUnchanged&&report.cleanupConfirmed&&(dispatchCheck?report.measurement?.requestAcknowledged&&report.measurement?.deduplicated&&report.newOfficialBatchesConsumed:report.identifiedOfficialAccessVerified)&&!report.errors.length;
   report.completedAt=new Date().toISOString();
-  const output=safeOutput(report,[token,probeToken]);fs.writeFileSync('bls-isolated-egress-evidence.json',output);console.log(output);
+  const output=safeOutput(report,[token,probeToken,ephemeralActionsToken]);fs.writeFileSync(dispatchCheck?'bls-dispatch-egress-evidence.json':'bls-isolated-egress-evidence.json',output);console.log(output);
  }
  if(!report.passed)process.exitCode=1;
 }
