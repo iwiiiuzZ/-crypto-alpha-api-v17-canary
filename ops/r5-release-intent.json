@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "44ea8ea1ac0d5ac1fa5e1cdb2e40703c9a174574",
-  "sourceGitBlobSha": "e34d8e85864fba66cc0a331b77be7c817288242e",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
-  "priorDeploymentId": "575d0441-9d7b-4db6-86e4-fe62e341613e",
+  "reviewedCommit": "cea5511326177f896383867b3a01bf1cfb0676ee",
+  "sourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+  "priorDeploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "Continue the user-authorized root-cause repair. All55 isolated/native suites passed including real workerd authenticated relay->wrapped durable state->news consumer and expiry refusal. Preserve previously validated R5e runtime as exact rollback target. Existing main-branch official BLS Atom/client-identity transport corrections and scheduled collector preserved in two-parent history. Four BLS sources must each be consumed, then same strict ten-minute/all-sample health and model-progress gates. Exact-source rebuild guard prevents accidental redeployment when default branch is reconciled. No altered strategy, artificial signals, test pushes, orders or paid dependency."
+  "notes": "Continue the existing user-authorized repair after the dedicated BLS_DISPATCH_TOKEN repository secret was actually verified with real pinned official source acquisition and scanner consumption. All59 isolated/native suites passed, including8 native workerd suites, plus the corrected secret-name guard. Preserve R5f exact deployment and original durable namespace as rollback target. Upload dedicated persistent authorization atomically with exact reviewed R5g source. Retain original strict ten-minute/all-sample runtime and model gates, then require a passive25-minute window with four-source coverage and two spaced authenticated workflow_dispatch renewals from the immutable reviewed collector source. No changed trading rules, manufactured signals, test pushes, orders or paid dependency. GPT saved installation, natural prepared notifications and profitability remain separate acceptance items."
 }
