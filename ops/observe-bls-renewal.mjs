@@ -4,7 +4,8 @@ import {requestJson,cloudflareSnapshot,safeOutput} from './diagnostics.mjs';
 const IDS=['BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR'];
 export function assessAutomaticBlsRenewals(samples,runs,expected){
  const at=v=>Date.parse(v),start=at(samples[0]?.readAt),end=at(samples.at(-1)?.readAt),events=new Map();
- const coveragePassed=samples.length>=3&&samples.every((s,i)=>s.identityMatched===true&&s.build===expected.build&&s.stateReadSucceeded===true
+ // Prefix validity must not depend on the minimum evidence for final acceptance.
+ const coveragePassed=samples.length>0&&samples.every((s,i)=>s.identityMatched===true&&s.build===expected.build&&s.stateReadSucceeded===true
   &&s.dispatcher?.configured===true&&s.dispatcher?.collectorRef===expected.collectorRef&&!['AUTHORIZATION_OR_TARGET_REQUIRED','DISPATCH_COLLECTOR_REF_INVALID'].includes(s.dispatcher?.status)
   &&Number.isFinite(at(s.consumedAt))&&at(s.readAt)-at(s.consumedAt)>=-5000&&at(s.readAt)-at(s.consumedAt)<=180000
   &&(!i||at(s.readAt)>at(samples[i-1].readAt)&&at(s.readAt)-at(samples[i-1].readAt)<=75000)
@@ -19,7 +20,7 @@ export function assessAutomaticBlsRenewals(samples,runs,expected){
  }
  const renewals=[...events.values()].sort((a,b)=>at(a.oldestFetchedAt)-at(b.oldestFetchedAt));
  const spacedRenewals=renewals.some((a,i)=>renewals.slice(i+1).some(b=>at(b.oldestFetchedAt)-at(a.oldestFetchedAt)>=540000&&at(b.oldestFetchedAt)-start>=1080000));
- const windowPassed=Number.isFinite(start)&&Number.isFinite(end)&&end-start>=1500000;
+ const windowPassed=samples.length>=3&&Number.isFinite(start)&&Number.isFinite(end)&&end-start>=1500000;
  return{passed:coveragePassed&&windowPassed&&spacedRenewals,coveragePassed,windowPassed,spacedRenewals,renewals,sampleCount:samples.length,observedSeconds:(end-start)/1000,
   scope:'PASSIVE_25_MINUTE_SOURCE_COVERAGE_AND_TWO_SPACED_AUTOMATIC_RENEWALS_NOT_PROFIT_OR_DEVICE_PROOF'};
 }

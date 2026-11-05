@@ -1,0 +1,127 @@
+{
+  "mode": "PASSIVE_STATUS_ONLY_NO_FOREGROUND_NEWS_OR_MANUAL_COLLECTOR",
+  "expected": {
+    "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+    "collectorRef": "crypto-alpha-collector-r5g-20261101",
+    "collectorCommit": "cea5511326177f896383867b3a01bf1cfb0676ee"
+  },
+  "samples": [
+    {
+      "readAt": "2026-11-01T10:28:04.457Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-01T10:27:25.347Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.088Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.112Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.135Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.159Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41297562108,
+        "lastRequestAcceptedAt": "2026-11-01T10:27:25.725Z"
+      }
+    },
+    {
+      "readAt": "2026-11-01T10:28:34.664Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-01T10:28:25.247Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.088Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.112Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.135Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-01T10:16:30.159Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41297562108,
+        "lastRequestAcceptedAt": "2026-11-01T10:27:25.725Z"
+      }
+    }
+  ],
+  "runs": {
+    "41297562108": {
+      "id": 41297562108,
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101",
+      "created_at": "2026-11-01T10:27:25Z",
+      "run_started_at": "2026-11-01T10:27:25Z"
+    }
+  },
+  "errors": [
+    "SOURCE_COVERAGE_OR_CONSUMPTION_GAP_IN_RENEWAL_WINDOW"
+  ],
+  "finalDeliveryAccepted": false,
+  "cloudflareBefore": {
+    "deploymentId": "e222d5c2-f30e-4d35-a482-5eee6d406f93",
+    "deployedAt": "2026-11-01T10:10:22.462Z",
+    "versions": [
+      {
+        "id": "79367708-1f06-4c70-9653-a9e7b149df8d",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "assessment": {
+    "passed": false,
+    "coveragePassed": false,
+    "windowPassed": false,
+    "spacedRenewals": false,
+    "renewals": [],
+    "sampleCount": 2,
+    "observedSeconds": 30.207,
+    "scope": "PASSIVE_25_MINUTE_SOURCE_COVERAGE_AND_TWO_SPACED_AUTOMATIC_RENEWALS_NOT_PROFIT_OR_DEVICE_PROOF"
+  },
+  "passed": false
+}

@@ -17,6 +17,7 @@ assert.equal(manifest.stateOwnerContract,stateContract);
 const wranglerBytes=fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url));
 assert.equal(manifest.wranglerSha256,createHash('sha256').update(wranglerBytes).digest('hex'),'Deployment configuration must match its reviewed manifest');
 assert.equal(content.match(/^const BLS_COLLECTOR_REF = "([^"]+)";/m)?.[1],manifest.collectorRef);
+assert.match(manifest.collectorSourceCommit,/^[a-f0-9]{40}$/);
 assert.notEqual(build,manifest.priorLiveBuild,'Changed candidate must never impersonate currently deployed build');
 assert.equal(build,'crypto-alpha-worker-v27.6.3-macro-r5g');
 // User-created GitHub secrets cannot use its reserved GITHUB_ prefix.

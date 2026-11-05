@@ -9,6 +9,7 @@ unit.push('test-orderflow-book-fallback.mjs','test-fast-refresh-budget.mjs','tes
 unit.push('test-bls-dispatch.mjs');
 unit.push('test-deployment-secret-file.mjs');
 unit.push('test-bls-renewal-observer.mjs');
+unit.push('test-collector-pin.mjs');
 const native=['verify-workerd-full-system.mjs','verify-workerd-fast-monitor.mjs','verify-workerd-owner-local.mjs','verify-workerd-news-runtime.mjs','verify-workerd-monitor-contention.mjs','verify-workerd-owner-identity.mjs','verify-workerd-response-isolation.mjs'];
 native.push('verify-workerd-bls-dispatch.mjs');
 mkdirSync(new URL('test-results/',root),{recursive:true});

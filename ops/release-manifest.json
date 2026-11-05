@@ -7,5 +7,6 @@
   "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
   "status": "CANDIDATE_NOT_DEPLOYED",
   "collectorRef": "crypto-alpha-collector-r5g-20261101",
+  "collectorSourceCommit": "cea5511326177f896383867b3a01bf1cfb0676ee",
   "wranglerSha256": "a3af225a010f4729e3657e378a1e363612d36d0f0082f7ede2224440cf44fdae"
 }
