@@ -29,6 +29,18 @@ export default {async fetch(req){const u=new URL(req.url);counts[u.hostname]=(co
   return new Response('<h1>Economic Indicators Calendar</h1><div>'+names[month]+' '+year+'</div><table><td><div>'+String(day).padStart(2,'0')+'<br><a href="https://www.bls.gov/news.release/empsit.htm">Employment Situation</a><br>(08:30)</div></td></table>');
  }
  if(u.hostname.includes('coindesk')||u.hostname.includes('federalreserve')||u.hostname==='www.bls.gov')return new Response(u.pathname.endsWith('.ics')?'BEGIN:VCALENDAR\\nEND:VCALENDAR':'<rss><channel><item><title>ETH fixture</title><link>https://example.org/a</link><pubDate><![CDATA['+new Date(now-10000).toUTCString()+']]></pubDate></item></channel></rss>');
+ if(u.hostname==='fred.stlouisfed.org'){
+  const series=u.pathname.endsWith('/CCSA')?'CCSA':'ICSA',d=new Date(now),sat=new Date(now-((d.getUTCDay()+1)%7)*86400000).toISOString().slice(0,10);
+  return new Response('<title>Claims ('+series+') | FRED | St. Louis Fed</title>Seasonally Adjusted<table><tr><td>'+sat+':&nbsp;</td><td class="series-obs value">'+(series==='ICSA'?'189,000':'1,718,000')+'</td><td>&nbsp;</td></tr></table>');
+ }
+ if(u.hostname==='www.ishares.com'){
+  const btc=u.pathname.includes('333011'),fund=btc?'Bitcoin':'Ethereum',asset=btc?'BTC':'ETH',asOf=new Date(now).toLocaleDateString('en-US',{month:'short',day:'2-digit',year:'numeric',timeZone:'UTC'});
+  return new Response('iShares '+fund+' Trust ETF\\nFund Holdings as of,"'+asOf+'"\\nShares Outstanding,"1,000"\\nTicker,Name,Quantity,Market Currency\\n'+asset+',Crypto,"1,000",'+asset+'\\n');
+ }
+ if(u.hostname==='www.okx.com'&&u.searchParams.get('instType')==='OPTION'){
+  const asset=u.searchParams.get('instFamily').startsWith('BTC')?'BTC':'ETH',expiry=new Date(now+86400000).toISOString().slice(2,10).replaceAll('-','');
+  return Response.json({code:'0',data:['C','P'].map(side=>({instType:'OPTION',instId:asset+'-USD-'+expiry+'-100-'+side,oiCcy:'2',oiUsd:'1000',ts:String(now)}))});
+ }
  if(u.hostname==='fapi.binance.com')return new Response('fixture region restriction',{status:451});
  if(u.hostname==='api.bybit.com'){
   let result={};
@@ -103,6 +115,9 @@ try{
  now+=121000;await call('/__fixture/control',{now,barkFail:false});await call('/scanner/run',{});status=(await call('/scanner/status')).body;
  assert.equal(status.diagnostics.pendingObservationPushes,0,JSON.stringify(status));assert.equal(status.diagnostics.heartbeatHealthy,true);assert.equal(status.discovery.newsStatus.sources.JIN10.httpStatus,200);checks.push('retry after virtual-clock backoff succeeds and heartbeat plus news consumption persist');
  const pushState=(await call('/__fixture/control',{})).body;assert.equal(pushState.pushes.length,1);assert.equal(pushState.pushes[0].isArchive,'1');const audit=status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION');assert.equal(audit.accepted,1);assert.equal(audit.failures,1);assert.equal(audit.attempts,2);assert.equal(status.notificationAudit.deviceReceiptVerified,false);checks.push('actual provider attempts, failed retry, archive request and acceptance remain distinct from device receipt');await call('/scanner/run',{});assert.equal((await call('/__fixture/control',{})).body.pushes.length,1);checks.push('no duplicate stage push on repeated scan');
+ for(let i=0;i<12;i++){const news=(await call('/?view=news')).body.newsContext;if(news.macroReferences?.availableCount===6)break;await new Promise(r=>setTimeout(r,25));}
+ await call('/scanner/run',{});status=(await call('/scanner/status')).body;
+ assert.equal(status.diagnostics.macroReferenceReceipts.sources.length,6);assert.ok(status.diagnostics.macroReferenceReceipts.sources.every(s=>s.status==='ok'&&s.fetchedAt&&Date.parse(s.fetchedAt)<=Date.parse(status.diagnostics.macroReferenceReceipts.consumedAt)));checks.push('six reference caches pass through production news context into per-source scanner consumption receipts');
  await restartRuntime();await call('/__fixture/control',{now,barkFail:false});await call('/scanner/run',{});
  assert.equal((await call('/__fixture/control',{})).body.pushes.length,0);
  status=(await call('/scanner/status')).body;assert.equal(status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION').accepted,1);

@@ -15,6 +15,8 @@ if(tests.status!==0)process.exit(tests.status||1);
 // The candidate must not deploy over an unreviewed production identity or state binding.
 // A missing scanner credential or inaccessible production endpoint fails closed.
 const manifest=JSON.parse(fs.readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
+// Preview builds may test candidates; only the reviewed release workflow can publish.
+if(manifest.status==='CANDIDATE_NOT_DEPLOYED'&&process.env.CRYPTO_ALPHA_CONTROLLED_RELEASE!=='1'){console.log(JSON.stringify({status:'CANDIDATE_PREVIEW_NO_PRODUCTION_MUTATION',build:manifest.build}));process.exit(0);}
 const baselineUrl=new URL('./production-baseline.json',import.meta.url);
 if(fs.existsSync(baselineUrl)){
  const baseline=JSON.parse(fs.readFileSync(baselineUrl,'utf8'));
@@ -31,7 +33,7 @@ if(fs.existsSync(baselineUrl)){
   process.exit(0);
  }
 }
-if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5g'){
+if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5h'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
  const secrets=await requestJson(fetch,'https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/'+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN});
@@ -41,6 +43,6 @@ if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r4'){
  const preflight=spawnSync(process.execPath,[new URL('./r4-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
 }
-const result=withDispatchSecretFile(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5g'?process.env.GITHUB_ACTIONS_DISPATCH_TOKEN:null,file=>
+const result=withDispatchSecretFile(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5h'?process.env.GITHUB_ACTIONS_DISPATCH_TOKEN:null,file=>
  spawnSync(process.execPath,[wranglerCLI(),'deploy','--config','wrangler.jsonc','--keep-vars',...(file?['--secrets-file',file]:[])],{cwd:root,stdio:'inherit',env:{...process.env,CLOUDFLARE_ACCOUNT_ID:config.accountId,CI:'true'}}));
 process.exitCode=result.status===0?0:(result.status||1);

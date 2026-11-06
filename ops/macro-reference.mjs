@@ -30,7 +30,7 @@ export function parseOkxOptionInterest(payload,{asset,now=Date.now(),maxAgeMs=12
  if(!['BTC','ETH'].includes(asset))fail('UNSUPPORTED_ASSET');if(payload?.code!=='0'||!Array.isArray(payload.data)||!payload.data.length||payload.data.length>10000)fail('OPTIONS_RESPONSE_INVALID');
  const seen=new Set();let calls=0,puts=0,callUsd=0,putUsd=0,instruments=0,excludedExpired=0,minTs=Infinity,maxTs=0;
  for(const r of payload.data){if(r?.instType!=='OPTION')fail('INSTRUMENT_TYPE_MISMATCH');const e=optionExpiry(r.instId||'',asset);if(!e)fail('OPTION_INSTRUMENT_MISMATCH');if(seen.has(r.instId))fail('DUPLICATE_INSTRUMENT');seen.add(r.instId);const ts=number(r.ts);if(ts>now+5000||now-ts>maxAgeMs)fail('OPTION_TIMESTAMP_STALE_OR_FUTURE');const oi=number(r.oiCcy),usd=number(r.oiUsd);if(e.at<=now){excludedExpired++;continue;}instruments++;minTs=Math.min(minTs,ts);maxTs=Math.max(maxTs,ts);if(e.side==='C'){calls+=oi;callUsd+=usd;}else{puts+=oi;putUsd+=usd;}}
- if(!instruments)fail('NO_UNEXPIRED_OPTIONS');return{source:'OKX_PUBLIC_OPTIONS_OPEN_INTEREST',asset,asOf:new Date(minTs).toISOString(),newestAt:new Date(maxTs).toISOString(),instruments,excludedExpired,callOpenInterestCoin:calls,putOpenInterestCoin:puts,callOpenInterestUsd:callUsd,putOpenInterestUsd:putUsd,putCallOpenInterestRatio:calls>0?puts/calls:null,ratioMeaning:'OPEN_INTEREST_NOT_TRADE_DIRECTION',snapshotCurrent:true,economicReportingDelayVerified:false,allMarketCoverage:false,tradeDirection:null};
+ if(!instruments)fail('NO_UNEXPIRED_OPTIONS');if(![calls,puts,callUsd,putUsd].every(Number.isFinite))fail('OPTION_AGGREGATE_OVERFLOW');return{source:'OKX_PUBLIC_OPTIONS_OPEN_INTEREST',asset,asOf:new Date(minTs).toISOString(),newestAt:new Date(maxTs).toISOString(),instruments,excludedExpired,callOpenInterestCoin:calls,putOpenInterestCoin:puts,callOpenInterestUsd:callUsd,putOpenInterestUsd:putUsd,putCallOpenInterestRatio:calls>0?puts/calls:null,ratioMeaning:'OPEN_INTEREST_NOT_TRADE_DIRECTION',snapshotCurrent:true,economicReportingDelayVerified:false,allMarketCoverage:false,tradeDirection:null};
 }
 export function parseClaimsCsv(text,{series,now=Date.now()}={}){
  if(!['ICSA','CCSA'].includes(series))fail('UNSUPPORTED_CLAIMS_SERIES');const rows=csvRows(text),h=rows.shift();if(h?.length!==2||!['DATE','observation_date'].includes(h[0])||h[1]!==series)fail('CLAIMS_COLUMNS_INVALID');const seen=new Set(),data=[];
@@ -61,13 +61,13 @@ export const MACRO_REFERENCE_SOURCES=Object.freeze([
  {id:'OKX_ETH_OPTIONS',url:'https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=ETH-USD',type:'option',asset:'ETH'},
  {id:'OKX_BTC_OPTIONS',url:'https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=BTC-USD',type:'option',asset:'BTC'}
 ]);
-export async function collectMacroReferences({fetcher=fetch,now=Date.now}={}){
+export async function collectMacroReferences({fetcher=fetch,now=Date.now,selectedIds=null}={}){
  const sources=[];
- for(const spec of MACRO_REFERENCE_SOURCES){
+ for(const spec of MACRO_REFERENCE_SOURCES.filter(s=>selectedIds===null||selectedIds.includes(s.id))){
   const row={id:spec.id,url:spec.url,requestedAt:new Date(now()).toISOString(),status:'unavailable'};
   try{
-   const response=await fetcher(spec.url,{method:'GET',redirect:'error',headers:{accept:spec.type==='claims'?'text/html':spec.type==='issuer'?'text/csv,text/plain':'application/json','User-Agent':'CryptoAlphaReferenceData/1.0'},signal:AbortSignal.timeout(12000)});
-   row.httpStatus=response.status;if(!response.ok)fail('UPSTREAM_HTTP_'+response.status);
+   const response=await fetcher(spec.url,{method:'GET',redirect:'manual',headers:{accept:spec.type==='claims'?'text/html':spec.type==='issuer'?'text/csv,text/plain':'application/json','User-Agent':'CryptoAlphaReferenceData/1.0'},signal:AbortSignal.timeout(12000)});
+   row.httpStatus=response.status;if(!response.ok){const retry=response.headers?.get?.('retry-after'),seconds=/^\d+$/.test(retry||'')?Number(retry):(Date.parse(retry)-now())/1000;row.retryAfterSeconds=Number.isFinite(seconds)&&seconds>0?Math.min(86400,Math.ceil(seconds)):null;await response.body?.cancel();fail('UPSTREAM_HTTP_'+response.status);}
    const reader=response.body?.getReader();if(!reader)fail('EMPTY_BODY');let size=0,parts=[];
    for(;;){const v=await reader.read();if(v.done)break;size+=v.value.byteLength;if(size>600000){await reader.cancel();fail('REFERENCE_BODY_LIMIT');}parts.push(v.value);}
    const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}const text=new TextDecoder().decode(bytes);

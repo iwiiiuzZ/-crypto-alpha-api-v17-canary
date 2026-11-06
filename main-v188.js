@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5g";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5h";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -972,7 +972,7 @@ const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
 const BLS_DISPATCH_STATE_KEY = "news:bls-dispatch:v1";
 const BLS_DISPATCH_REFRESH_MS = 10*60*1000;
 const BLS_DISPATCH_IDS = ["BLS_CPI","BLS_PPI","BLS_EMPLOYMENT","BLS_CALENDAR"];
-const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5g-20261101";
+const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5h-20261106";
 function validBlsCollectorRef(ref){return ref==="main"||/^crypto-alpha-collector-r5[a-z]-\d{8}$/.test(ref);}
 function compactBlsRelayDispatch(state,configured){
  const stamp=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null;
@@ -1056,6 +1056,138 @@ async function maintainOfficialBlsRelay(owner,options={}){
  })();owner.blsRelayDispatchWork=task;
  try{return await task;}finally{if(owner.blsRelayDispatchWork===task)owner.blsRelayDispatchWork=null;}
 }
+// BEGIN GENERATED MACRO REFERENCES
+const MacroReferences=(()=>{
+// Candidate reference-data adapters. Never place orders or change strategy gates.
+const DAY=86400000;
+function fail(code){throw Error(code);}
+function number(value){if(typeof value!=='number'&&typeof value!=='string')fail('INVALID_NUMBER');if(typeof value==='string'&&!/^\d+(?:\.\d+)?$/.test(value))fail('INVALID_NUMBER');const n=Number(value);if(!Number.isFinite(n)||n<0)fail('INVALID_NUMBER');return n;}
+function issuerNumber(v){if(typeof v!=='string'||!/^\d{1,3}(?:,\d{3})*(?:\.\d+)?$|^\d+(?:\.\d+)?$/.test(v))fail('INVALID_ISSUER_NUMBER');return number(v.replaceAll(',',''));}
+function dateOnly(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))fail('INVALID_DATE');const n=Date.parse(value+'T00:00:00Z');if(!Number.isFinite(n)||new Date(n).toISOString().slice(0,10)!==value)fail('INVALID_DATE');return n;}
+function datePolicy(asOf,now,maxDays){const t=dateOnly(asOf);if(t>now)fail('FUTURE_DATE');if(now-t>maxDays*DAY)fail('STALE_REFERENCE');return t;}
+function csvRows(text){
+ if(typeof text!=='string'||text.length>600000)fail('INVALID_CSV_SIZE');
+ const rows=[];let row=[],cell='',quoted=false;
+ for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(quoted&&text[i+1]==='"'){cell+='"';i++;}else if(quoted)quoted=false;else if(cell==='')quoted=true;else fail('INVALID_CSV_QUOTE');}
+ else if(c===','&&!quoted){row.push(cell);cell='';}else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);rows.push(row);row=[];cell='';}else cell+=c;}
+ if(quoted)fail('UNTERMINATED_CSV');if(cell!==''||row.length){row.push(cell);rows.push(row);}return rows;
+}
+const MONTHS={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+function issuerDate(s){const m=String(s).match(/^([A-Z][a-z]{2}) (\d{2}), (\d{4})$/);if(!m||!MONTHS[m[1]])fail('INVALID_ISSUER_DATE');return m[3]+'-'+String(MONTHS[m[1]]).padStart(2,'0')+'-'+m[2];}
+function parseIssuerHoldings(text,{fund,now=Date.now()}={}){
+ if(!['IBIT','ETHA'].includes(fund))fail('UNSUPPORTED_FUND');
+ const rows=csvRows(text),expected=fund==='IBIT'?'iShares Bitcoin Trust ETF':'iShares Ethereum Trust ETF',ccy=fund==='IBIT'?'BTC':'ETH';
+ if(rows[0]?.[0]!==expected)fail('FUND_MISMATCH');
+ const dates=rows.filter(r=>r[0]==='Fund Holdings as of');if(dates.length!==1)fail('HOLDINGS_DATE_MISSING_OR_DUPLICATE');const asOf=issuerDate(dates[0][1]);datePolicy(asOf,now,7);
+ const shares=rows.filter(r=>r[0]==='Shares Outstanding');if(shares.length!==1)fail('SHARES_MISSING_OR_DUPLICATE');
+ const header=rows.findIndex(r=>r[0]==='Ticker'&&r.includes('Quantity'));
+ if(header<0)fail('HOLDINGS_COLUMNS_MISSING');const h=rows[header],matches=rows.slice(header+1).filter(r=>r[0]===ccy);if(matches.length!==1)fail('ASSET_MISSING_OR_DUPLICATE');
+ const r=matches[0],q=issuerNumber(r[h.indexOf('Quantity')]),s=issuerNumber(shares[0][1]);if(q<=0||s<=0)fail('EMPTY_HOLDINGS');
+ return{source:'ISHARES_ISSUER_HOLDINGS_CSV',fund,asset:ccy,asOf,sharesOutstanding:s,assetQuantity:q,cadence:'DAILY_REFERENCE',live:false,publicationTimeKnown:false,netFlowUsd:null,allMarketCoverage:false,tradeDirection:null};
+}
+function optionExpiry(id,ccy){const m=id.match(new RegExp('^'+ccy+'-USD-(\\d{2})(\\d{2})(\\d{2})-([0-9]+(?:\\.[0-9]+)?)-(C|P)$'));if(!m)return null;const date='20'+m[1]+'-'+m[2]+'-'+m[3];return{at:dateOnly(date)+8*3600000,side:m[5]};}
+function parseOkxOptionInterest(payload,{asset,now=Date.now(),maxAgeMs=120000}={}){
+ if(!['BTC','ETH'].includes(asset))fail('UNSUPPORTED_ASSET');if(payload?.code!=='0'||!Array.isArray(payload.data)||!payload.data.length||payload.data.length>10000)fail('OPTIONS_RESPONSE_INVALID');
+ const seen=new Set();let calls=0,puts=0,callUsd=0,putUsd=0,instruments=0,excludedExpired=0,minTs=Infinity,maxTs=0;
+ for(const r of payload.data){if(r?.instType!=='OPTION')fail('INSTRUMENT_TYPE_MISMATCH');const e=optionExpiry(r.instId||'',asset);if(!e)fail('OPTION_INSTRUMENT_MISMATCH');if(seen.has(r.instId))fail('DUPLICATE_INSTRUMENT');seen.add(r.instId);const ts=number(r.ts);if(ts>now+5000||now-ts>maxAgeMs)fail('OPTION_TIMESTAMP_STALE_OR_FUTURE');const oi=number(r.oiCcy),usd=number(r.oiUsd);if(e.at<=now){excludedExpired++;continue;}instruments++;minTs=Math.min(minTs,ts);maxTs=Math.max(maxTs,ts);if(e.side==='C'){calls+=oi;callUsd+=usd;}else{puts+=oi;putUsd+=usd;}}
+ if(!instruments)fail('NO_UNEXPIRED_OPTIONS');if(![calls,puts,callUsd,putUsd].every(Number.isFinite))fail('OPTION_AGGREGATE_OVERFLOW');return{source:'OKX_PUBLIC_OPTIONS_OPEN_INTEREST',asset,asOf:new Date(minTs).toISOString(),newestAt:new Date(maxTs).toISOString(),instruments,excludedExpired,callOpenInterestCoin:calls,putOpenInterestCoin:puts,callOpenInterestUsd:callUsd,putOpenInterestUsd:putUsd,putCallOpenInterestRatio:calls>0?puts/calls:null,ratioMeaning:'OPEN_INTEREST_NOT_TRADE_DIRECTION',snapshotCurrent:true,economicReportingDelayVerified:false,allMarketCoverage:false,tradeDirection:null};
+}
+function parseClaimsCsv(text,{series,now=Date.now()}={}){
+ if(!['ICSA','CCSA'].includes(series))fail('UNSUPPORTED_CLAIMS_SERIES');const rows=csvRows(text),h=rows.shift();if(h?.length!==2||!['DATE','observation_date'].includes(h[0])||h[1]!==series)fail('CLAIMS_COLUMNS_INVALID');const seen=new Set(),data=[];
+ for(const r of rows){if(r.length===1&&!r[0])continue;if(r.length!==2)fail('CLAIMS_ROW_INVALID');const t=dateOnly(r[0]);if(seen.has(t))fail('DUPLICATE_WEEK');seen.add(t);if(r[1]==='.'||r[1]==='')continue;const count=number(r[1]);if(!Number.isInteger(count)||count>100000000)fail('CLAIMS_VALUE_INVALID');data.push({weekEnding:r[0],count,t});}
+ data.sort((a,b)=>b.t-a.t);if(!data.length)fail('NO_CLAIMS_OBSERVATIONS');datePolicy(data[0].weekEnding,now,series==='ICSA'?16:23);if(data.some(r=>r.t>now))fail('FUTURE_DATE');return{source:'DOL_ETA_VIA_FRED',series,weekEnding:data[0].weekEnding,count:data[0].count,previousWeekEnding:data[1]?.weekEnding||null,previousCount:data[1]?.count??null,change:data[1]?data[0].count-data[1].count:null,seasonallyAdjusted:true,cadence:'WEEKLY_REFERENCE',publicationTimeKnown:false,actualVsConsensus:null,tradeDirection:null};
+}
+function parseClaimsHtml(text,{series,now=Date.now()}={}){
+ if(!['ICSA','CCSA'].includes(series)||typeof text!=='string'||text.length>300000)fail('CLAIMS_HTML_INVALID');
+ const title=text.match(/<title>([^<]+)<\/title>/i)?.[1]||'';
+ if(!title.includes('('+series+')')||!title.includes('FRED')||!text.includes('Seasonally Adjusted'))fail('CLAIMS_HTML_IDENTITY_MISMATCH');
+ const data=[];
+ for(const tr of text.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)){
+  if(!tr[1].includes('series-obs'))continue;
+  const cells=[...tr[1].matchAll(/<(td|th)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map(x=>x[2].replace(/<[^>]*>/g,'').replace(/&nbsp;|&#160;/g,' ').trim());
+  while(cells.length>2&&cells.at(-1)==='')cells.pop();
+  if(cells.length!==2)continue;cells[0]=cells[0].replace(/:$/,'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(cells[0]))continue;
+  const n=issuerNumber(cells[1]);data.push(cells[0]+','+n);
+ }
+ if(!data.length)fail('CLAIMS_HTML_OBSERVATIONS_MISSING');
+ return {...parseClaimsCsv('observation_date,'+series+'\n'+data.join('\n'),{series,now}),source:'DOL_ETA_VIA_FRED_HTML'};
+}
+const MACRO_REFERENCE_SOURCES=Object.freeze([
+ {id:'US_INITIAL_CLAIMS',url:'https://fred.stlouisfed.org/series/ICSA',type:'claims',series:'ICSA'},
+ {id:'US_CONTINUED_CLAIMS',url:'https://fred.stlouisfed.org/series/CCSA',type:'claims',series:'CCSA'},
+ {id:'IBIT_HOLDINGS',url:'https://www.ishares.com/us/products/333011/ishares-bitcoin-trust-etf/latest-holdings.csv',type:'issuer',fund:'IBIT'},
+ {id:'ETHA_HOLDINGS',url:'https://www.ishares.com/us/products/337614/ishares-ethereum-trust-etf/latest-holdings.csv',type:'issuer',fund:'ETHA'},
+ {id:'OKX_ETH_OPTIONS',url:'https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=ETH-USD',type:'option',asset:'ETH'},
+ {id:'OKX_BTC_OPTIONS',url:'https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=BTC-USD',type:'option',asset:'BTC'}
+]);
+async function collectMacroReferences({fetcher=fetch,now=Date.now,selectedIds=null}={}){
+ const sources=[];
+ for(const spec of MACRO_REFERENCE_SOURCES.filter(s=>selectedIds===null||selectedIds.includes(s.id))){
+  const row={id:spec.id,url:spec.url,requestedAt:new Date(now()).toISOString(),status:'unavailable'};
+  try{
+   const response=await fetcher(spec.url,{method:'GET',redirect:'manual',headers:{accept:spec.type==='claims'?'text/html':spec.type==='issuer'?'text/csv,text/plain':'application/json','User-Agent':'CryptoAlphaReferenceData/1.0'},signal:AbortSignal.timeout(12000)});
+   row.httpStatus=response.status;if(!response.ok){const retry=response.headers?.get?.('retry-after'),seconds=/^\d+$/.test(retry||'')?Number(retry):(Date.parse(retry)-now())/1000;row.retryAfterSeconds=Number.isFinite(seconds)&&seconds>0?Math.min(86400,Math.ceil(seconds)):null;await response.body?.cancel();fail('UPSTREAM_HTTP_'+response.status);}
+   const reader=response.body?.getReader();if(!reader)fail('EMPTY_BODY');let size=0,parts=[];
+   for(;;){const v=await reader.read();if(v.done)break;size+=v.value.byteLength;if(size>600000){await reader.cancel();fail('REFERENCE_BODY_LIMIT');}parts.push(v.value);}
+   const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}const text=new TextDecoder().decode(bytes);
+   const collectedAt=now();row.data=spec.type==='claims'?parseClaimsHtml(text,{series:spec.series,now:collectedAt}):spec.type==='issuer'?parseIssuerHoldings(text,{fund:spec.fund,now:collectedAt}):parseOkxOptionInterest(JSON.parse(text),{asset:spec.asset,now:collectedAt});
+   row.status='ok';row.fetchedAt=new Date(collectedAt).toISOString();row.bytes=size;
+  }catch(error){row.error=/^[A-Z][A-Z0-9_]{2,90}$/.test(error.message)?error.message:'REFERENCE_REQUEST_OR_PARSE_FAILED';}
+  sources.push(row);
+ }
+ return{scope:'MACRO_REFERENCE_CANDIDATE_NOT_PRODUCTION_CONNECTED',checkedAt:new Date(now()).toISOString(),sources,requiredSourcesAvailable:sources.every(s=>s.status==='ok'),dxy:{status:'NO_AUTHORIZED_REALTIME_SOURCE_CONNECTED'},automaticallyPlacesOrders:false,changesStrategyRules:false};
+}
+
+const MACRO_REFERENCE_KEY='macro:reference-cache:v1';
+const MACRO_REFERENCE_REVISION='27.6.3-macro-reference-h1';
+const policy=s=>s.type==='option'?{refreshMs:60000,maxAgeMs:180000}:{refreshMs:21600000,maxAgeMs:43200000};
+function age(stamp,now){const n=Date.parse(stamp);return Number.isFinite(n)?now-n:Infinity;}
+function summarizeMacroReferences(saved,now=Date.now()){
+ const rows=MACRO_REFERENCE_SOURCES.map(s=>{
+  const r=saved?.records?.[s.id],fresh=r?.revision===MACRO_REFERENCE_REVISION&&r.status==='ok'&&age(r.fetchedAt,now)>=-5000&&age(r.fetchedAt,now)<=policy(s).maxAgeMs;
+  return{id:s.id,status:fresh?'ok':'unavailable',reason:fresh?null:r?.error||(r?.fetchedAt?'REFERENCE_TRANSPORT_STALE':'REFERENCE_CACHE_WARMING'),
+   fetchedAt:r?.fetchedAt||null,lastAttemptAt:r?.lastAttemptAt||null,lastSuccessAt:r?.lastSuccessAt||null,nextAttemptAt:r?.nextAttemptAt?new Date(r.nextAttemptAt).toISOString():null,httpStatus:r?.httpStatus??null,
+   revision:r?.revision||null,data:fresh?r.data:null};
+ });
+ return{revision:MACRO_REFERENCE_REVISION,checkedAt:new Date(now).toISOString(),sourceCount:6,availableCount:rows.filter(r=>r.status==='ok').length,sources:rows,dxy:{status:'NO_AUTHORIZED_REALTIME_SOURCE_CONNECTED'},
+  scope:'REFERENCE_CONTEXT_NOT_NEW_TRADE_OR_NOTIFICATION_GATE',allMarketCoverage:false,latestEconomicPublicationVerified:false,tradeDirection:null,openNowAllowed:false};
+}
+function macroReferenceReceipts(summary,consumedAt){
+ return{revision:summary?.revision||MACRO_REFERENCE_REVISION,consumedAt,sources:(summary?.sources||[]).map(r=>({source:r.id,status:r.status,fetchedAt:r.fetchedAt,dataAsOf:r.data?.asOf||r.data?.weekEnding||null,reason:r.reason||null})),scope:'SCANNER_CONSUMED_REFERENCE_CONTEXT_NOT_ECONOMIC_EVENT_CONFIRMATION'};
+}
+async function refreshMacroReferenceCache(owner,{fetcher=fetch,now=Date.now,collect=collectMacroReferences}={}){
+ if(owner.macroReferenceWork)return owner.macroReferenceWork;
+ const task=(async()=>{
+  const storage=owner.ctx.storage,began=now(),saved=await storage.get(MACRO_REFERENCE_KEY)||{records:{}};
+  if(saved.leaseUntil>began)return summarizeMacroReferences(saved,began);
+  const due=MACRO_REFERENCE_SOURCES.filter(s=>{const r=saved.records?.[s.id];return !r||r.revision!==MACRO_REFERENCE_REVISION||(!(r.nextAttemptAt>began)&&(r.status!=='ok'||age(r.lastAttemptAt,began)>=policy(s).refreshMs));});
+  if(!due.length)return summarizeMacroReferences(saved,began);
+  // A bounded restart lease avoids duplicate transports after an interrupted owner.
+  const state={...saved,records:{...saved.records},leaseUntil:began+60000};await storage.put(MACRO_REFERENCE_KEY,state);
+  let index=0;
+  await Promise.all([0,1].map(async()=>{while(index<due.length){
+   const spec=due[index++],old=state.records[spec.id],attemptAt=new Date(now()).toISOString();let r;
+   try{const result=await collect({fetcher,now,selectedIds:[spec.id]});r=result.sources?.find(x=>x.id===spec.id);if(!r)throw Error('REFERENCE_RESULT_MISSING');}
+   catch{r={status:'unavailable',error:'REFERENCE_COLLECTION_FAILED'};}
+   if(r.status==='ok')state.records[spec.id]={...r,revision:MACRO_REFERENCE_REVISION,lastAttemptAt:attemptAt,lastSuccessAt:r.fetchedAt,failureCount:0,nextAttemptAt:0};
+   else{const failures=(old?.failureCount||0)+1,backoff=Math.max(r.retryAfterSeconds?Math.min(86400000,r.retryAfterSeconds*1000):0,r.httpStatus===401||r.httpStatus===403?3600000:r.httpStatus===429?600000:Math.min(900000,60000*2**Math.min(failures,4)));
+    state.records[spec.id]={...old,status:'unavailable',error:r.error||'REFERENCE_COLLECTION_FAILED',httpStatus:r.httpStatus??null,revision:MACRO_REFERENCE_REVISION,lastAttemptAt:attemptAt,failureCount:failures,nextAttemptAt:now()+backoff};}
+  }}));
+  state.leaseUntil=0;state.updatedAt=new Date(now()).toISOString();await storage.put(MACRO_REFERENCE_KEY,state);return summarizeMacroReferences(state,now());
+ })();owner.macroReferenceWork=task;try{return await task;}finally{owner.macroReferenceWork=null;}
+}
+async function cachedMacroReferences(owner,{schedule=true}={}){
+ let summary;
+ try{summary=summarizeMacroReferences(await owner.ctx.storage.get(MACRO_REFERENCE_KEY));}catch{return{...summarizeMacroReferences(null),cacheReadFailed:true};}
+ // Public/scanner reads return cached data only. Reference transport cannot hold quote/scan requests.
+ if(schedule&&typeof owner.ctx.waitUntil==='function')owner.ctx.waitUntil(refreshMacroReferenceCache(owner).catch(()=>{}));
+ return summary;
+}
+
+return {cachedMacroReferences,macroReferenceReceipts,summarizeMacroReferences};
+})();
+// END GENERATED MACRO REFERENCES
 const NEWS_TRANSPORT_REVISION = "27.0.2";
 const NEWS_PARSER_REVISION = "27.6.3-macro-news-r5";
 const NEWS_SOURCES = [
@@ -1340,7 +1472,7 @@ async function loadJin10(owner,fetchedAt) {
   return {status:"ok",fetchedAt,httpStatus:owner.jinLastHttpStatus||200,handshakeAt:owner.jinHandshakeAt||null,items,unparseableCount:raw.filter(i=>!newsItem(i,"JIN10",fetchedAt)).length,
     parseDiagnostics:{rawItemCount:raw.length,acceptedItemCount:items.length,rejectedItemCount:Math.max(0,Math.min(raw.length,60)-items.length),contentStatus:raw.length===0?"EMPTY_FEED":items.length<Math.min(raw.length,60)?"PARTIALLY_PARSED":"PARSED",parserRevision:NEWS_PARSER_REVISION}};
 }
-function newsContextSummary(records,now=Date.now()) {
+function newsContextSummary(records,now=Date.now(),macroReferences=null) {
   const treasuryRecord=records.US_TREASURY_YIELD_DAILY;
   const treasuryDaily=treasuryRecord?.status==="ok"&&treasuryRecord.yieldCurve?{...treasuryRecord.yieldCurve,source:"US_TREASURY_YIELD_DAILY",fetchedAt:treasuryRecord.fetchedAt,live:false}:null;
   const sources=Object.fromEntries(Object.entries(records).map(([k,v])=>{const age=v.fetchedAt?(now-Date.parse(v.fetchedAt))/1000:null;
@@ -1366,7 +1498,7 @@ function newsContextSummary(records,now=Date.now()) {
       obsoleteSources:Object.entries(sources).filter(([,v])=>v.parserRevision!==NEWS_PARSER_REVISION).map(([k])=>k),
       missingSources:["JIN10",...NEWS_SOURCES.map(s=>s.id),TREASURY_DAILY_SOURCE.id,"NYFED_CALENDAR"].filter(k=>!sources[k]),
       cacheNeedsRefresh:Object.values(sources).some(v=>v.parserRevision!==NEWS_PARSER_REVISION)},
-    treasuryDaily,headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
+    treasuryDaily,macroReferences,headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),
     upcomingEvents:events.filter(e=>Date.parse(e.eventAt)>=now-600000).sort((a,b)=>Date.parse(a.eventAt)-Date.parse(b.eventAt)).slice(0,12),
     calendarCoverage:{availableSources:["BLS_CALENDAR","NYFED_CALENDAR"].filter(k=>sources[k]?.status==="ok"&&sources[k].transportAgeSeconds>=0&&sources[k].transportAgeSeconds<=7200),
       independentBackupAvailable:sources.NYFED_CALENDAR?.status==="ok"&&sources.NYFED_CALENDAR.transportAgeSeconds>=0&&sources.NYFED_CALENDAR.transportAgeSeconds<=7200,
@@ -1428,12 +1560,15 @@ async function coordinatedNewsContext(owner) {
     };
     // Three bounded workers; prioritize Jin10, BEA, and BOJ before optional feeds.
     await Promise.all([0,1,2].map(async()=>{while(index<sources.length){const s=sources[index++];await refresh(s);}}));
-    await owner.ctx.storage.put(NEWS_STATE_KEY,{records});return newsContextSummary(records);
+    await owner.ctx.storage.put(NEWS_STATE_KEY,{records});
+    const macroReferences=await MacroReferences.cachedMacroReferences(owner);
+    return newsContextSummary(records,Date.now(),macroReferences);
   })();owner.newsWork=task;try{return await task;}finally{owner.newsWork=null;}
 }
 async function cachedNewsContext(owner) {
   const saved=await owner.ctx.storage.get(NEWS_STATE_KEY),records=saved?.records||{};
-  const summary=newsContextSummary(records);
+  const macroReferences=await MacroReferences.cachedMacroReferences(owner,{schedule:false});
+  const summary=newsContextSummary(records,Date.now(),macroReferences);
   const refresh=coordinatedNewsContext(owner);
   if(typeof owner.ctx.waitUntil==="function"){
     owner.ctx.waitUntil(refresh.then(()=>{owner.newsRefreshFailure=null;},()=>{owner.newsRefreshFailure={at:new Date().toISOString(),reason:"NEWS_BACKGROUND_REFRESH_FAILED"};}));
@@ -2520,6 +2655,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const rejectionFunnel=due?await updateRejectionFunnel(env,opportunityAudit):old.rejectionFunnel||null;
   const detail = { ...old, opportunityAudit, dynamicAlert,forwardStudy,newsAlert,rejectionFunnel,newsStatus:full?.newsContext?{
     status:full.newsContext.status,checkedAt:full.newsContext.checkedAt,consumedAt:new Date().toISOString(),
+    macroReferences:MacroReferences.macroReferenceReceipts(full.newsContext.macroReferences,new Date().toISOString()),
     cachePolicy:full.newsContext.cachePolicy||"FOREGROUND_REFRESH",reason:full.newsContext.reason||null,parserAudit:full.newsContext.parserAudit||null,
     coordinatorFailure:full.newsContext.coordinatorFailure||null,backgroundRefreshFailure:full.newsContext.backgroundRefreshFailure||null,sources:full.newsContext.sources||{},
     recentRiskHeadlineCount:full.newsContext.recentRiskHeadlines?.length||0,upcomingEventCount:full.newsContext.upcomingEvents?.length||0,
@@ -6586,6 +6722,7 @@ async function scannerStatus(env) {
         newsConsumption:{status:state[DISCOVERY_STATE_KEY]?.newsStatus?.status||"NOT_CHECKED",consumedAt:state[DISCOVERY_STATE_KEY]?.newsStatus?.consumedAt||null,
           parserAudit:state[DISCOVERY_STATE_KEY]?.newsStatus?.parserAudit||null,coordinatorFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.coordinatorFailure||null,backgroundRefreshFailure:state[DISCOVERY_STATE_KEY]?.newsStatus?.backgroundRefreshFailure||null},
         newsSourceReceipts:compactNewsSourceReceipts(state[DISCOVERY_STATE_KEY]?.newsStatus),
+        macroReferenceReceipts:state[DISCOVERY_STATE_KEY]?.newsStatus?.macroReferences||null,
         blsRelayDispatch:compactBlsRelayDispatch(state[BLS_DISPATCH_STATE_KEY],Boolean(String(env?.GITHUB_ACTIONS_DISPATCH_TOKEN||"").trim())),
         configuredIsNotOperationalProof:true,pushAcceptedIsNotDeviceDeliveryProof:true,missedBetweenSamplesPossible:true,fastSamplingHealthy:fastMonitor?.samplingHealthy===true},
       failureHistory:compactStatusValue(Array.isArray(state[SCANNER_FAILURE_HISTORY_KEY])?state[SCANNER_FAILURE_HISTORY_KEY]:[])};

@@ -1,0 +1,26 @@
+name: Temporary Worker macro source network preflight
+on:
+  push:
+    branches: [integration/macro-data-20261106]
+    paths: [.github/workflows/macro-worker-network-preflight.yml]
+permissions:
+  contents: read
+jobs:
+  isolated-network:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Create unbound temporary probe, test public source egress, remove it and compare production identity
+        run: node ops/macro-worker-network-preflight.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MACRO_WORKER_EGRESS_PREFLIGHT
+          path: macro-worker-network-preflight.json
+          retention-days: 30
