@@ -40,7 +40,7 @@ jobs:
             for(;;){const v=await reader.read();if(v.done)break;bytes+=v.value.byteLength;if(bytes>2000000){await reader.cancel();throw Error('BODY_LIMIT');}parts.push(Buffer.from(v.value));}
             const body=Buffer.concat(parts);row.bytes=bytes;row.sha256=createHash('sha256').update(body).digest('hex');
             const text=body.toString('utf8');
-            if(id.endsWith('_HTML')||id==='DOL_BULLETINS'){row.seriesSnippets=[...text.matchAll(/.{0,200}(?:series-meta-observation|observation-date|189,000|1,718,000|initial claims|updated at|Updated:|<form|<item>|<title>).{0,350}/gi)].slice(0,12).map(m=>m[0]);}
+            if(id.endsWith('_HTML')||id==='DOL_BULLETINS'){row.claimRows=[...text.matchAll(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi)].filter(m=>m[0].includes('series-obs')).slice(0,3).map(m=>m[0]);row.seriesSnippets=[...text.matchAll(/.{0,200}(?:series-meta-observation|observation-date|189,000|1,718,000|initial claims|updated at|Updated:|<form|<item>|<title>).{0,350}/gi)].slice(0,12).map(m=>m[0]);}
             else if(id.startsWith('FRED_')||id==='IBIT'||id==='ETHA'){const lines=text.trim().split(/\r?\n/);row.lineCount=lines.length;row.firstLines=lines.slice(0,8);row.lastLines=lines.slice(-6);}
             else if(r.ok){const j=JSON.parse(text),data=j.data||j.result;row.apiCode=j.code||j.error?.code||null;row.returnedAt=j.usOut||null;row.count=Array.isArray(data)?data.length:null;row.fieldNames=Array.isArray(data)&&data.length?Object.keys(data[0]):[];row.samples=Array.isArray(data)?data.slice(0,2):null;}
            }catch(e){row.error=e.message==='BODY_LIMIT'?'BODY_LIMIT':e.name==='SyntaxError'?'INVALID_JSON':'FETCH_FAILED';}
