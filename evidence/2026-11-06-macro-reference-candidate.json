@@ -1,0 +1,186 @@
+{
+  "scope": "CANDIDATE_REFERENCE_ONLY_NO_PRODUCTION_DEPLOYMENT",
+  "sourceCommit": "f7285ae031fc33c2852d2450442c694fea70199a",
+  "liveRun": 42206463908,
+  "localBoundaryCases": 26,
+  "productionBuildUnchanged": "crypto-alpha-worker-v27.6.3-macro-r5g",
+  "productionSourceBlobUnchanged": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+  "live": {
+    "scope": "MACRO_REFERENCE_CANDIDATE_NOT_PRODUCTION_CONNECTED",
+    "checkedAt": "2026-11-06T10:56:37.457Z",
+    "sources": [
+      {
+        "id": "US_INITIAL_CLAIMS",
+        "url": "https://fred.stlouisfed.org/series/ICSA",
+        "requestedAt": "2026-11-06T10:56:36.246Z",
+        "status": "ok",
+        "httpStatus": 200,
+        "data": {
+          "source": "DOL_ETA_VIA_FRED_HTML",
+          "series": "ICSA",
+          "weekEnding": "2026-10-31",
+          "count": 189000,
+          "previousWeekEnding": "2026-10-24",
+          "previousCount": 195000,
+          "change": -6000,
+          "seasonallyAdjusted": true,
+          "cadence": "WEEKLY_REFERENCE",
+          "publicationTimeKnown": false,
+          "actualVsConsensus": null,
+          "tradeDirection": null
+        },
+        "fetchedAt": "2026-11-06T10:56:36.649Z",
+        "bytes": 77262
+      },
+      {
+        "id": "US_CONTINUED_CLAIMS",
+        "url": "https://fred.stlouisfed.org/series/CCSA",
+        "requestedAt": "2026-11-06T10:56:36.650Z",
+        "status": "ok",
+        "httpStatus": 200,
+        "data": {
+          "source": "DOL_ETA_VIA_FRED_HTML",
+          "series": "CCSA",
+          "weekEnding": "2026-10-24",
+          "count": 1718000,
+          "previousWeekEnding": "2026-10-17",
+          "previousCount": 1695000,
+          "change": 23000,
+          "seasonallyAdjusted": true,
+          "cadence": "WEEKLY_REFERENCE",
+          "publicationTimeKnown": false,
+          "actualVsConsensus": null,
+          "tradeDirection": null
+        },
+        "fetchedAt": "2026-11-06T10:56:36.823Z",
+        "bytes": 78535
+      },
+      {
+        "id": "IBIT_HOLDINGS",
+        "url": "https://www.ishares.com/us/products/333011/ishares-bitcoin-trust-etf/latest-holdings.csv",
+        "requestedAt": "2026-11-06T10:56:36.824Z",
+        "status": "ok",
+        "httpStatus": 200,
+        "data": {
+          "source": "ISHARES_ISSUER_HOLDINGS_CSV",
+          "fund": "IBIT",
+          "asset": "BTC",
+          "asOf": "2026-11-04",
+          "sharesOutstanding": 1422600000,
+          "assetQuantity": 802807.1969,
+          "cadence": "DAILY_REFERENCE",
+          "live": false,
+          "publicationTimeKnown": false,
+          "netFlowUsd": null,
+          "allMarketCoverage": false,
+          "tradeDirection": null
+        },
+        "fetchedAt": "2026-11-06T10:56:37.014Z",
+        "bytes": 470
+      },
+      {
+        "id": "ETHA_HOLDINGS",
+        "url": "https://www.ishares.com/us/products/337614/ishares-ethereum-trust-etf/latest-holdings.csv",
+        "requestedAt": "2026-11-06T10:56:37.014Z",
+        "status": "ok",
+        "httpStatus": 200,
+        "data": {
+          "source": "ISHARES_ISSUER_HOLDINGS_CSV",
+          "fund": "ETHA",
+          "asset": "ETH",
+          "asOf": "2026-11-04",
+          "sharesOutstanding": 132653284,
+          "assetQuantity": 3015023.2266,
+          "cadence": "DAILY_REFERENCE",
+          "live": false,
+          "publicationTimeKnown": false,
+          "netFlowUsd": null,
+          "allMarketCoverage": false,
+          "tradeDirection": null
+        },
+        "fetchedAt": "2026-11-06T10:56:37.040Z",
+        "bytes": 467
+      },
+      {
+        "id": "OKX_ETH_OPTIONS",
+        "url": "https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=ETH-USD",
+        "requestedAt": "2026-11-06T10:56:37.040Z",
+        "status": "ok",
+        "httpStatus": 200,
+        "data": {
+          "source": "OKX_PUBLIC_OPTIONS_OPEN_INTEREST",
+          "asset": "ETH",
+          "asOf": "2026-11-06T10:56:37.199Z",
+          "newestAt": "2026-11-06T10:56:37.199Z",
+          "instruments": 680,
+          "excludedExpired": 1052,
+          "callOpenInterestCoin": 211968.00000000006,
+          "putOpenInterestCoin": 200900.10000000003,
+          "callOpenInterestUsd": 474081038.3540001,
+          "putOpenInterestUsd": 449327317.52099997,
+          "putCallOpenInterestRatio": 0.9477850430253623,
+          "ratioMeaning": "OPEN_INTEREST_NOT_TRADE_DIRECTION",
+          "snapshotCurrent": true,
+          "economicReportingDelayVerified": false,
+          "allMarketCoverage": false,
+          "tradeDirection": null
+        },
+        "fetchedAt": "2026-11-06T10:56:37.278Z",
+        "bytes": 197321
+      },
+      {
+        "id": "OKX_BTC_OPTIONS",
+        "url": "https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=BTC-USD",
+        "requestedAt": "2026-11-06T10:56:37.287Z",
+        "status": "ok",
+        "httpStatus": 200,
+        "data": {
+          "source": "OKX_PUBLIC_OPTIONS_OPEN_INTEREST",
+          "asset": "BTC",
+          "asOf": "2026-11-06T10:56:37.370Z",
+          "newestAt": "2026-11-06T10:56:37.370Z",
+          "instruments": 696,
+          "excludedExpired": 1094,
+          "callOpenInterestCoin": 19971.94999999999,
+          "putOpenInterestCoin": 22701.18999999999,
+          "callOpenInterestUsd": 1519096474.925001,
+          "putOpenInterestUsd": 1726686629.7490025,
+          "putCallOpenInterestRatio": 1.136653656753597,
+          "ratioMeaning": "OPEN_INTEREST_NOT_TRADE_DIRECTION",
+          "snapshotCurrent": true,
+          "economicReportingDelayVerified": false,
+          "allMarketCoverage": false,
+          "tradeDirection": null
+        },
+        "fetchedAt": "2026-11-06T10:56:37.450Z",
+        "bytes": 206171
+      }
+    ],
+    "requiredSourcesAvailable": true,
+    "dxy": {
+      "status": "NO_AUTHORIZED_REALTIME_SOURCE_CONNECTED"
+    },
+    "automaticallyPlacesOrders": false,
+    "changesStrategyRules": false
+  },
+  "initialFailures": [
+    {
+      "run": 42206003206,
+      "reason": "OFFICIAL_HTML_OBSERVATION_MARKUP_NOT_YET_SUPPORTED",
+      "notCountedAsPass": true
+    },
+    {
+      "run": 42206224479,
+      "reason": "ACTUAL_ROW_HAS_TRAILING_COLON_AND_EMPTY_LAYOUT_CELL",
+      "notCountedAsPass": true
+    }
+  ],
+  "limitations": [
+    "NOT_PRODUCTION_CONNECTED",
+    "DXY_AUTHORIZED_REALTIME_SOURCE_NOT_CONNECTED",
+    "ISSUER_TWO_FUND_HOLDINGS_NOT_ALL_ETF_NET_FLOWS",
+    "OPTION_RESPONSE_TIMESTAMP_IS_NOT_ECONOMIC_PUBLICATION_TIME",
+    "REFERENCE_ASOF_FRESHNESS_IS_NOT_LATEST_RELEASE_PROOF",
+    "NO_ORDERS_OR_TEST_NOTIFICATIONS"
+  ]
+}
