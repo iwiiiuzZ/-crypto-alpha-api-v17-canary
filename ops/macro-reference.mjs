@@ -44,7 +44,7 @@ export function parseClaimsHtml(text,{series,now=Date.now()}={}){
  const data=[];
  for(const tr of text.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)){
   if(!tr[1].includes('series-obs'))continue;
-  const cells=[...tr[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(x=>x[1].replace(/<[^>]*>/g,'').replace(/&nbsp;|&#160;/g,' ').trim());
+  const cells=[...tr[1].matchAll(/<(td|th)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map(x=>x[2].replace(/<[^>]*>/g,'').replace(/&nbsp;|&#160;/g,' ').trim());
   if(cells.length!==2||!/^\d{4}-\d{2}-\d{2}$/.test(cells[0]))continue;
   const n=issuerNumber(cells[1]);data.push(cells[0]+','+n);
  }
