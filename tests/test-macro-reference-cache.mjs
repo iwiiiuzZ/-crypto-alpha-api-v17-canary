@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {validateClaimsReferenceRelay,CLAIMS_REFERENCE_RELAY_KEY} from '../ops/macro-reference-cache.mjs';
 import assert from 'node:assert/strict';
 import {refreshMacroReferenceCache,cachedMacroReferences,summarizeMacroReferences,macroReferenceReceipts,MACRO_REFERENCE_KEY,MACRO_REFERENCE_REVISION} from '../ops/macro-reference-cache.mjs';
 const cases=[];let now=Date.parse('2026-11-06T10:00:00Z');
@@ -17,4 +19,19 @@ await test('expired transport and changed parser cannot be promoted by cache rea
 await test('source cache read failure is explicit and has no fabricated values',async()=>{const o={ctx:{storage:{get:async()=>{throw Error('denied');}}}};const r=await cachedMacroReferences(o);assert.equal(r.cacheReadFailed,true);assert.equal(r.availableCount,0);});
 await test('failed durable write cannot be reported as a completed refresh',async()=>{const o=make();o.ctx.storage.put=async()=>{throw Error('storage failed');};await assert.rejects(()=>refreshMacroReferenceCache(o,{collect:good,now:()=>now}));assert.equal(o.macroReferenceWork,null);});
 await test('scanner receipts preserve per-source fetch and observation dates without copying values',async()=>{const o=make();const r=await refreshMacroReferenceCache(o,{collect:good,now:()=>now});const at=new Date(now+1000).toISOString(),receipt=macroReferenceReceipts(r,at);assert.equal(receipt.consumedAt,at);assert.equal(receipt.sources.length,6);assert.ok(receipt.sources.every(s=>s.fetchedAt&&s.dataAsOf));assert.ok(!JSON.stringify(receipt).includes('live'));assert.equal(receipt.revision,MACRO_REFERENCE_REVISION);});
+function claimsBody(series){return '<title>Claims ('+series+') | FRED</title>Seasonally Adjusted<table><tr><td>2026-10-31:</td><td class="series-obs value">189,000</td></tr></table>';}
+const digest=async body=>createHash('sha256').update(body).digest('hex');
+const payload=()=>({references:['ICSA','CCSA'].map((series,i)=>{const body=claimsBody(series);return{id:i?'US_CONTINUED_CLAIMS':'US_INITIAL_CLAIMS',sourceUrl:'https://fred.stlouisfed.org/series/'+series,body,sha256:createHash('sha256').update(body).digest('hex'),fetchedAt:new Date(now).toISOString()};})});
+await test('authenticated relay accepts only two independently parsed original weekly references',async()=>{const x=await validateClaimsReferenceRelay(payload(),{now,digest});assert.equal(Object.keys(x.records).length,2);});
+for(const [name,mutate,code] of [
+ ['unknown source',p=>p.references[0].id='DXY','SOURCE_NOT_ALLOWED'],
+ ['duplicate source',p=>p.references[1]=p.references[0],'SOURCE_NOT_ALLOWED'],
+ ['URL substitution',p=>p.references[0].sourceUrl='https://example.org','SOURCE_NOT_ALLOWED'],
+ ['source mixing',p=>p.sources=[],'INVALID_SOURCE_COUNT'],
+ ['hash corruption',p=>p.references[0].sha256='0'.repeat(64),'HASH_MISMATCH'],
+ ['stale transport',p=>p.references[0].fetchedAt=new Date(now-900001).toISOString(),'STALE_OR_FUTURE'],
+ ['future transport',p=>p.references[0].fetchedAt=new Date(now+5001).toISOString(),'STALE_OR_FUTURE']
+])await test('claims relay rejects '+name+' atomically',async()=>{const p=payload();mutate(p);await assert.rejects(()=>validateClaimsReferenceRelay(p,{now,digest}),new RegExp(code));});
+await test('claims relay refuses timestamp downgrade and conflicting replay',async()=>{const p=payload(),previous=(await validateClaimsReferenceRelay(p,{now,digest})).records;previous.US_INITIAL_CLAIMS.fetchedAt=new Date(now+1).toISOString();await assert.rejects(()=>validateClaimsReferenceRelay(p,{now,digest,previous}),/TIMESTAMP_DOWNGRADE/);previous.US_INITIAL_CLAIMS.fetchedAt=p.references[0].fetchedAt;previous.US_INITIAL_CLAIMS.sha256='0'.repeat(64);await assert.rejects(()=>validateClaimsReferenceRelay(p,{now,digest,previous}),/CONFLICTING_REPLAY/);});
+await test('fresh relay replaces failed direct path during backoff without claiming direct recovery',async()=>{const o=make();const collect=async a=>({sources:a.selectedIds.map(id=>({id,status:'unavailable',httpStatus:520,error:'UPSTREAM_HTTP_520'}))});await refreshMacroReferenceCache(o,{collect,now:()=>now});now+=1000;const relay=await validateClaimsReferenceRelay(payload(),{now,digest});o.db.set(CLAIMS_REFERENCE_RELAY_KEY,{value:relay,expiresAt:now+1200000});const result=await refreshMacroReferenceCache(o,{collect,now:()=>now});assert.equal(result.availableCount,2);const r=result.sources[0];assert.equal(r.httpStatus,200);assert.equal(r.directHttpStatus,520);assert.equal(r.transport,'AUTHENTICATED_GITHUB_OFFICIAL_REFERENCE_RELAY');const receipt=macroReferenceReceipts(result,new Date(now).toISOString());assert.equal(receipt.sources[0].directHttpStatus,520);now+=1200001;assert.equal(summarizeMacroReferences(o.db.get(MACRO_REFERENCE_KEY),now).availableCount,0);});
 console.log(JSON.stringify({passed:cases.length,failed:0,scope:'ISOLATED_DURABLE_CACHE_CONTRACTS_NOT_PRODUCTION',cases},null,2));

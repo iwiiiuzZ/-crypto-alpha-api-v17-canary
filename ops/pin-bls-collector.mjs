@@ -19,7 +19,7 @@ const remote=await api('/contents/ops/release-manifest.json?ref='+commit);
 const pinned=JSON.parse(Buffer.from(remote.content,'base64').toString('utf8'));
 if(pinned.build!==expected.build||pinned.sourceGitBlobSha!==expected.sourceGitBlobSha)throw Error('COLLECTOR_SOURCE_COMMIT_MISMATCH');
 if(!testBaseline){
- for(const name of ['ops/official-bls-relay.mjs','.github/workflows/official-bls-relay.yml']){
+ for(const name of ['ops/official-bls-relay.mjs','ops/macro-reference.mjs','.github/workflows/official-bls-relay.yml']){
   const bytes=fs.readFileSync(new URL('../'+name,import.meta.url));
   const sha=createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex');
   const file=await api('/contents/'+name+'?ref='+commit);

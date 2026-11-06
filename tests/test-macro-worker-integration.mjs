@@ -1,3 +1,4 @@
+import {reconcileMacroReferences} from '../ops/macro-reference-consumption-check.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -7,6 +8,7 @@ const raw=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 execFileSync(process.execPath,[new URL('../ops/embed-macro-reference.mjs',import.meta.url).pathname,'--check']);
 let restored=raw.replace(/\/\/ BEGIN GENERATED MACRO REFERENCES[\s\S]*?\/\/ END GENERATED MACRO REFERENCES\n/,'');
 const reverse=[
+ ["  if(payload?.references!==undefined)return MacroReferences.acceptClaimsReferenceRelay(payload,env,{get:scannerStateGet,put:scannerStatePut});\n",''],
  ['const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5h";','const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5g";'],
  ['const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5h-20261106";','const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5g-20261101";'],
  ['function newsContextSummary(records,now=Date.now(),macroReferences=null) {','function newsContextSummary(records,now=Date.now()) {'],
@@ -30,3 +32,11 @@ for(const available of [true,false]){
  assert.ok(JSON.stringify(status).length<=24000);assert.equal(status.backendIdentity.matched,true);
 }
 console.log(JSON.stringify({passed:true,scope:'REAL_WORKER_FUNCTIONS_ISOLATED_MARKET_FIXTURES',originalGCoreReconstructionBlob:blob,sourceEmbeddingMatches:true,consumptionAndFailuresVerified:true,responseBudgetVerified:true}));
+
+const auditNow=Date.now(),stamp=new Date(auditNow-1000).toISOString(),build='crypto-alpha-worker-v27.6.3-macro-r5h';
+const context={sources:ids.map(id=>({id,status:'ok',fetchedAt:stamp,transport:'DIRECT'}))};
+const status={backendIdentity:{matched:true,frontendBuild:build,stateOwnerBuild:build},diagnostics:{macroReferenceReceipts:{consumedAt:new Date(auditNow).toISOString(),sources:ids.map(source=>({source,status:'ok',fetchedAt:stamp,transport:'DIRECT'}))}}};
+assert.equal(reconcileMacroReferences(context,status,{now:auditNow,build}).passed,true);
+const unconsumed=structuredClone(status);unconsumed.diagnostics.macroReferenceReceipts.sources[0].fetchedAt=new Date(auditNow-2000).toISOString();assert.equal(reconcileMacroReferences(context,unconsumed,{now:auditNow,build}).passed,false);
+const stale=structuredClone(context);stale.sources[4].fetchedAt=new Date(auditNow-180001).toISOString();assert.equal(reconcileMacroReferences(stale,status,{now:auditNow,build}).passed,false);
+const wrongBuild=structuredClone(status);wrongBuild.backendIdentity.stateOwnerBuild='old';assert.equal(reconcileMacroReferences(context,wrongBuild,{now:auditNow,build}).passed,false);

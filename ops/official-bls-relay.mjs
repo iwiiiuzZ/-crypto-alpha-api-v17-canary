@@ -1,5 +1,6 @@
 // Fallback transport only. GitHub Actions fetches original BLS URLs, never a proxy's content.
 // No trading order, news interpretation or notification is initiated by this script.
+import {MACRO_REFERENCE_SOURCES,parseClaimsHtml} from './macro-reference.mjs';
 import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -43,6 +44,25 @@ export async function deliverBlsSources(fetcher,origin,token,data){
  if(json.status!=='OFFICIAL_BLS_RELAY_ACCEPTED'||!Array.isArray(json.accepted)||json.accepted.length!==data.sources.length)throw new Error('RELAY_ACCEPTANCE_NOT_CONFIRMED');
  return {delivered:true,accepted:json.accepted,failures:data.failures};
 }
+export async function collectClaimsReferences(fetcher=fetch,now=Date.now){
+ const references=[];
+ for(const spec of MACRO_REFERENCE_SOURCES.filter(s=>s.type==='claims')){
+  const response=await fetcher(spec.url,{redirect:'manual',signal:AbortSignal.timeout(16000),headers:{accept:'text/html','User-Agent':'CryptoAlphaSourceHealth/1.0'}});
+  if(!response.ok){await response.body?.cancel();throw Error('CLAIMS_UPSTREAM_HTTP_'+response.status);}
+  if(response.url!==spec.url)throw Error('CLAIMS_FINAL_URL_INVALID');
+  const body=await response.text();parseClaimsHtml(body,{series:spec.series,now:now()});
+  references.push({id:spec.id,sourceUrl:spec.url,body,fetchedAt:new Date(now()).toISOString(),sha256:createHash('sha256').update(body,'utf8').digest('hex')});
+ }
+ return {references};
+}
+export async function deliverClaimsReferences(fetcher,origin,token,data){
+ if(!token||!/^https:\/\/[A-Za-z0-9.-]+$/.test(origin))throw Error('CLAIMS_RELAY_AUTH_OR_ORIGIN_MISSING');
+ const response=await fetcher(origin+'/scanner/official-macro-relay',{method:'POST',redirect:'error',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.timeout(30000)});
+ if(!response.ok){await response.body?.cancel();throw Error('CLAIMS_RELAY_HTTP_'+response.status);}
+ const result=await response.json();
+ if(result.status!=='OFFICIAL_CLAIMS_REFERENCE_RELAY_ACCEPTED'||result.accepted?.length!==2||!data.references.every(r=>result.accepted.includes(r.id)))throw Error('CLAIMS_RELAY_ACCEPTANCE_NOT_CONFIRMED');
+ return{status:result.status,accepted:result.accepted,storedAt:result.storedAt};
+}
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const target=process.env.CRYPTO_ALPHA_WORKER_ORIGIN,token=process.env.SCANNER_TOKEN;
  if(!target||!token)throw new Error('RELAY_ENV_MISSING');
@@ -60,4 +80,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const result=await deliverBlsSources(fetch,target,token,data);
  console.log(JSON.stringify({status:result.delivered?'OFFICIAL_BLS_RELAY_INGESTED':'OFFICIAL_BLS_RELAY_UNAVAILABLE',accepted:result.accepted||[],fetchFailures:data.failures}));
  if(!result.delivered||data.failures.length)process.exitCode=1;
+ // Reference transport is independent: BLS has already been delivered even if these sources fail.
+ const claims=await collectClaimsReferences();
+ console.log(JSON.stringify(await deliverClaimsReferences(fetch,target,token,claims)));
 }

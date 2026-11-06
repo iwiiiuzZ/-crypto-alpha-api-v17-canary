@@ -1,4 +1,5 @@
 // Full production handlers + real workerd Durable Object; ALL exchanges/news/push are local fixtures.
+import {createHash} from 'node:crypto';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {spawn,execFileSync} from 'node:child_process';import assert from 'node:assert/strict';
 const bin=process.argv[2];if(!bin)throw Error('Pass actual workerd binary');
@@ -29,7 +30,8 @@ export default {async fetch(req){const u=new URL(req.url);counts[u.hostname]=(co
   return new Response('<h1>Economic Indicators Calendar</h1><div>'+names[month]+' '+year+'</div><table><td><div>'+String(day).padStart(2,'0')+'<br><a href="https://www.bls.gov/news.release/empsit.htm">Employment Situation</a><br>(08:30)</div></td></table>');
  }
  if(u.hostname.includes('coindesk')||u.hostname.includes('federalreserve')||u.hostname==='www.bls.gov')return new Response(u.pathname.endsWith('.ics')?'BEGIN:VCALENDAR\\nEND:VCALENDAR':'<rss><channel><item><title>ETH fixture</title><link>https://example.org/a</link><pubDate><![CDATA['+new Date(now-10000).toUTCString()+']]></pubDate></item></channel></rss>');
- if(u.hostname==='fred.stlouisfed.org'){
+ if(u.hostname==='fred.stlouisfed.org')return new Response('fixture Cloudflare egress failure',{status:520});
+ if(u.hostname==='unused-fred-fixture.invalid'){
   const series=u.pathname.endsWith('/CCSA')?'CCSA':'ICSA',d=new Date(now),sat=new Date(now-((d.getUTCDay()+1)%7)*86400000).toISOString().slice(0,10);
   return new Response('<title>Claims ('+series+') | FRED | St. Louis Fed</title>Seasonally Adjusted<table><tr><td>'+sat+':&nbsp;</td><td class="series-obs value">'+(series==='ICSA'?'189,000':'1,718,000')+'</td><td>&nbsp;</td></tr></table>');
  }
@@ -115,9 +117,12 @@ try{
  now+=121000;await call('/__fixture/control',{now,barkFail:false});await call('/scanner/run',{});status=(await call('/scanner/status')).body;
  assert.equal(status.diagnostics.pendingObservationPushes,0,JSON.stringify(status));assert.equal(status.diagnostics.heartbeatHealthy,true);assert.equal(status.discovery.newsStatus.sources.JIN10.httpStatus,200);checks.push('retry after virtual-clock backoff succeeds and heartbeat plus news consumption persist');
  const pushState=(await call('/__fixture/control',{})).body;assert.equal(pushState.pushes.length,1);assert.equal(pushState.pushes[0].isArchive,'1');const audit=status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION');assert.equal(audit.accepted,1);assert.equal(audit.failures,1);assert.equal(audit.attempts,2);assert.equal(status.notificationAudit.deviceReceiptVerified,false);checks.push('actual provider attempts, failed retry, archive request and acceptance remain distinct from device receipt');await call('/scanner/run',{});assert.equal((await call('/__fixture/control',{})).body.pushes.length,1);checks.push('no duplicate stage push on repeated scan');
+ const references=['ICSA','CCSA'].map((series,i)=>{const body='<title>Claims ('+series+') | FRED</title>Seasonally Adjusted<table><tr><td>'+new Date(now-7*86400000).toISOString().slice(0,10)+'</td><td class="series-obs value">189,000</td></tr></table>';return{id:i?'US_CONTINUED_CLAIMS':'US_INITIAL_CLAIMS',sourceUrl:'https://fred.stlouisfed.org/series/'+series,body,sha256:createHash('sha256').update(body).digest('hex'),fetchedAt:new Date(now).toISOString()};});
+ assert.equal((await call('/scanner/official-macro-relay',{references},false)).http,401);
+ const claimsRelay=await call('/scanner/official-macro-relay',{references});assert.equal(claimsRelay.body.status,'OFFICIAL_CLAIMS_REFERENCE_RELAY_ACCEPTED',JSON.stringify(claimsRelay));checks.push('real authenticated claims relay validates raw official references while unauthenticated relay is rejected');
  for(let i=0;i<12;i++){const news=(await call('/?view=news')).body.newsContext;if(news.macroReferences?.availableCount===6)break;await new Promise(r=>setTimeout(r,25));}
  await call('/scanner/run',{});status=(await call('/scanner/status')).body;
- assert.equal(status.diagnostics.macroReferenceReceipts.sources.length,6);assert.ok(status.diagnostics.macroReferenceReceipts.sources.every(s=>s.status==='ok'&&s.fetchedAt&&Date.parse(s.fetchedAt)<=Date.parse(status.diagnostics.macroReferenceReceipts.consumedAt)));checks.push('six reference caches pass through production news context into per-source scanner consumption receipts');
+ assert.equal(status.diagnostics.macroReferenceReceipts.sources.length,6);assert.ok(status.diagnostics.macroReferenceReceipts.sources.every(s=>s.status==='ok'&&s.fetchedAt&&Date.parse(s.fetchedAt)<=Date.parse(status.diagnostics.macroReferenceReceipts.consumedAt)));assert.ok(status.diagnostics.macroReferenceReceipts.sources.filter(s=>s.source.includes('CLAIMS')).every(s=>s.transport==='AUTHENTICATED_GITHUB_OFFICIAL_REFERENCE_RELAY'));checks.push('six reference caches pass through production news context into per-source scanner consumption receipts');
  await restartRuntime();await call('/__fixture/control',{now,barkFail:false});await call('/scanner/run',{});
  assert.equal((await call('/__fixture/control',{})).body.pushes.length,0);
  status=(await call('/scanner/status')).body;assert.equal(status.notificationAudit.channels.find(c=>c.kind==='OBSERVATION').accepted,1);

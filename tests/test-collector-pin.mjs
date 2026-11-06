@@ -12,7 +12,7 @@ let passed=0;
 async function check(options={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'collector-pin-'));
  const manifest={build:'candidate',sourceGitBlobSha:'locked',collectorRef:ref,collectorSourceCommit:pinned};
- const files={'ops/official-bls-relay.mjs':'relay-fixture','.github/workflows/official-bls-relay.yml':'workflow-fixture'};
+ const files={'ops/macro-reference.mjs':'reference-fixture','ops/official-bls-relay.mjs':'relay-fixture','.github/workflows/official-bls-relay.yml':'workflow-fixture'};
  const calls=[];
  try{
   fs.mkdirSync(path.join(dir,'ops'),{recursive:true});fs.mkdirSync(path.join(dir,'.github/workflows'),{recursive:true});
