@@ -1,0 +1,35 @@
+name: Macro H independent readonly diagnosis
+on:
+  push:
+    branches: [ops/macro-runtime-readonly-20261106]
+    paths: [.github/workflows/macro-runtime-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read actual protected runtime without triggering news, scans, notifications or orders
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {requestJson,summarizeSample,cloudflareSnapshot,safeOutput} from './ops/diagnostics.mjs';
+          const config=JSON.parse(fs.readFileSync('ops/config.json','utf8')),scanner=process.env.SCANNER_TOKEN,token=process.env.CLOUDFLARE_API_TOKEN;
+          const [fast,status,cloudflare]=await Promise.all([requestJson(fetch,config.origin+'/?view=fast'),requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),cloudflareSnapshot(fetch,config,token)]);
+          const output={scope:'INDEPENDENT_PASSIVE_READ_ONLY',generatedAt:new Date().toISOString(),sample:summarizeSample(fast,status),cloudflare,referenceReceipts:status.diagnostics?.macroReferenceReceipts||null,dispatch:status.diagnostics?.blsRelayDispatch||null};
+          const text=safeOutput(output,[scanner,token]);fs.writeFileSync('macro-runtime-readonly-evidence.json',text);console.log(text);
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MACRO_RUNTIME_READONLY
+          path: macro-runtime-readonly-evidence.json
+          retention-days: 30
