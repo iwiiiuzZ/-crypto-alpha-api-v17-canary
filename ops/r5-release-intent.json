@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "fc5226bf08843c1ffb3f275a345b2ed7d1d01056",
-  "sourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
-  "priorDeploymentId": "a164bd59-8b20-4673-9e47-0697c6ed6191",
+  "reviewedCommit": "3660dbab16fb4e4206db9c57d9918c537070431a",
+  "sourceGitBlobSha": "b2f7b328c0a62a6089d147fef7422078974bd407",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5h",
+  "priorDeploymentId": "2b93bd12-0153-407f-9b90-eb8bd0490fd5",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "Continue the existing authorized release after correcting the acceptance observer's premature second-sample abort. Preserve all final25-minute coverage, duration, authentic pinned-source dispatch and spaced renewal requirements. Replayed the actual healthy aborted samples and checked51 healthy prefixes plus original negative cases. Complete60 isolated/native suites before deployment. Keep unchanged Worker source and trading rules, exact original namespace, dedicated repository authorization, and immutable collector source cea5511326177f896383867b3a01bf1cfb0676ee. The prior Nov1 guarded rollback deployment was independently reverified Nov5 and is the exact restore target. No test signals, test pushes, orders or paid dependency. GPT saved configuration, natural prepared events and profitability remain separate."
+  "notes": "Continue authorized macro reference completion. Exact existing G after scanner-secret rotation is the restore target. All63 isolated/native suites passed locally including authenticated claims relay, direct520 fallback, durable cache and scanner receipts; whole original G core hash reconstruction passes outside explicit reference plumbing. Six references only: DOL/FRED weekly claims via authenticated original-content relay, two issuer daily holdings, two OKX option OI snapshots. DXY remains unavailable by user confirmation, no paid dependency, no substitute index, no new trade/notification gates, no test push or order. Controlled deployment requires identity convergence, original12 news receipts, six fresh reference consumption, full readonly audit,10-minute runtime window and25-minute two spaced automatic relay renewals; guarded exact-identity rollback on failure. Natural prepared/device and profitability evidence remain separate."
 }
