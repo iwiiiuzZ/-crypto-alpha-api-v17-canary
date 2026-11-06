@@ -1,0 +1,33 @@
+name: Read-only active observation mode audit
+on:
+  push:
+    branches: [ops/notification-mode-readonly-20261106]
+    paths: [.github/workflows/notification-mode-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  readonly-mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read existing observation modes without modifying records
+        env:
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {requestJson,safeOutput} from './ops/diagnostics.mjs';
+          const token=process.env.SCANNER_TOKEN;
+          if(!token)throw Error('SCANNER_TOKEN_REQUIRED');
+          const status=await requestJson(fetch,'https://crypto-alpha-api-v17-canary.id-mranran.workers.dev/scanner/status',{authorization:'Bearer '+token});
+          const record=r=>({model:['A1','A2','B1','B2','C1','C2','D1','D2'].includes(r.submodel)?r.submodel:null,mode:['ACTIONABLE_ONLY','ALL_STAGES'].includes(r.notificationMode)?r.notificationMode:null,ordinaryResearchSilent:r.notificationDecision?.ordinaryResearchSilent===true,cardPresent:!!r.preparedTrade});
+          const report={scope:'READ_ONLY_EXISTING_RECORD_MODE_NO_WRITES_NO_NOTIFICATIONS',checkedAt:new Date().toISOString(),build:status.build,identityMatched:status.backendIdentity?.matched===true,stateReadSucceeded:status.diagnostics?.stateReadSucceeded===true,detailsOmitted:status.diagnostics?.detailsOmitted===true,active:Array.isArray(status.observations)?status.observations.map(record):null,history:Array.isArray(status.observationHistory)?status.observationHistory.map(record):null,newsConsumedAt:status.diagnostics?.newsConsumption?.consumedAt,newsSourceReceipts:status.diagnostics?.newsSourceReceipts,deviceReceiptVerified:false};
+          if(report.build!=='crypto-alpha-worker-v27.6.3-macro-r5g'||!report.identityMatched||!report.stateReadSucceeded)throw Error('MODE_AUDIT_IDENTITY_OR_STATE_FAILED');
+          const output=safeOutput(report,[token]);
+          fs.writeFileSync('notification-mode-readonly.json',output);
+          console.log(output);
+          NODE
