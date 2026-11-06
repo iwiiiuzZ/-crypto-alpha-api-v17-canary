@@ -1,4 +1,4 @@
-name: Macro response budget readonly diagnosis
+name: Shadow public market snapshot capture
 on:
   push:
     branches: [ops/macro-runtime-readonly-20261106]
@@ -8,24 +8,19 @@ permissions:
 jobs:
   readonly:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '22'
-      - name: Read actual market response budget without plan or notification mutation
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const origin=JSON.parse(fs.readFileSync('ops/config.json','utf8')).origin;
-          const r=await fetch(origin+'/?view=market',{signal:AbortSignal.timeout(50000)}),text=await r.text(),body=JSON.parse(text);
-          const out={scope:'READ_ONLY_RESPONSE_BUDGET_DIAGNOSIS',generatedAt:new Date().toISOString(),httpStatus:r.status,build:body.build,error:body.error||null,bytes:Buffer.byteLength(text),transportDiagnostics:body.transportDiagnostics||null};
-          fs.writeFileSync('macro-budget-readonly.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));
-          NODE
+      - name: Capture public snapshot in temporary shadow worker, remove probe and verify production unchanged
+        run: node ops/market-shadow-capture.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: MACRO_RESPONSE_BUDGET_READONLY
-          path: macro-budget-readonly.json
+          name: MARKET_SHADOW_CAPTURE
+          path: market-shadow-capture.json
           retention-days: 30
