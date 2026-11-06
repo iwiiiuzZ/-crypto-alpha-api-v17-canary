@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "44ea8ea1ac0d5ac1fa5e1cdb2e40703c9a174574",
-  "sourceGitBlobSha": "e34d8e85864fba66cc0a331b77be7c817288242e",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
-  "priorDeploymentId": "575d0441-9d7b-4db6-86e4-fe62e341613e",
+  "reviewedCommit": "fc5226bf08843c1ffb3f275a345b2ed7d1d01056",
+  "sourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+  "priorDeploymentId": "a164bd59-8b20-4673-9e47-0697c6ed6191",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "Continue the user-authorized root-cause repair. All55 isolated/native suites passed including real workerd authenticated relay->wrapped durable state->news consumer and expiry refusal. Preserve previously validated R5e runtime as exact rollback target. Existing main-branch official BLS Atom/client-identity transport corrections and scheduled collector preserved in two-parent history. Four BLS sources must each be consumed, then same strict ten-minute/all-sample health and model-progress gates. Exact-source rebuild guard prevents accidental redeployment when default branch is reconciled. No altered strategy, artificial signals, test pushes, orders or paid dependency."
+  "notes": "Continue the existing authorized release after correcting the acceptance observer's premature second-sample abort. Preserve all final25-minute coverage, duration, authentic pinned-source dispatch and spaced renewal requirements. Replayed the actual healthy aborted samples and checked51 healthy prefixes plus original negative cases. Complete60 isolated/native suites before deployment. Keep unchanged Worker source and trading rules, exact original namespace, dedicated repository authorization, and immutable collector source cea5511326177f896383867b3a01bf1cfb0676ee. The prior Nov1 guarded rollback deployment was independently reverified Nov5 and is the exact restore target. No test signals, test pushes, orders or paid dependency. GPT saved configuration, natural prepared events and profitability remain separate."
 }

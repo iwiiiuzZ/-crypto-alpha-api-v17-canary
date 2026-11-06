@@ -4,11 +4,11 @@ import {pathToFileURL} from 'node:url';
 import {requestJson,cloudflareSnapshot,summarizeSample} from './diagnostics.mjs';
 
 export const PRIOR_BASELINE={
- build:'crypto-alpha-worker-v27.6.3-macro-r5e',
- deploymentId:'575d0441-9d7b-4db6-86e4-fe62e341613e',
+ build:'crypto-alpha-worker-v27.6.3-macro-r5f',
+ deploymentId:'a164bd59-8b20-4673-9e47-0697c6ed6191',
  namespaceFingerprint:'aedfbcd14cd1'
 };
-export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5f';
+export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5g';
 
 export function assessR5Preflight({manifest,sourceGitBlobSha,cloudflare,fast,status,now=Date.now()}){
  const ident=fast?.backendIdentity||{},scanId=status?.backendIdentity||{};

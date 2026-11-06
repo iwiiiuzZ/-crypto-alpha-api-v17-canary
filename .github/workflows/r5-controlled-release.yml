@@ -2,21 +2,22 @@ name: R5 controlled production release and final evidence
 on:
   push:
     branches:
-      - integration/r5-freeze-candidate-20261031
+      - integration/bls-relay-clock-20261101
     paths:
       - ops/r5-release-intent.json
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: crypto-alpha-production-maintenance
   cancel-in-progress: false
 jobs:
   r5-controlled-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+      GITHUB_ACTIONS_DISPATCH_TOKEN: ${{ secrets.BLS_DISPATCH_TOKEN }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -29,8 +30,14 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Verify explicit intent with exact prior reviewed commit and source Git blob
         run: node ops/r5-release-intent-check.mjs
+      - name: Require dedicated persistent authorization, never the temporary job token
+        run: node --input-type=module -e "if(!String(process.env.GITHUB_ACTIONS_DISPATCH_TOKEN||'').trim())throw Error('PERSISTENT_GITHUB_DISPATCH_SECRET_REQUIRED')"
       - name: Complete isolated and native workerd regression before production action
         run: npm test
+      - name: Pin reviewed collector source without moving an existing tag
+        env:
+          COLLECTOR_PIN_TOKEN: ${{ github.token }}
+        run: node ops/pin-bls-collector.mjs
       - name: Verify pinned previous deployment, durable namespace, scanner and OKX quote
         run: node ops/r5-preflight.mjs
       - name: Deploy exact tested R5 candidate without deleting existing secrets
@@ -60,6 +67,8 @@ jobs:
         run: |
           set -o pipefail
           node ops/soak-monitor.mjs | tee r5-production-soak.log
+      - name: Observe twenty-five minutes and two spaced autonomous official-source renewals
+        run: node ops/observe-bls-renewal.mjs
       - name: Restore pinned previous version ONLY if failure is traced to the exact R5 deployment
         if: failure() && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
         run: node ops/r5-guarded-rollback.mjs
@@ -75,6 +84,8 @@ jobs:
             r5-official-bls-relay.log
             r5-final-readonly-audit.json
             r5-production-soak.log
+            r5-bls-renewal-evidence.json
+            r5-collector-pin-evidence.json
             r5-rollback-evidence.json
             test-results/summary.json
           if-no-files-found: warn

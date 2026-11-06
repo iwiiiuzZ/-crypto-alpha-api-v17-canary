@@ -1,0 +1,51 @@
+{
+  "passed": true,
+  "requireBls": true,
+  "allFourBlsActuallyConsumed": true,
+  "successfulSourceCount": 12,
+  "unavailableSources": [],
+  "expectedSuccessfulSources": [
+    "JIN10",
+    "COINDESK",
+    "FED_PRESS",
+    "FED_SPEECH",
+    "BLS_CPI",
+    "BLS_EMPLOYMENT",
+    "BLS_CALENDAR",
+    "NYFED_CALENDAR",
+    "BEA_RELEASES",
+    "BOJ_RELEASES",
+    "BLS_PPI",
+    "US_TREASURY_YIELD_DAILY"
+  ],
+  "verifiedSources": [
+    "JIN10",
+    "COINDESK",
+    "FED_PRESS",
+    "FED_SPEECH",
+    "BLS_CPI",
+    "BLS_EMPLOYMENT",
+    "BLS_CALENDAR",
+    "NYFED_CALENDAR",
+    "BEA_RELEASES",
+    "BOJ_RELEASES",
+    "BLS_PPI",
+    "US_TREASURY_YIELD_DAILY"
+  ],
+  "expectedSourceDetailsReturned": [
+    "JIN10",
+    "COINDESK",
+    "FED_PRESS",
+    "FED_SPEECH",
+    "BLS_CPI",
+    "BLS_EMPLOYMENT",
+    "BLS_CALENDAR",
+    "NYFED_CALENDAR",
+    "BEA_RELEASES",
+    "BOJ_RELEASES",
+    "BLS_PPI",
+    "US_TREASURY_YIELD_DAILY"
+  ],
+  "newsConsumerAdvanced": true,
+  "scope": "PRODUCTION_READ_ONLY_SOURCE_BATCH_RECONCILIATION_NOT_DEVICE_DELIVERY"
+}

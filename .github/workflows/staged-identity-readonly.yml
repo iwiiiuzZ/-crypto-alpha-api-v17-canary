@@ -1,0 +1,57 @@
+name: Read-only staged deployment identity investigation
+on:
+  push:
+    branches: [integration/bls-relay-clock-20261101]
+    paths: [.github/workflows/staged-identity-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  readonly-staged-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read physical deployment, existing secret names, owner identity and producer receipts
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {requestJson,cloudflareSnapshot,summarizeSample,safeOutput} from './ops/diagnostics.mjs';
+          const config=JSON.parse(fs.readFileSync('ops/config.json'));
+          const cf=process.env.CLOUDFLARE_API_TOKEN,scanner=process.env.SCANNER_TOKEN;
+          if(!cf||!scanner)throw Error('DIAGNOSTIC_CREDENTIALS_REQUIRED');
+          const report={scope:'READ_ONLY_STAGED_IDENTITY_NOT_ACCEPTANCE_NO_NEWS_REFRESH_OR_SIGNAL_MUTATION',samples:[]};
+          const began=Date.now();
+          for(const offset of [0,20000,50000]){
+            await new Promise(r=>setTimeout(r,Math.max(0,began+offset-Date.now())));
+            const replies=await Promise.allSettled([
+              cloudflareSnapshot(fetch,config,cf),
+              requestJson(fetch,config.origin+'/?view=fast'),
+              requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner}),
+              requestJson(fetch,'https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/'+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+cf})
+            ]);
+            const value=i=>replies[i].status==='fulfilled'?replies[i].value:null;
+            const sample={readAt:new Date().toISOString(),errors:replies.map((x,i)=>x.status==='rejected'?{component:i,code:x.reason?.code||'READ_FAILED'}:null).filter(Boolean),cloudflare:value(0)};
+            const fast=value(1),status=value(2),secrets=value(3)?.result;
+            sample.secretPresence=Array.isArray(secrets)?Object.fromEntries(['SCANNER_TOKEN','GITHUB_ACTIONS_DISPATCH_TOKEN'].map(name=>[name,secrets.some(s=>s.name===name)])):null;
+            sample.summary=fast&&status?summarizeSample(fast,status):null;
+            sample.statusBuild=status?.build||null;
+            sample.backendIdentity=status?.backendIdentity||null;
+            sample.dispatcher=status?.diagnostics?.blsRelayDispatch||null;
+            report.samples.push(sample);
+            fs.writeFileSync('staged-identity-readonly.json',safeOutput(report,[cf,scanner]));
+          }
+          console.log(safeOutput(report,[cf,scanner]));
+          NODE
+      - name: Retain read-only investigation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: STAGED_IDENTITY_READONLY
+          path: staged-identity-readonly.json
+          retention-days: 30

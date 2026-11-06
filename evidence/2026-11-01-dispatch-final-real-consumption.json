@@ -1,0 +1,244 @@
+{
+  "scope": "EXACT_CANDIDATE_FUNCTIONS_REAL_OFFICIAL_SOURCE_CONSUMPTION_NOT_PRODUCTION_R5g_INSTALLATION",
+  "candidateCommit": "e64208ca38f861ee20705ae79e9c2c5d168eacb5",
+  "candidateSourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+  "probeWorkflowRun": 41293876720,
+  "probeJob": 124810580624,
+  "collectorWorkflow": {
+    "id": 41293910898,
+    "event": "workflow_dispatch",
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "d5083d1ead0dbb2ea19ed624d11792bdfcbab7e0",
+    "headRef": "crypto-alpha-collector-r5f-20261031",
+    "createdAt": "2026-11-01T09:37:07Z",
+    "completedAt": "2026-11-01T09:37:18Z",
+    "url": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41293910898"
+  },
+  "collectorTag": {
+    "ref": "refs/tags/crypto-alpha-collector-r5f-20261031",
+    "node_id": "REF_kwDOT1CAPtoALXJlZnMvdGFncy9jcnlwdG8tYWxwaGEtY29sbGVjdG9yLXI1Zi0yMDI2MTAzMQ",
+    "url": "https://api.github.com/repos/iwiiiuzZ/-crypto-alpha-api-v17-canary/git/refs/tags/crypto-alpha-collector-r5f-20261031",
+    "object": {
+      "sha": "d5083d1ead0dbb2ea19ed624d11792bdfcbab7e0",
+      "type": "commit",
+      "url": "https://api.github.com/repos/iwiiiuzZ/-crypto-alpha-api-v17-canary/git/commits/d5083d1ead0dbb2ea19ed624d11792bdfcbab7e0"
+    }
+  },
+  "probe": {
+    "scope": "PRODUCTION_CODE_AND_CONFIG_READ_ONLY_REAL_OFFICIAL_SOURCE_REFRESH",
+    "startedAt": "2026-11-01T09:37:02.451Z",
+    "probeWorker": "crypto-alpha-bls-probe-20261101-a99cc4c4",
+    "productionWorker": "crypto-alpha-api-v17-canary",
+    "errors": [],
+    "created": true,
+    "cleanupConfirmed": true,
+    "productionBefore": {
+      "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+      "deployedAt": "2026-10-31T10:16:55.913Z",
+      "versions": [
+        {
+          "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "sourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+    "preflight": {
+      "deployment": true,
+      "version": true,
+      "binding": true,
+      "owner": true,
+      "sourceLock": true
+    },
+    "persistentRepositoryDispatchSecretPresent": false,
+    "dispatchCredentialKind": "EPHEMERAL_TEST_JOB_ONLY",
+    "productionDispatcherSecretPresent": false,
+    "measurement": {
+      "scope": "EXACT_CANDIDATE_FUNCTIONS_ISOLATED_COMPATIBILITY_TEST_NOT_PRODUCTION_INSTALLATION",
+      "first": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5f-20261031",
+        "lastAttemptAt": "2026-11-01T09:37:06.101Z",
+        "lastRequestAcceptedAt": "2026-11-01T09:37:07.645Z",
+        "lastObservedRelayReceivedAt": null,
+        "nextAttemptAt": "2026-11-01T09:39:06.101Z",
+        "httpStatus": 200,
+        "workflowRunId": 41293910898,
+        "attemptCount": 1,
+        "failureCount": 0,
+        "awaitingReceiptAttempts": 1,
+        "scope": "DISPATCH_ACK_IS_NOT_SOURCE_FETCH_OR_SCANNER_CONSUMPTION",
+        "deviceNotificationSent": false,
+        "tradeSignalGenerated": false
+      },
+      "second": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5f-20261031",
+        "lastAttemptAt": "2026-11-01T09:37:06.101Z",
+        "lastRequestAcceptedAt": "2026-11-01T09:37:07.645Z",
+        "lastObservedRelayReceivedAt": null,
+        "nextAttemptAt": "2026-11-01T09:39:06.101Z",
+        "httpStatus": 200,
+        "workflowRunId": 41293910898,
+        "attemptCount": 1,
+        "failureCount": 0,
+        "awaitingReceiptAttempts": 1,
+        "scope": "DISPATCH_ACK_IS_NOT_SOURCE_FETCH_OR_SCANNER_CONSUMPTION",
+        "deviceNotificationSent": false,
+        "tradeSignalGenerated": false
+      },
+      "requestAcknowledged": true,
+      "deduplicated": true,
+      "sourceReceiptVerified": false,
+      "deviceNotificationSent": false,
+      "tradeSignalGenerated": false
+    },
+    "sourceConsumptionObservations": [
+      {
+        "readAt": "2026-11-01T09:37:08.493Z",
+        "consumedAt": "2026-11-01T09:36:25.926Z",
+        "rows": [
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.738Z"
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.750Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.760Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.772Z"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "readAt": "2026-11-01T09:37:23.385Z",
+        "consumedAt": "2026-11-01T09:36:25.926Z",
+        "rows": [
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.738Z"
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.750Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.760Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.772Z"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "readAt": "2026-11-01T09:37:53.495Z",
+        "consumedAt": "2026-11-01T09:37:25.068Z",
+        "rows": [
+          {
+            "source": "BLS_CPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.738Z"
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.750Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.760Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "unavailable",
+            "fetchedAt": "2026-11-01T07:22:43.772Z"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "readAt": "2026-11-01T09:38:38.766Z",
+        "consumedAt": "2026-11-01T09:38:25.153Z",
+        "rows": [
+          {
+            "source": "BLS_CPI",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T09:37:14.877Z"
+          },
+          {
+            "source": "BLS_PPI",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T09:37:14.889Z"
+          },
+          {
+            "source": "BLS_EMPLOYMENT",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T09:37:14.901Z"
+          },
+          {
+            "source": "BLS_CALENDAR",
+            "status": "ok",
+            "fetchedAt": "2026-11-01T09:37:14.913Z"
+          }
+        ],
+        "passed": true
+      }
+    ],
+    "newOfficialBatchesConsumed": true,
+    "productionAfter": {
+      "deploymentId": "f11b44aa-0e29-4260-8104-c12fef44a68a",
+      "deployedAt": "2026-10-31T10:16:55.913Z",
+      "versions": [
+        {
+          "id": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "productionUnchanged": true,
+    "identifiedOfficialAccessVerified": false,
+    "passed": true,
+    "completedAt": "2026-11-01T09:38:38.956Z"
+  },
+  "persistentAuthorizationAvailable": false,
+  "productionR5gDeployed": false,
+  "productionTwentyFiveMinuteRenewalGatePassed": false
+}

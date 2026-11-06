@@ -1,9 +1,9 @@
-当前工程部署为R5f，55套回归及37点十分钟生产窗口通过、12源含BLS四源实际消费。最终GPT保存配置及自然准备事件闭环仍单列未验证；完整当前状态见[本次验收](docs/LATEST_RUNTIME_AND_ACCEPTANCE_20261031.md)，不是旧候选或已完成最终冻结的声明。
-
 # Crypto Alpha Pro Ultimate
 
-本仓库接续原交易系统研发。唯一入口为 `main-v188.js`；当前源码身份见 `ops/release-manifest.json`，实际部署须另看生产证据。
+当前后端为R5g：60组回归（含8组原生环境）、37点十分钟运行和51点二十五分钟自动续采均通过；12个既定来源已对账。GPT实际保存状态、自然准备提醒和盈利证据仍独立待验，未正式冻结。
 
-从 [统一安装索引](V27_6_3_INSTALL_AND_RELEASE.md)、[项目接续合同](docs/CONTINUITY_LEDGER_20261031.md) 与 [需求验收矩阵](docs/ACCEPTANCE_MATRIX_20261031.md) 开始。完整私有GPT指令和课程通过原件装配，不公开写入本仓库。
+唯一运行入口main-v188.js，源码锁定在ops/release-manifest.json，实际部署记录在ops/production-baseline.json。完整指令和课程保持私有原件，不用摘要替换。
 
-旧源码与历史报告用于追溯，不是当前安装入口，也不代表当前生产或策略收益已验收。
+从[最新实际部署与验收](docs/LATEST_RUNTIME_AND_ACCEPTANCE_20261106.md)、[统一安装索引](V27_6_3_INSTALL_AND_RELEASE.md)、[接续合同](docs/CONTINUITY_LEDGER_20261031.md)和[完整需求矩阵](docs/ACCEPTANCE_MATRIX_20261031.md)开始。最终一次只读使用核对见USER_ACCEPTANCE.md；后台无需重复上传。
+
+历史源码和报告按各自时段保留，不代表当前部署或策略盈利已经验收。

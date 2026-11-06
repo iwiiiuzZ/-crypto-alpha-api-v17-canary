@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import {requestJson,summarizeResponseBudget,summarizeFastFailures,summarizeSample,summarizeCandidateChain,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput} from '../ops/diagnostics.mjs';
 import {validateTarget,wranglerCLI} from '../ops/deployment.mjs';
+import {assessMaintenanceRollback} from '../ops/rollback.mjs';
+import os from 'node:os';
+import path from 'node:path';
+import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 const config={accountId:'account',worker:'worker',stateBinding:'SCANNER_STATE',stateClass:'ScannerState',stateContract:'owner-local-dispatch-v1',build:'current',apiVersion:'7.6.0'};
 const start=Date.parse('2026-10-22T05:00:00Z'),iso=n=>new Date(n).toISOString();
@@ -92,5 +96,50 @@ await test('ongoing checks cannot let eight healthy feeds hide stale, missing or
  }
  const daily=structuredClone(good);daily.consumedNewsSources.find(r=>r.source==='US_TREASURY_YIELD_DAILY').fetchedAt=iso(start-6*3600000);
  assert.equal(assessNewsReceiptCoverage(daily).passed,true,'daily reference age is not a false seconds-level outage');
+});
+await test('maintenance rollback refuses a changed deployment, mixed traffic or unverified namespace',()=>{
+ const baseline={status:'PRODUCTION_WINDOW_VERIFIED_AWAITING_FINAL_ACCEPTANCE',autonomousWindowPassed:true,deploymentId:'11111111-1111-4111-8111-111111111111',versionId:'22222222-2222-4222-8222-222222222222',namespaceFingerprint:'aedfbcd14cd1'};
+ const current={deploymentId:baseline.deploymentId,singleVersion:true,versions:[{id:baseline.versionId,percentage:100}],bindingMatches:true,binding:{namespaceFingerprint:baseline.namespaceFingerprint}};
+ const good={baseline,current,targetVersionId:'33333333-3333-4333-8333-333333333333'};
+ assert.equal(assessMaintenanceRollback(good).canRollback,true);assert.equal(assessMaintenanceRollback().canRollback,false);
+ for(const change of[v=>v.baseline.autonomousWindowPassed=false,v=>v.baseline.status='CANDIDATE',v=>v.baseline.deploymentId='invalid',v=>v.current.deploymentId='44444444-4444-4444-8444-444444444444',v=>v.current.versions[0].id=v.targetVersionId,v=>v.current.versions[0].percentage=90,v=>v.current.versions.push({...v.current.versions[0]}),v=>v.current.singleVersion=false,v=>v.current.bindingMatches=false,v=>v.current.binding.namespaceFingerprint='other',v=>v.targetVersionId='invalid']){
+  const value=structuredClone(good);change(value);assert.equal(assessMaintenanceRollback(value).canRollback,false);
+ }
+ const restored=structuredClone(good);restored.current.deploymentId='44444444-4444-4444-8444-444444444444';restored.current.versions[0].id=restored.targetVersionId;
+ assert.equal(assessMaintenanceRollback(restored).alreadyRestored,true);
+});
+await test('actual maintenance rollback CLI rechecks immediately before write and verifies restored namespace',()=>{
+ const source=fs.readFileSync(new URL('../ops/rollback.mjs',import.meta.url),'utf8');
+ const baseline={status:'PRODUCTION_WINDOW_VERIFIED_AWAITING_FINAL_ACCEPTANCE',autonomousWindowPassed:true,deploymentId:'11111111-1111-4111-8111-111111111111',versionId:'22222222-2222-4222-8222-222222222222',namespaceFingerprint:'aedfbcd14cd1'};
+ const target='33333333-3333-4333-8333-333333333333',current={deploymentId:baseline.deploymentId,singleVersion:true,versions:[{id:baseline.versionId,percentage:100}],bindingMatches:true,binding:{namespaceFingerprint:baseline.namespaceFingerprint}};
+ const changed={...structuredClone(current),deploymentId:'44444444-4444-4444-8444-444444444444'};
+ const restored={...structuredClone(changed),versions:[{id:target,percentage:100}]};
+ const badAfter=structuredClone(restored);badAfter.binding.namespaceFingerprint='foreign';
+ for(const scenario of[
+  {name:'normal',snapshots:[current,current,restored],ok:true,writes:1},
+  {name:'changed-before',snapshots:[changed],ok:false,writes:0},
+  {name:'changed-between',snapshots:[current,changed],ok:false,writes:0},
+  {name:'already-restored',snapshots:[restored],ok:true,writes:0},
+  {name:'restored-during-check',snapshots:[current,restored],ok:true,writes:0},
+  {name:'bad-confirmation',snapshots:[current,current,badAfter],ok:false,writes:1},
+  {name:'missing-target',snapshots:[],missingTarget:true,ok:false,writes:0}
+ ]){
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'maintenance-rollback-'));
+  try{
+   fs.writeFileSync(path.join(dir,'rollback.mjs'),source);fs.writeFileSync(path.join(dir,'production-baseline.json'),JSON.stringify(baseline));fs.writeFileSync(path.join(dir,'config.json'),JSON.stringify(config));
+   fs.writeFileSync(path.join(dir,'scenario.json'),JSON.stringify({...scenario,target}));
+   fs.writeFileSync(path.join(dir,'diagnostics.mjs'),`import fs from 'node:fs';
+const data=JSON.parse(fs.readFileSync(new URL('./scenario.json',import.meta.url)));let reads=0,writes=0;
+const record=()=>fs.writeFileSync(new URL('./calls.json',import.meta.url),JSON.stringify({reads,writes}));record();
+export class OpsError extends Error{}
+export async function requestJson(){return {success:!data.missingTarget,result:{id:data.target}};}
+export async function cloudflareSnapshot(){reads++;record();if(reads>data.snapshots.length)throw Error('UNEXPECTED_EXTRA_READ');return data.snapshots[reads-1];}
+globalThis.fetch=async(url,options)=>{if(options.method!=='POST'||JSON.parse(options.body).versions[0].version_id!==data.target)throw Error('UNEXPECTED_WRITE');writes++;record();return {ok:true};};`);
+   const run=spawnSync(process.execPath,[path.join(dir,'rollback.mjs')],{encoding:'utf8',timeout:10000,env:{...process.env,CLOUDFLARE_API_TOKEN:'synthetic-local-credential',ROLLBACK_VERSION:target}});
+   assert.equal(run.status===0,scenario.ok,scenario.name+' '+run.stderr);
+   const calls=JSON.parse(fs.readFileSync(path.join(dir,'calls.json'),'utf8'));assert.equal(calls.writes,scenario.writes,scenario.name);
+   assert.ok(!run.stdout.includes('synthetic-local-credential'));
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+ }
 });
 console.log(JSON.stringify({passed,failed:0,mode:'LOCAL_FIXTURES_ONLY'}));

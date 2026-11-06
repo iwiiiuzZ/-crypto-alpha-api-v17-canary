@@ -1,9 +1,12 @@
 {
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5f",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
   "entry": "main-v188.js",
-  "sourceGitBlobSha": "e34d8e85864fba66cc0a331b77be7c817288242e",
-  "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r5e",
-  "status": "DEPLOYED_AWAITING_FINAL_ACCEPTANCE"
+  "sourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+  "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+  "status": "DEPLOYED_AWAITING_FINAL_ACCEPTANCE",
+  "collectorRef": "crypto-alpha-collector-r5g-20261101",
+  "collectorSourceCommit": "cea5511326177f896383867b3a01bf1cfb0676ee",
+  "wranglerSha256": "a3af225a010f4729e3657e378a1e363612d36d0f0082f7ede2224440cf44fdae"
 }

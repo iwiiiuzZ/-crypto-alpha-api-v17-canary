@@ -1,0 +1,263 @@
+{
+  "mode": "ISOLATED_FIXTURES_ONLY",
+  "productionVerified": false,
+  "suites": [
+    {
+      "suite": "test-release-identity.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-r4-preflight.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-r5-preflight.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-news-consumption-receipts.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-r5-release-intent.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-r5-guarded-rollback.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-r5-news-audit.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-official-bls-relay.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-official-bls-relay-client.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-production-parity.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-transport-references.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-deployment-convergence.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-soak-monitor.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-operations.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-cost-contract.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-course-engine.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-flow-cache-budget.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-rate-protection.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-fast-monitor.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-monitor-coordination.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-owner-local-dispatch.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-push-observability.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-consolidated-cross-module.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-consolidated-preservation.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-final-swing-liquidity.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-market-envelope.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-multivenue-linkage.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-public-orderflow.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-regime-submodels.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-resilience.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-response-parser.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v20-range.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v22-1-repair.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v22-durable-structure.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v22-integration.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v23-lifecycle.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v23-preservation.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v24-models.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v25-reliability.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v26-1-data-access.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v26-actionable.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v27-adaptive-news.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v27-news-integration.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-v27-news-transport.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-orderflow-book-fallback.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-fast-refresh-budget.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-review-receipt-recovery.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-current-release.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-bls-dispatch.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-deployment-secret-file.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-bls-renewal-observer.mjs",
+      "passed": true
+    },
+    {
+      "suite": "test-collector-pin.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-full-system.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-fast-monitor.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-owner-local.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-news-runtime.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-monitor-contention.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-owner-identity.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-response-isolation.mjs",
+      "passed": true
+    },
+    {
+      "suite": "verify-workerd-bls-dispatch.mjs",
+      "passed": true
+    }
+  ],
+  "verifiedAt": "2026-11-05",
+  "workerSourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
+  "workerSourceSha256": "e5b5b43bf3364d408c1d308f94be361a104c34fe90f8afbadc61f5078b29e5b6",
+  "nativeSuiteCount": 8,
+  "scope": "LOCAL_ISOLATED_AND_NATIVE_ENGINE_FIXTURES_NOT_PRODUCTION_OR_PROFIT",
+  "additionalOperationsCheck": {
+    "maintenanceRollbackCliScenarios": 7,
+    "sourceDeploymentUnchanged": true,
+    "upstreams": "ISOLATED_FIXTURES_ONLY"
+  },
+  "reviewedWorkerCommit": "fc5226bf08843c1ffb3f275a345b2ed7d1d01056",
+  "baseCommit": "81a02c773c9a9a6b2a399fcc31e6936357caa15e",
+  "testedRecoveryToolingSha256": {
+    "ops/rollback.mjs": "424c0e270ba151749524e22cb2a74b45f8b060e8b398b56699407469adaea5a0",
+    "tests/test-operations.mjs": "897a7b5dd31f521bec0b2a600fe94bedc20dbe46b9d4af831d3c7a8ec7fc5b30",
+    ".github/workflows/maintenance.yml": "8770bbbf610b0b5e5874c6f74bfd34f38495bb2edfe3a87a438dbe4d2de69b2c"
+  }
+}
