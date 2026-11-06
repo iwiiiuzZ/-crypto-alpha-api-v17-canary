@@ -1,0 +1,1940 @@
+{
+  "mode": "PASSIVE_STATUS_ONLY_NO_FOREGROUND_NEWS_OR_MANUAL_COLLECTOR",
+  "expected": {
+    "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+    "collectorRef": "crypto-alpha-collector-r5g-20261101",
+    "collectorCommit": "cea5511326177f896383867b3a01bf1cfb0676ee"
+  },
+  "samples": [
+    {
+      "readAt": "2026-11-05T06:47:04.134Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:46:25.547Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.133Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.145Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.158Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:47:34.246Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:47:24.482Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.133Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.145Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.158Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:48:04.271Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:47:24.482Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.120Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.133Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.145Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:35:33.158Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:48:34.234Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:48:24.845Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:49:04.270Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:48:24.845Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:49:34.469Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:49:24.653Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:50:04.246Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:49:24.653Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:50:34.276Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:50:24.847Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:51:04.237Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:50:24.847Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:51:34.252Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:51:25.346Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:52:04.257Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:51:25.346Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:52:34.249Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:52:25.247Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:53:04.253Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:52:25.247Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:53:34.243Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:53:24.889Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:54:04.255Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:53:24.889Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:54:34.239Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:54:25.194Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:55:04.240Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:54:25.194Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:55:34.253Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:55:25.179Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:56:04.250Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:55:25.179Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:56:34.257Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:56:24.062Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:57:04.279Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:56:24.062Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41982674583,
+        "lastRequestAcceptedAt": "2026-11-05T06:46:25.595Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:57:34.278Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:57:25.172Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:58:04.277Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:57:25.172Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:58:34.244Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:58:24.170Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:59:04.460Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:58:24.170Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.601Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.611Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.619Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:46:32.629Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T06:59:34.279Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:59:25.182Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:00:04.251Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T06:59:25.182Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:00:34.243Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:00:31.249Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:01:04.390Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:00:31.249Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:01:34.249Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:01:24.724Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:02:04.254Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:01:24.724Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:02:39.276Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:02:25.145Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:03:04.269Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:02:25.145Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:03:34.250Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:03:26.451Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:04:04.265Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:03:26.451Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:04:34.263Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:04:24.445Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:05:04.464Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:04:24.445Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:05:34.238Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:05:25.219Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:06:04.227Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:05:25.219Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:06:34.264Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:06:25.151Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:07:04.262Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:06:25.151Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:07:34.236Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:07:24.698Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:08:04.283Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:07:24.698Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41983864634,
+        "lastRequestAcceptedAt": "2026-11-05T06:57:24.593Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:08:34.265Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:08:26.161Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:09:04.242Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:08:26.161Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "AWAITING_SOURCE_RECEIPT",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:09:34.250Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:09:24.531Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:10:04.232Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:09:24.531Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.053Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.083Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.112Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T06:57:30.147Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:10:34.277Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:10:24.349Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.748Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.779Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.807Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.836Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:11:04.249Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:10:24.349Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.748Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.779Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.807Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.836Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:11:34.252Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:11:24.860Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.748Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.779Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.807Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.836Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    },
+    {
+      "readAt": "2026-11-05T07:12:04.264Z",
+      "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+      "identityMatched": true,
+      "stateReadSucceeded": true,
+      "consumedAt": "2026-11-05T07:11:24.860Z",
+      "sources": [
+        {
+          "source": "BLS_CPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.748Z"
+        },
+        {
+          "source": "BLS_PPI",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.779Z"
+        },
+        {
+          "source": "BLS_EMPLOYMENT",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.807Z"
+        },
+        {
+          "source": "BLS_CALENDAR",
+          "status": "ok",
+          "fetchedAt": "2026-11-05T07:08:32.836Z"
+        }
+      ],
+      "dispatcher": {
+        "configured": true,
+        "status": "SOURCE_RECEIPT_FRESH",
+        "collectorRef": "crypto-alpha-collector-r5g-20261101",
+        "workflowRunId": 41985123715,
+        "lastRequestAcceptedAt": "2026-11-05T07:08:25.219Z"
+      }
+    }
+  ],
+  "runs": {
+    "41982674583": {
+      "id": 41982674583,
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101",
+      "created_at": "2026-11-05T06:46:25Z",
+      "run_started_at": "2026-11-05T06:46:25Z"
+    },
+    "41983864634": {
+      "id": 41983864634,
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101",
+      "created_at": "2026-11-05T06:57:24Z",
+      "run_started_at": "2026-11-05T06:57:24Z"
+    },
+    "41985123715": {
+      "id": 41985123715,
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101",
+      "created_at": "2026-11-05T07:08:24Z",
+      "run_started_at": "2026-11-05T07:08:24Z"
+    }
+  },
+  "errors": [],
+  "finalDeliveryAccepted": false,
+  "cloudflareBefore": {
+    "deploymentId": "c6d27090-69a8-4e1e-9b97-3a663eacf9b0",
+    "deployedAt": "2026-11-05T06:28:57.284Z",
+    "versions": [
+      {
+        "id": "b50f5c5b-d792-4de3-9469-be14202ca5c3",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "assessment": {
+    "passed": true,
+    "coveragePassed": true,
+    "windowPassed": true,
+    "spacedRenewals": true,
+    "renewals": [
+      {
+        "workflowRunId": 41983864634,
+        "requestAcceptedAt": "2026-11-05T06:57:24.593Z",
+        "oldestFetchedAt": "2026-11-05T06:57:30.053Z",
+        "consumedAt": "2026-11-05T06:59:25.182Z"
+      },
+      {
+        "workflowRunId": 41985123715,
+        "requestAcceptedAt": "2026-11-05T07:08:25.219Z",
+        "oldestFetchedAt": "2026-11-05T07:08:32.748Z",
+        "consumedAt": "2026-11-05T07:10:24.349Z"
+      }
+    ],
+    "sampleCount": 51,
+    "observedSeconds": 1500.13,
+    "scope": "PASSIVE_25_MINUTE_SOURCE_COVERAGE_AND_TWO_SPACED_AUTOMATIC_RENEWALS_NOT_PROFIT_OR_DEVICE_PROOF"
+  },
+  "cloudflareAfter": {
+    "deploymentId": "c6d27090-69a8-4e1e-9b97-3a663eacf9b0",
+    "deployedAt": "2026-11-05T06:28:57.284Z",
+    "versions": [
+      {
+        "id": "b50f5c5b-d792-4de3-9469-be14202ca5c3",
+        "percentage": 100
+      }
+    ],
+    "binding": {
+      "present": true,
+      "className": "ScannerState",
+      "scriptName": null,
+      "namespaceFingerprint": "aedfbcd14cd1"
+    },
+    "bindingMatches": true,
+    "singleVersion": true
+  },
+  "passed": true
+}

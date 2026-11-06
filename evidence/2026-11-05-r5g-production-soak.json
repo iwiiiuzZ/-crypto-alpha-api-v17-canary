@@ -1,0 +1,4105 @@
+{
+  "runId": 41980068034,
+  "samples": [
+    {
+      "sample": 0,
+      "readAt": "2026-11-05T06:36:51.077Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:36:48.956Z",
+        "lastTradeAt": "2026-11-05T06:36:46.495Z",
+        "bookAt": "2026-11-05T06:36:48.804Z",
+        "dataAgeSeconds": 2.035,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:36:48.675Z",
+        "nextAlarmAt": "2026-11-05T06:36:51.175Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.281,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:36:24.965Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:36:24.965Z",
+        "newsConsumedAt": "2026-11-05T06:36:24.965Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:36:24.965Z",
+          "completedAt": "2026-11-05T06:36:24.965Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:36:24.965Z",
+          "completedAt": "2026-11-05T06:36:24.965Z"
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "readAt": "2026-11-05T06:37:08.174Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:37:06.835Z",
+        "lastTradeAt": "2026-11-05T06:37:05.622Z",
+        "bookAt": "2026-11-05T06:37:04.204Z",
+        "dataAgeSeconds": 1.276,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:37:06.594Z",
+        "nextAlarmAt": "2026-11-05T06:37:09.094Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.241,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:36:24.965Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:36:24.965Z",
+        "newsConsumedAt": "2026-11-05T06:36:24.965Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:36:24.965Z",
+          "completedAt": "2026-11-05T06:36:24.965Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:36:24.965Z",
+          "completedAt": "2026-11-05T06:36:24.965Z"
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "readAt": "2026-11-05T06:37:25.392Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:37:24.432Z",
+        "lastTradeAt": "2026-11-05T06:37:23.168Z",
+        "bookAt": "2026-11-05T06:37:23.654Z",
+        "dataAgeSeconds": 0.667,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:37:24.432Z",
+        "nextAlarmAt": "2026-11-05T06:37:26.932Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:37:24.899Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:37:24.899Z",
+        "newsConsumedAt": "2026-11-05T06:37:24.899Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        }
+      ]
+    },
+    {
+      "sample": 3,
+      "readAt": "2026-11-05T06:37:42.194Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:37:39.672Z",
+        "lastTradeAt": "2026-11-05T06:37:37.807Z",
+        "bookAt": "2026-11-05T06:37:37.054Z",
+        "dataAgeSeconds": 2.448,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:37:39.432Z",
+        "nextAlarmAt": "2026-11-05T06:37:41.932Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.24,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:37:24.899Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:37:24.899Z",
+        "newsConsumedAt": "2026-11-05T06:37:24.899Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        }
+      ]
+    },
+    {
+      "sample": 4,
+      "readAt": "2026-11-05T06:37:59.185Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:37:57.212Z",
+        "lastTradeAt": "2026-11-05T06:37:55.189Z",
+        "bookAt": "2026-11-05T06:37:57.054Z",
+        "dataAgeSeconds": 1.907,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:37:56.932Z",
+        "nextAlarmAt": "2026-11-05T06:37:59.432Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.28,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:37:24.899Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:37:24.899Z",
+        "newsConsumedAt": "2026-11-05T06:37:24.899Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        }
+      ]
+    },
+    {
+      "sample": 5,
+      "readAt": "2026-11-05T06:38:16.195Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:38:14.691Z",
+        "lastTradeAt": "2026-11-05T06:38:13.795Z",
+        "bookAt": "2026-11-05T06:38:12.054Z",
+        "dataAgeSeconds": 1.416,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:38:14.443Z",
+        "nextAlarmAt": "2026-11-05T06:38:16.943Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.248,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:37:24.899Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:37:24.899Z",
+        "newsConsumedAt": "2026-11-05T06:37:24.899Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:37:24.899Z",
+          "completedAt": "2026-11-05T06:37:24.899Z"
+        }
+      ]
+    },
+    {
+      "sample": 6,
+      "readAt": "2026-11-05T06:38:33.205Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:38:32.212Z",
+        "lastTradeAt": "2026-11-05T06:38:30.989Z",
+        "bookAt": "2026-11-05T06:38:32.054Z",
+        "dataAgeSeconds": 0.894,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:38:31.943Z",
+        "nextAlarmAt": "2026-11-05T06:38:34.489Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.269,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:38:25.496Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:38:25.496Z",
+        "newsConsumedAt": "2026-11-05T06:38:25.496Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        }
+      ]
+    },
+    {
+      "sample": 7,
+      "readAt": "2026-11-05T06:38:50.383Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:38:49.733Z",
+        "lastTradeAt": "2026-11-05T06:38:47.578Z",
+        "bookAt": "2026-11-05T06:38:47.104Z",
+        "dataAgeSeconds": 0.382,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:38:49.489Z",
+        "nextAlarmAt": "2026-11-05T06:38:51.989Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.244,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:38:25.496Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:38:25.496Z",
+        "newsConsumedAt": "2026-11-05T06:38:25.496Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        }
+      ]
+    },
+    {
+      "sample": 8,
+      "readAt": "2026-11-05T06:39:07.186Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:39:04.939Z",
+        "lastTradeAt": "2026-11-05T06:39:03.592Z",
+        "bookAt": "2026-11-05T06:39:02.104Z",
+        "dataAgeSeconds": 2.168,
+        "gapSeconds": 2.706
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:39:04.695Z",
+        "nextAlarmAt": "2026-11-05T06:39:07.195Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.244,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:38:25.496Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:38:25.496Z",
+        "newsConsumedAt": "2026-11-05T06:38:25.496Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        }
+      ]
+    },
+    {
+      "sample": 9,
+      "readAt": "2026-11-05T06:39:24.380Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:39:22.563Z",
+        "lastTradeAt": "2026-11-05T06:39:20.110Z",
+        "bookAt": "2026-11-05T06:39:22.404Z",
+        "dataAgeSeconds": 1.539,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:39:22.298Z",
+        "nextAlarmAt": "2026-11-05T06:39:24.798Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.265,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "running",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:38:25.496Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:38:25.496Z",
+        "newsConsumedAt": "2026-11-05T06:38:25.496Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:38:25.496Z",
+          "completedAt": "2026-11-05T06:38:25.496Z"
+        }
+      ]
+    },
+    {
+      "sample": 10,
+      "readAt": "2026-11-05T06:39:41.198Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:39:40.174Z",
+        "lastTradeAt": "2026-11-05T06:39:38.490Z",
+        "bookAt": "2026-11-05T06:39:37.554Z",
+        "dataAgeSeconds": 0.937,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:39:39.926Z",
+        "nextAlarmAt": "2026-11-05T06:39:42.426Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.248,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:39:24.840Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:39:24.840Z",
+        "newsConsumedAt": "2026-11-05T06:39:24.840Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:39:24.840Z",
+          "completedAt": "2026-11-05T06:39:24.840Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:39:24.840Z",
+          "completedAt": "2026-11-05T06:39:24.840Z"
+        }
+      ]
+    },
+    {
+      "sample": 11,
+      "readAt": "2026-11-05T06:39:58.173Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:39:57.712Z",
+        "lastTradeAt": "2026-11-05T06:39:55.471Z",
+        "bookAt": "2026-11-05T06:39:57.554Z",
+        "dataAgeSeconds": 0.396,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:39:57.426Z",
+        "nextAlarmAt": "2026-11-05T06:39:59.926Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.286,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:39:24.840Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:39:24.840Z",
+        "newsConsumedAt": "2026-11-05T06:39:24.840Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:39:24.840Z",
+          "completedAt": "2026-11-05T06:39:24.840Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:39:24.840Z",
+          "completedAt": "2026-11-05T06:39:24.840Z"
+        }
+      ]
+    },
+    {
+      "sample": 12,
+      "readAt": "2026-11-05T06:40:15.377Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:40:12.715Z",
+        "lastTradeAt": "2026-11-05T06:40:11.874Z",
+        "bookAt": "2026-11-05T06:40:12.554Z",
+        "dataAgeSeconds": 2.401,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:40:12.426Z",
+        "nextAlarmAt": "2026-11-05T06:40:15.374Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.289,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:39:24.840Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:39:24.840Z",
+        "newsConsumedAt": "2026-11-05T06:39:24.840Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:39:24.840Z",
+          "completedAt": "2026-11-05T06:39:24.840Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:39:24.840Z",
+          "completedAt": "2026-11-05T06:39:24.840Z"
+        }
+      ]
+    },
+    {
+      "sample": 13,
+      "readAt": "2026-11-05T06:40:32.386Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:40:30.693Z",
+        "lastTradeAt": "2026-11-05T06:40:28.206Z",
+        "bookAt": "2026-11-05T06:40:28.004Z",
+        "dataAgeSeconds": 1.426,
+        "gapSeconds": 2.582
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:40:30.456Z",
+        "nextAlarmAt": "2026-11-05T06:40:32.956Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.237,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:40:25.245Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:40:25.245Z",
+        "newsConsumedAt": "2026-11-05T06:40:25.245Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        }
+      ]
+    },
+    {
+      "sample": 14,
+      "readAt": "2026-11-05T06:40:49.193Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:40:48.214Z",
+        "lastTradeAt": "2026-11-05T06:40:47.479Z",
+        "bookAt": "2026-11-05T06:40:48.054Z",
+        "dataAgeSeconds": 0.899,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:40:47.957Z",
+        "nextAlarmAt": "2026-11-05T06:40:50.979Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.257,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:40:25.245Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:40:25.245Z",
+        "newsConsumedAt": "2026-11-05T06:40:25.245Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        }
+      ]
+    },
+    {
+      "sample": 15,
+      "readAt": "2026-11-05T06:41:06.192Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:41:04.064Z",
+        "lastTradeAt": "2026-11-05T06:41:02.757Z",
+        "bookAt": "2026-11-05T06:41:03.904Z",
+        "dataAgeSeconds": 2.06,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:41:03.801Z",
+        "nextAlarmAt": "2026-11-05T06:41:06.301Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.263,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:40:25.245Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:40:25.245Z",
+        "newsConsumedAt": "2026-11-05T06:40:25.245Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        }
+      ]
+    },
+    {
+      "sample": 16,
+      "readAt": "2026-11-05T06:41:23.172Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:41:21.550Z",
+        "lastTradeAt": "2026-11-05T06:41:16.559Z",
+        "bookAt": "2026-11-05T06:41:18.904Z",
+        "dataAgeSeconds": 1.572,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:41:21.301Z",
+        "nextAlarmAt": "2026-11-05T06:41:23.801Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.249,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:40:25.245Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:40:25.245Z",
+        "newsConsumedAt": "2026-11-05T06:40:25.245Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:40:25.245Z",
+          "completedAt": "2026-11-05T06:40:25.245Z"
+        }
+      ]
+    },
+    {
+      "sample": 17,
+      "readAt": "2026-11-05T06:41:40.291Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:41:39.059Z",
+        "lastTradeAt": "2026-11-05T06:41:37.678Z",
+        "bookAt": "2026-11-05T06:41:38.904Z",
+        "dataAgeSeconds": 1.057,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:41:38.801Z",
+        "nextAlarmAt": "2026-11-05T06:41:41.301Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.258,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:41:24.849Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:41:24.849Z",
+        "newsConsumedAt": "2026-11-05T06:41:24.849Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:41:24.849Z",
+          "completedAt": "2026-11-05T06:41:24.849Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:41:24.849Z",
+          "completedAt": "2026-11-05T06:41:24.849Z"
+        }
+      ]
+    },
+    {
+      "sample": 18,
+      "readAt": "2026-11-05T06:41:57.377Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:41:56.733Z",
+        "lastTradeAt": "2026-11-05T06:41:56.340Z",
+        "bookAt": "2026-11-05T06:41:54.104Z",
+        "dataAgeSeconds": 0.39,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:41:56.487Z",
+        "nextAlarmAt": "2026-11-05T06:41:58.987Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.246,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:41:24.849Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:41:24.849Z",
+        "newsConsumedAt": "2026-11-05T06:41:24.849Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:41:24.849Z",
+          "completedAt": "2026-11-05T06:41:24.849Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:41:24.849Z",
+          "completedAt": "2026-11-05T06:41:24.849Z"
+        }
+      ]
+    },
+    {
+      "sample": 19,
+      "readAt": "2026-11-05T06:42:14.190Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:42:12.233Z",
+        "lastTradeAt": "2026-11-05T06:42:11.215Z",
+        "bookAt": "2026-11-05T06:42:09.104Z",
+        "dataAgeSeconds": 1.883,
+        "gapSeconds": 3.002
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:42:11.989Z",
+        "nextAlarmAt": "2026-11-05T06:42:14.489Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.244,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:41:24.849Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:41:24.849Z",
+        "newsConsumedAt": "2026-11-05T06:41:24.849Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:41:24.849Z",
+          "completedAt": "2026-11-05T06:41:24.849Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:41:24.849Z",
+          "completedAt": "2026-11-05T06:41:24.849Z"
+        }
+      ]
+    },
+    {
+      "sample": 20,
+      "readAt": "2026-11-05T06:42:31.176Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:42:30.334Z",
+        "lastTradeAt": "2026-11-05T06:42:29.052Z",
+        "bookAt": "2026-11-05T06:42:27.704Z",
+        "dataAgeSeconds": 0.779,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:42:30.095Z",
+        "nextAlarmAt": "2026-11-05T06:42:32.595Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.239,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:42:25.198Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:42:25.198Z",
+        "newsConsumedAt": "2026-11-05T06:42:25.198Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        }
+      ]
+    },
+    {
+      "sample": 21,
+      "readAt": "2026-11-05T06:42:48.180Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:42:47.864Z",
+        "lastTradeAt": "2026-11-05T06:42:45.581Z",
+        "bookAt": "2026-11-05T06:42:47.704Z",
+        "dataAgeSeconds": 0.245,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:42:47.596Z",
+        "nextAlarmAt": "2026-11-05T06:42:50.096Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.268,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:42:25.198Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:42:25.198Z",
+        "newsConsumedAt": "2026-11-05T06:42:25.198Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        }
+      ]
+    },
+    {
+      "sample": 22,
+      "readAt": "2026-11-05T06:43:05.184Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:43:02.862Z",
+        "lastTradeAt": "2026-11-05T06:43:01.185Z",
+        "bookAt": "2026-11-05T06:43:02.704Z",
+        "dataAgeSeconds": 2.252,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:43:02.597Z",
+        "nextAlarmAt": "2026-11-05T06:43:05.097Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.265,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:42:25.198Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:42:25.198Z",
+        "newsConsumedAt": "2026-11-05T06:42:25.198Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        }
+      ]
+    },
+    {
+      "sample": 23,
+      "readAt": "2026-11-05T06:43:22.389Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:43:20.477Z",
+        "lastTradeAt": "2026-11-05T06:43:19.729Z",
+        "bookAt": "2026-11-05T06:43:17.854Z",
+        "dataAgeSeconds": 1.623,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:43:20.239Z",
+        "nextAlarmAt": "2026-11-05T06:43:22.739Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.238,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:42:25.198Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:42:25.198Z",
+        "newsConsumedAt": "2026-11-05T06:42:25.198Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:42:25.198Z",
+          "completedAt": "2026-11-05T06:42:25.198Z"
+        }
+      ]
+    },
+    {
+      "sample": 24,
+      "readAt": "2026-11-05T06:43:39.188Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:43:38.016Z",
+        "lastTradeAt": "2026-11-05T06:43:35.615Z",
+        "bookAt": "2026-11-05T06:43:37.854Z",
+        "dataAgeSeconds": 1.092,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:43:37.739Z",
+        "nextAlarmAt": "2026-11-05T06:43:40.239Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.277,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:43:24.592Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:43:24.592Z",
+        "newsConsumedAt": "2026-11-05T06:43:24.592Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:43:24.592Z",
+          "completedAt": "2026-11-05T06:43:24.592Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:43:24.592Z",
+          "completedAt": "2026-11-05T06:43:24.592Z"
+        }
+      ]
+    },
+    {
+      "sample": 25,
+      "readAt": "2026-11-05T06:43:56.187Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:43:55.481Z",
+        "lastTradeAt": "2026-11-05T06:43:52.900Z",
+        "bookAt": "2026-11-05T06:43:52.854Z",
+        "dataAgeSeconds": 0.623,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:43:55.239Z",
+        "nextAlarmAt": "2026-11-05T06:43:57.739Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.242,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:43:24.592Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:43:24.592Z",
+        "newsConsumedAt": "2026-11-05T06:43:24.592Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:43:24.592Z",
+          "completedAt": "2026-11-05T06:43:24.592Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:43:24.592Z",
+          "completedAt": "2026-11-05T06:43:24.592Z"
+        }
+      ]
+    },
+    {
+      "sample": 26,
+      "readAt": "2026-11-05T06:44:13.379Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:44:13.012Z",
+        "lastTradeAt": "2026-11-05T06:44:11.999Z",
+        "bookAt": "2026-11-05T06:44:12.854Z",
+        "dataAgeSeconds": 0.101,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:44:12.739Z",
+        "nextAlarmAt": "2026-11-05T06:44:15.499Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.273,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:43:24.592Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:43:24.592Z",
+        "newsConsumedAt": "2026-11-05T06:43:24.592Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:43:24.592Z",
+          "completedAt": "2026-11-05T06:43:24.592Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:43:24.592Z",
+          "completedAt": "2026-11-05T06:43:24.592Z"
+        }
+      ]
+    },
+    {
+      "sample": 27,
+      "readAt": "2026-11-05T06:44:30.197Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:44:28.259Z",
+        "lastTradeAt": "2026-11-05T06:44:26.651Z",
+        "bookAt": "2026-11-05T06:44:28.104Z",
+        "dataAgeSeconds": 1.86,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:44:28.000Z",
+        "nextAlarmAt": "2026-11-05T06:44:30.500Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.259,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:44:25.301Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:44:25.301Z",
+        "newsConsumedAt": "2026-11-05T06:44:25.301Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        }
+      ]
+    },
+    {
+      "sample": 28,
+      "readAt": "2026-11-05T06:44:47.394Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:44:45.747Z",
+        "lastTradeAt": "2026-11-05T06:44:44.216Z",
+        "bookAt": "2026-11-05T06:44:43.104Z",
+        "dataAgeSeconds": 1.364,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:44:45.500Z",
+        "nextAlarmAt": "2026-11-05T06:44:48.000Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.247,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:44:25.301Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:44:25.301Z",
+        "newsConsumedAt": "2026-11-05T06:44:25.301Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        }
+      ]
+    },
+    {
+      "sample": 29,
+      "readAt": "2026-11-05T06:45:04.388Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:45:03.260Z",
+        "lastTradeAt": "2026-11-05T06:45:01.540Z",
+        "bookAt": "2026-11-05T06:45:03.104Z",
+        "dataAgeSeconds": 0.849,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:45:03.000Z",
+        "nextAlarmAt": "2026-11-05T06:45:05.500Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.26,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:44:25.301Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:44:25.301Z",
+        "newsConsumedAt": "2026-11-05T06:44:25.301Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        }
+      ]
+    },
+    {
+      "sample": 30,
+      "readAt": "2026-11-05T06:45:21.188Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:45:20.787Z",
+        "lastTradeAt": "2026-11-05T06:45:19.447Z",
+        "bookAt": "2026-11-05T06:45:18.154Z",
+        "dataAgeSeconds": 0.333,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:45:20.538Z",
+        "nextAlarmAt": "2026-11-05T06:45:23.038Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.249,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:44:25.301Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:44:25.301Z",
+        "newsConsumedAt": "2026-11-05T06:44:25.301Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:34:02.230Z",
+          "completedAt": "2026-11-05T06:34:02.230Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:44:25.301Z",
+          "completedAt": "2026-11-05T06:44:25.301Z"
+        }
+      ]
+    },
+    {
+      "sample": 31,
+      "readAt": "2026-11-05T06:45:38.186Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:45:36.480Z",
+        "lastTradeAt": "2026-11-05T06:45:34.039Z",
+        "bookAt": "2026-11-05T06:45:33.554Z",
+        "dataAgeSeconds": 1.636,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:45:36.243Z",
+        "nextAlarmAt": "2026-11-05T06:45:38.743Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.237,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:45:34.491Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:45:34.491Z",
+        "newsConsumedAt": "2026-11-05T06:45:34.491Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:24.503Z",
+          "completedAt": "2026-11-05T06:45:24.503Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        }
+      ]
+    },
+    {
+      "sample": 32,
+      "readAt": "2026-11-05T06:45:55.294Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:45:54.011Z",
+        "lastTradeAt": "2026-11-05T06:45:53.256Z",
+        "bookAt": "2026-11-05T06:45:53.854Z",
+        "dataAgeSeconds": 1.104,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:45:53.743Z",
+        "nextAlarmAt": "2026-11-05T06:45:56.756Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.268,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:45:34.491Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:45:34.491Z",
+        "newsConsumedAt": "2026-11-05T06:45:34.491Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:24.503Z",
+          "completedAt": "2026-11-05T06:45:24.503Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        }
+      ]
+    },
+    {
+      "sample": 33,
+      "readAt": "2026-11-05T06:46:12.395Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:46:10.066Z",
+        "lastTradeAt": "2026-11-05T06:46:08.877Z",
+        "bookAt": "2026-11-05T06:46:09.904Z",
+        "dataAgeSeconds": 2.041,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:46:09.767Z",
+        "nextAlarmAt": "2026-11-05T06:46:12.377Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.299,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:45:34.491Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:45:34.491Z",
+        "newsConsumedAt": "2026-11-05T06:45:34.491Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:24.503Z",
+          "completedAt": "2026-11-05T06:45:24.503Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        }
+      ]
+    },
+    {
+      "sample": 34,
+      "readAt": "2026-11-05T06:46:29.228Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:46:27.661Z",
+        "lastTradeAt": "2026-11-05T06:46:26.827Z",
+        "bookAt": "2026-11-05T06:46:27.504Z",
+        "dataAgeSeconds": 1.463,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:46:27.377Z",
+        "nextAlarmAt": "2026-11-05T06:46:30.327Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.284,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:46:25.547Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:46:25.547Z",
+        "newsConsumedAt": "2026-11-05T06:46:25.547Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:46:25.547Z",
+          "completedAt": "2026-11-05T06:46:25.547Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:46:25.547Z",
+          "completedAt": "2026-11-05T06:46:25.547Z"
+        }
+      ]
+    },
+    {
+      "sample": 35,
+      "readAt": "2026-11-05T06:46:46.392Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:46:45.570Z",
+        "lastTradeAt": "2026-11-05T06:46:44.284Z",
+        "bookAt": "2026-11-05T06:46:42.954Z",
+        "dataAgeSeconds": 0.55,
+        "gapSeconds": 2.5
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:46:45.328Z",
+        "nextAlarmAt": "2026-11-05T06:46:47.828Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.242,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:46:25.547Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:46:25.547Z",
+        "newsConsumedAt": "2026-11-05T06:46:25.547Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:46:25.547Z",
+          "completedAt": "2026-11-05T06:46:25.547Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:46:25.547Z",
+          "completedAt": "2026-11-05T06:46:25.547Z"
+        }
+      ]
+    },
+    {
+      "sample": 36,
+      "readAt": "2026-11-05T06:47:03.377Z",
+      "health": {
+        "sampling": true,
+        "quote": true,
+        "flow": true,
+        "lastSuccessAt": "2026-11-05T06:47:00.602Z",
+        "lastTradeAt": "2026-11-05T06:46:59.277Z",
+        "bookAt": "2026-11-05T06:46:57.954Z",
+        "dataAgeSeconds": 2.511,
+        "gapSeconds": 2.506
+      },
+      "failures": {
+        "status": "ok",
+        "lastAttemptAt": "2026-11-05T06:47:00.355Z",
+        "nextAlarmAt": "2026-11-05T06:47:02.855Z",
+        "flowRetryAt": null,
+        "failureCount": 0,
+        "actualAlarmLatenessSeconds": 0,
+        "lastTickDurationSeconds": 0.247,
+        "feeds": [
+          {
+            "feed": "CONTRACT",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "TRADES",
+            "state": "live",
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          },
+          {
+            "feed": "BOOK",
+            "state": null,
+            "httpStatus": null,
+            "localCooldown": false,
+            "retryAt": null,
+            "upstreamFailedAt": null,
+            "bookFallback": null
+          }
+        ]
+      },
+      "scanner": {
+        "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "stateReadSucceeded": true,
+        "identityMatched": true,
+        "status": "completed",
+        "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+        "lastCompletedAt": "2026-11-05T06:46:25.547Z",
+        "lastSuccessfulCycleAt": "2026-11-05T06:46:25.547Z",
+        "newsConsumedAt": "2026-11-05T06:46:25.547Z",
+        "pendingPushes": 0,
+        "lastDegradedCycle": {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "startedAt": "2026-11-04T16:45:32.416Z",
+          "completedAt": "2026-11-04T16:45:36.542Z",
+          "planError": null,
+          "discoveryError": null,
+          "priceError": "OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE",
+          "observationError": null,
+          "modelDataReady": false,
+          "inspectedModels": 8,
+          "blockedModels": []
+        }
+      },
+      "receipts": [
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:45:34.491Z",
+          "completedAt": "2026-11-05T06:45:34.491Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:46:25.547Z",
+          "completedAt": "2026-11-05T06:46:25.547Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5f",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": false,
+          "checkedAt": "2026-11-05T06:33:24.712Z",
+          "completedAt": "2026-11-05T06:33:24.712Z"
+        },
+        {
+          "producerBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+          "status": "completed",
+          "inspectedModels": 8,
+          "modelDataReady": true,
+          "checkedAt": "2026-11-05T06:46:25.547Z",
+          "completedAt": "2026-11-05T06:46:25.547Z"
+        }
+      ]
+    }
+  ],
+  "completion": {
+    "result": "SOAK_COMPLETE",
+    "expectedBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
+    "assessment": {
+      "gates": {
+        "observationWindow": true,
+        "versionIdentity": true,
+        "independentHealth": true,
+        "autonomousSamples": true,
+        "minuteScanner": true,
+        "newEightModelReview": true,
+        "newsConsumer": true,
+        "heartbeatProgresses": true,
+        "modelReviewProgresses": true,
+        "fullDuration": true,
+        "noReadGap": true,
+        "allMinuteHeartbeats": true,
+        "allModelReceipts": true,
+        "deploymentUnchanged": true,
+        "namespacePreserved": true
+      },
+      "passed": true,
+      "failedGates": [],
+      "sampleCount": 37,
+      "observedSeconds": 612.3,
+      "scope": "TEN_MINUTE_SAMPLED_PRODUCTION_WINDOW_NOT_LONG_TERM_OR_PROFITABILITY_PROOF"
+    },
+    "before": {
+      "deploymentId": "c6d27090-69a8-4e1e-9b97-3a663eacf9b0",
+      "deployedAt": "2026-11-05T06:28:57.284Z",
+      "versions": [
+        {
+          "id": "b50f5c5b-d792-4de3-9469-be14202ca5c3",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "after": {
+      "deploymentId": "c6d27090-69a8-4e1e-9b97-3a663eacf9b0",
+      "deployedAt": "2026-11-05T06:28:57.284Z",
+      "versions": [
+        {
+          "id": "b50f5c5b-d792-4de3-9469-be14202ca5c3",
+          "percentage": 100
+        }
+      ],
+      "binding": {
+        "present": true,
+        "className": "ScannerState",
+        "scriptName": null,
+        "namespaceFingerprint": "aedfbcd14cd1"
+      },
+      "bindingMatches": true,
+      "singleVersion": true
+    },
+    "errors": [],
+    "deviceReceiptVerified": false,
+    "preparedNotificationLiveVerified": false
+  }
+}

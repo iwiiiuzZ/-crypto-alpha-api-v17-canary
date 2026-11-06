@@ -1,0 +1,857 @@
+{
+  "scope": "BOUNDED_GITHUB_AUTOMATIC_PRODUCER_RUN_HISTORY_NOT_CONTINUOUS_MARKET_OR_DEVICE_PROOF",
+  "sourceCommit": "cea5511326177f896383867b3a01bf1cfb0676ee",
+  "count": 94,
+  "successful": 94,
+  "maxStartGapSeconds": 662,
+  "oldest": "2026-11-05T08:47:25Z",
+  "newest": "2026-11-06T01:49:24Z",
+  "runs": [
+    {
+      "id": 42146352333,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T01:49:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42145167660,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T01:38:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42143960247,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T01:27:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42142707600,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T01:16:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42141427332,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T01:05:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42140171555,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T00:54:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42138892035,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T00:43:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42137554333,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T00:32:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42136214779,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T00:21:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42134863737,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-06T00:10:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42133480763,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T23:59:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42132175611,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T23:48:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42130793380,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T23:37:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42129233070,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T23:26:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42128212962,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T23:15:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42126728314,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T23:04:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42125242468,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T22:53:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42123743324,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T22:42:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42122195642,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T22:31:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42120646420,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T22:20:26Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42119028915,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T22:09:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42117402867,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T21:58:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42115799457,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T21:47:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42114163114,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T21:36:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42112498941,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T21:25:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42110804998,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T21:14:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42109077521,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T21:03:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42107395164,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T20:52:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42105705412,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T20:41:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42104001704,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T20:30:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42102299059,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T20:19:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42100552470,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T20:08:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42098797524,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T19:57:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42097072455,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T19:46:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42095333603,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T19:35:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42093573816,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T19:24:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42091821653,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T19:13:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42090026144,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T19:02:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42088263286,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T18:51:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42086492531,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T18:40:26Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42084711521,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T18:29:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42082948811,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T18:18:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42081201884,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T18:07:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42079457705,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T17:56:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42077710948,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T17:45:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42075932565,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T17:34:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42074141007,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T17:23:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42072306661,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T17:12:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42070462566,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T17:01:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42068571109,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T16:50:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42066667875,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T16:39:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42064793370,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T16:28:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42062850161,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T16:17:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42061308136,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T16:06:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42059874881,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T15:55:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42058023270,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T15:44:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42056167986,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T15:33:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42054308331,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T15:22:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42052419176,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T15:11:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42050544724,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T15:00:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42048737885,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T14:49:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42046953820,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T14:38:26Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42045177022,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T14:27:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42043395478,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T14:16:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42041635751,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T14:05:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42039935680,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T13:54:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42038283586,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T13:43:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42036650572,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T13:32:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42035037982,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T13:21:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42033407239,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T13:10:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42031781336,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T12:59:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42030254873,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T12:48:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42028712513,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T12:37:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42027135255,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T12:26:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42025591767,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T12:15:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42024060689,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T12:04:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42022588534,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T11:53:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42021128085,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T11:42:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42019639663,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T11:31:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42018167723,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T11:20:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42016631570,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T11:09:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42015089191,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T10:58:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42013616598,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T10:47:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42012106582,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T10:36:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42010575802,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T10:25:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42009038357,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T10:14:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42007485893,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T10:03:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42005967640,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T09:52:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42004440626,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T09:41:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42002972728,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T09:30:47Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42001556205,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T09:20:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 42000052719,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T09:09:24Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 41998580521,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T08:58:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    },
+    {
+      "id": 41997183202,
+      "event": "workflow_dispatch",
+      "created_at": "2026-11-05T08:47:25Z",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "cea5511326177f896383867b3a01bf1cfb0676ee",
+      "head_branch": "crypto-alpha-collector-r5g-20261101"
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+> 当前实际部署与验收见[2026-11-06记录](docs/LATEST_RUNTIME_AND_ACCEPTANCE_20261106.md)。后台已受控部署G，无需用户重复上传或配置授权；未正式稳定冻结。
+
 # Crypto Alpha Pro Ultimate — 统一安装与交付索引
 
 本文只描述安装资产和受控流程。当前源码身份以 ops/release-manifest.json 为准；实际生产状态以新的发布证据为准。没有全部最终门槛的证据时，不称稳定交付。
@@ -5,7 +7,7 @@
 ## 唯一源码入口
 
 - 源码仓库：https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary
-- 本轮审核分支：https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/tree/integration/r5-freeze-candidate-20261031
+- 本轮审核分支：https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/tree/integration/bls-relay-clock-20261101
 - 唯一运行入口：main-v188.js。仓库保留的旧 worker.js 等不是本轮入口。
 - 依赖、配置、分钟任务与持久状态协议保持；同名构建不足以证明源码一致。
 - 发布、预检和本次失败回退见 R5_INSTALL_AND_FINAL_GATES.md；本轮验证与完整需求矩阵见 docs/。

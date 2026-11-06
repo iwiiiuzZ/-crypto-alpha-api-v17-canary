@@ -1,3 +1,5 @@
+> 历史记录：当前实际G部署、已配置授权与最新验收以[LATEST_RUNTIME_AND_ACCEPTANCE_20261106.md](LATEST_RUNTIME_AND_ACCEPTANCE_20261106.md)为准；下文保留原时段事实。
+
 # BLS持续采集修复与验收计划（2026-11-01）
 
 状态：本分支R5g是未部署研发候选。实际生产仍R5f、部署f11b44aa-0e29-4260-8104-c12fef44a68a、版本f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe、原状态指纹aedfbcd14cd1。没有把候选当正式交付，没有新增付费服务或改变八模型、净RR、通知模式、止损与目标。

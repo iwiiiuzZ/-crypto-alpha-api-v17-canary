@@ -1,0 +1,392 @@
+{
+  "scope": "READ_ONLY_CURRENT_RUNTIME_AND_BOUNDED_STATUS_HISTORY",
+  "observedAt": "2026-11-05T06:36:48.737Z",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+  "context": {
+    "marketGeneratedAt": "2026-11-05T06:36:50.053Z",
+    "decisionState": "DATA_READY",
+    "marketTransport": {
+      "originalUtf8Bytes": 127110,
+      "transferredUtf8Bytes": 89306,
+      "attemptedCompactedUtf8Bytes": null,
+      "compacted": true,
+      "modelAssessmentsTransferredInFull": true,
+      "referenceCount": 2,
+      "sections": {
+        "newsContext": null,
+        "analysisContract": null,
+        "assets": {
+          "ETHUSDT": {
+            "timeframes": null,
+            "opportunityEngine": null,
+            "crossVenueLiquidity": null,
+            "publicOrderflow": null,
+            "capitalFlow": null,
+            "liquidityRisk": null
+          },
+          "BTCUSDT": {
+            "timeframes": null,
+            "opportunityEngine": null,
+            "crossVenueLiquidity": null,
+            "publicOrderflow": null,
+            "capitalFlow": null,
+            "liquidityRisk": null
+          }
+        }
+      }
+    },
+    "structure": [
+      {
+        "symbol": "ETHUSDT",
+        "timeframe": "15m",
+        "status": "ok",
+        "source": "GATE_USDT_PERPETUAL",
+        "qualityPassed": true,
+        "count": 240,
+        "newestClosedAt": "2026-11-05T06:15:00.000Z",
+        "expectedClosedAt": "2026-11-05T06:15:00.000Z",
+        "continuityRatio": 1,
+        "nonZeroVolumeRatio": 1,
+        "collectionAgeSeconds": 1.064
+      },
+      {
+        "symbol": "ETHUSDT",
+        "timeframe": "1h",
+        "status": "ok",
+        "source": "GATE_USDT_PERPETUAL",
+        "qualityPassed": true,
+        "count": 240,
+        "newestClosedAt": "2026-11-05T05:00:00.000Z",
+        "expectedClosedAt": "2026-11-05T05:00:00.000Z",
+        "continuityRatio": 1,
+        "nonZeroVolumeRatio": 1,
+        "collectionAgeSeconds": 170.033
+      },
+      {
+        "symbol": "ETHUSDT",
+        "timeframe": "4h",
+        "status": "ok",
+        "source": "GATE_USDT_PERPETUAL",
+        "qualityPassed": true,
+        "count": 240,
+        "newestClosedAt": "2026-11-05T00:00:00.000Z",
+        "expectedClosedAt": "2026-11-05T00:00:00.000Z",
+        "continuityRatio": 1,
+        "nonZeroVolumeRatio": 1,
+        "collectionAgeSeconds": 169.868
+      },
+      {
+        "symbol": "BTCUSDT",
+        "timeframe": "15m",
+        "status": "ok",
+        "source": "GATE_USDT_PERPETUAL",
+        "qualityPassed": true,
+        "count": 240,
+        "newestClosedAt": "2026-11-05T06:15:00.000Z",
+        "expectedClosedAt": "2026-11-05T06:15:00.000Z",
+        "continuityRatio": 1,
+        "nonZeroVolumeRatio": 1,
+        "collectionAgeSeconds": 1.064
+      },
+      {
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "status": "ok",
+        "source": "GATE_USDT_PERPETUAL",
+        "qualityPassed": true,
+        "count": 240,
+        "newestClosedAt": "2026-11-05T05:00:00.000Z",
+        "expectedClosedAt": "2026-11-05T05:00:00.000Z",
+        "continuityRatio": 1,
+        "nonZeroVolumeRatio": 1,
+        "collectionAgeSeconds": 170.851
+      },
+      {
+        "symbol": "BTCUSDT",
+        "timeframe": "4h",
+        "status": "ok",
+        "source": "GATE_USDT_PERPETUAL",
+        "qualityPassed": true,
+        "count": 240,
+        "newestClosedAt": "2026-11-05T00:00:00.000Z",
+        "expectedClosedAt": "2026-11-05T00:00:00.000Z",
+        "continuityRatio": 1,
+        "nonZeroVolumeRatio": 1,
+        "collectionAgeSeconds": 170.669
+      }
+    ],
+    "models": [
+      {
+        "model": "A1",
+        "state": "NO_SETUP",
+        "failedGate": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL"
+      },
+      {
+        "model": "A2",
+        "state": "NO_SETUP",
+        "failedGate": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "NO_TREND_PULLBACK_AT_MEANINGFUL_1H_LEVEL"
+      },
+      {
+        "model": "B1",
+        "state": "NO_SETUP",
+        "failedGate": "NO_BREAKOUT",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "NO_BREAKOUT"
+      },
+      {
+        "model": "B2",
+        "state": "NO_SETUP",
+        "failedGate": "NO_COMPRESSION_BREAKOUT",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "NO_COMPRESSION_BREAKOUT"
+      },
+      {
+        "model": "C1",
+        "state": "NO_SETUP",
+        "failedGate": "CONFIRMED_RANGE_EDGE_REQUIRED",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "CONFIRMED_RANGE_EDGE_REQUIRED"
+      },
+      {
+        "model": "C2",
+        "state": "NO_SETUP",
+        "failedGate": "CONFIRMED_RANGE_EDGE_REQUIRED",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "CONFIRMED_RANGE_EDGE_REQUIRED"
+      },
+      {
+        "model": "D1",
+        "state": "NO_SETUP",
+        "failedGate": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP"
+      },
+      {
+        "model": "D2",
+        "state": "NO_SETUP",
+        "failedGate": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP",
+        "swingState": "WAIT_ENTRY_MODEL",
+        "swingReason": "NO_COMPLETE_ADAPTIVE_BREAKOUT_OR_LOCAL_SWEEP"
+      }
+    ],
+    "newsCheckedAt": "2026-11-05T06:36:50.256Z",
+    "newsSources": [
+      {
+        "source": "JIN10",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T06:36:24.498Z",
+        "publishedAt": "2026-11-05T06:23:50.000Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:36:23.656Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "COINDESK",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T06:36:23.954Z",
+        "publishedAt": "2026-11-05T05:47:01.000Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:36:23.656Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "FED_PRESS",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T06:35:33.465Z",
+        "publishedAt": "2026-10-29T20:30:00.000Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:35:33.454Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "FED_SPEECH",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T06:34:00.888Z",
+        "publishedAt": "2026-10-15T02:55:00.000Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:34:00.744Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "BLS_CPI",
+        "status": "ok",
+        "httpStatus": 403,
+        "fetchedAt": "2026-11-05T06:35:33.120Z",
+        "publishedAt": "2026-10-14T11:50:31.200Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:35:33.193Z",
+        "cacheState": "relay",
+        "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+        "directHttpStatus": 403,
+        "relayReceivedAt": "2026-11-05T06:35:33.193Z"
+      },
+      {
+        "source": "BLS_EMPLOYMENT",
+        "status": "ok",
+        "httpStatus": 403,
+        "fetchedAt": "2026-11-05T06:35:33.145Z",
+        "publishedAt": "2026-10-02T11:51:08.289Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:35:33.193Z",
+        "cacheState": "relay",
+        "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+        "directHttpStatus": 403,
+        "relayReceivedAt": "2026-11-05T06:35:33.193Z"
+      },
+      {
+        "source": "BLS_CALENDAR",
+        "status": "ok",
+        "httpStatus": 403,
+        "fetchedAt": "2026-11-05T06:35:33.158Z",
+        "publishedAt": null,
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:35:33.193Z",
+        "cacheState": "relay",
+        "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+        "directHttpStatus": 403,
+        "relayReceivedAt": "2026-11-05T06:35:33.193Z"
+      },
+      {
+        "source": "NYFED_CALENDAR",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T05:45:24.411Z",
+        "publishedAt": null,
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T05:45:23.911Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "BEA_RELEASES",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T06:34:00.712Z",
+        "publishedAt": "2026-11-04T13:30:00.000Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:34:00.425Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "BOJ_RELEASES",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T06:34:00.744Z",
+        "publishedAt": "2026-11-04T23:50:00.000Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:34:00.425Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      },
+      {
+        "source": "BLS_PPI",
+        "status": "ok",
+        "httpStatus": 403,
+        "fetchedAt": "2026-11-05T06:35:33.133Z",
+        "publishedAt": "2026-10-15T11:50:51.146Z",
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T06:35:33.193Z",
+        "cacheState": "relay",
+        "sourceProvenance": "AUTHORIZED_GITHUB_ACTIONS_BLS_RELAY_DELAYED",
+        "directHttpStatus": 403,
+        "relayReceivedAt": "2026-11-05T06:35:33.193Z"
+      },
+      {
+        "source": "US_TREASURY_YIELD_DAILY",
+        "status": "ok",
+        "httpStatus": 200,
+        "fetchedAt": "2026-11-05T05:54:24.019Z",
+        "publishedAt": null,
+        "retryAt": null,
+        "lastAttemptAt": "2026-11-05T05:54:23.944Z",
+        "cacheState": "live",
+        "sourceProvenance": "DIRECT_FETCH",
+        "directHttpStatus": null,
+        "relayReceivedAt": null
+      }
+    ],
+    "evidenceScope": "FOREGROUND_READ_AFTER_AUTONOMOUS_WINDOW_NOT_BACKGROUND_PROOF"
+  },
+  "candidateChain": {
+    "stateReadSucceeded": true,
+    "detailsOmitted": true,
+    "activeCount": 0,
+    "returnedHistoryCount": 0,
+    "historyCoverage": "BOUNDED_STATUS_HISTORY_NOT_COMPLETE_HISTORY",
+    "active": [],
+    "history": [],
+    "activePlanPresent": false,
+    "auditFirstRecordedAt": "2026-10-21T13:04:57.265Z",
+    "auditUpdatedAt": "2026-11-04T15:16:27.386Z",
+    "retainedAttempts": 33,
+    "recentAttemptStages": [
+      {
+        "kind": "DYNAMIC_PRICE",
+        "stage": "MATERIAL_PRICE_CHANGE",
+        "outcome": "PROVIDER_ACCEPTED",
+        "attemptedAt": "2026-11-04T14:45:36.155Z",
+        "completedAt": "2026-11-04T14:45:37.199Z"
+      },
+      {
+        "kind": "DYNAMIC_PRICE",
+        "stage": "MATERIAL_PRICE_CHANGE",
+        "outcome": "PROVIDER_ACCEPTED",
+        "attemptedAt": "2026-11-04T15:16:26.248Z",
+        "completedAt": "2026-11-04T15:16:27.386Z"
+      }
+    ],
+    "pendingByKind": {
+      "Observation": 0,
+      "News": 0,
+      "Dynamic": 0,
+      "Plan": 0,
+      "Fast": 0,
+      "Progress": 0
+    },
+    "preparedNotificationLiveVerified": false,
+    "deviceReceiptVerified": false
+  },
+  "gates": {
+    "allReadsSucceeded": true,
+    "sourceSchemaMatches": true,
+    "frontendOwnerIdentity": true,
+    "sixRequiredStructureSeries": true,
+    "allEightModelsReturned": true,
+    "currentOKXQuote": true,
+    "authenticatedStateRead": true
+  },
+  "preparedNotifications": [],
+  "preparedNotificationLiveVerified": false,
+  "gptInstalledVerified": false,
+  "strategyProfitabilityVerified": false,
+  "operationalAuditPassed": true,
+  "finalDeliveryAccepted": false,
+  "errors": []
+}
