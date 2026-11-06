@@ -1,0 +1,47 @@
+name: Read-only BEA rejected entry audit
+on:
+  push:
+    branches: [ops/news-rejected-entry-audit-20261106]
+    paths: [.github/workflows/news-rejected-entry-audit.yml]
+permissions:
+  contents: read
+jobs:
+  official-bea-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: 1b41488646c566fe1797ba3a5ca9d303fabc3db9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Inspect official BEA rejected items using exact deployed parser without secrets or Worker writes
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const bytes=fs.readFileSync('main-v188.js');
+          const blob=createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex');
+          if(blob!=='75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e')throw Error('SOURCE_MISMATCH');
+          const source=bytes.toString().replace(/^export\s+(default\s+)?/gm,(_,d)=>d?'const exported = ':'');
+          const {parseNewsXml,newsText,newsTimestamp,newsItem}=new Function(source+';return {parseNewsXml,newsText,newsTimestamp,newsItem};')();
+          const url='https://apps.bea.gov/rss/rss.xml';
+          const r=await fetch(url,{redirect:'manual',signal:AbortSignal.timeout(16000),headers:{'User-Agent':'CryptoAlphaSourceHealth/1.0 (+read-only validation)',accept:'application/rss+xml, application/xml, text/xml;q=0.9'}});
+          if(!r.ok)throw Error('OFFICIAL_BEA_HTTP_'+r.status);
+          const body=await r.text(),fetchedAt=new Date().toISOString(),items=parseNewsXml(body,'BEA_RELEASES',fetchedAt);
+          const tag=(b,n)=>b.match(new RegExp('<'+n+'(?:\\s[^>]*)?>([\\s\\S]*?)</'+n+'>','i'))?.[1];
+          const rejected=[];
+          for(const [,kind,b] of body.matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)){
+            const raw={title:tag(b,'title'),content:tag(b,'description')||tag(b,'summary'),url:newsText(tag(b,'link'),1200)||b.match(/<link\b[^>]*href=["']([^"']+)/i)?.[1],publishedAt:tag(b,'pubDate')||tag(b,'published')||tag(b,'updated')||tag(b,'dc:date'),id:newsText(tag(b,'guid')||tag(b,'id'),240)};
+            if(!newsItem(raw,'BEA_RELEASES',fetchedAt))rejected.push({title:newsText(raw.title||raw.content,220),url:raw.url,rawPublicationTime:newsText(raw.publishedAt,200),parsedPublicationTime:newsTimestamp(raw.publishedAt),titleValid:!!newsText(raw.title||raw.content),rawTimeParseable:Number.isFinite(Date.parse(newsText(raw.publishedAt,200))),futureSeconds:Number.isFinite(Date.parse(newsText(raw.publishedAt,200)))?Math.round((Date.parse(newsText(raw.publishedAt,200))-Date.now())/1000):null});
+          }
+          const e={scope:'OFFICIAL_BEA_RAW_FEED_PARSER_DIAGNOSIS_ONLY_NO_SECRET_NO_WORKER_MUTATION',sourceBlob:blob,url,fetchedAt,httpStatus:r.status,bodySha256:createHash('sha256').update(body).digest('hex'),diagnostics:items.parseDiagnostics,rejected};
+          fs.writeFileSync('bea-rejected-entry-audit.json',JSON.stringify(e,null,2));console.log(JSON.stringify(e,null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: OFFICIAL_BEA_REJECTED_ENTRY_AUDIT
+          path: bea-rejected-entry-audit.json
+          if-no-files-found: warn
