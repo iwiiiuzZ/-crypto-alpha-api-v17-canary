@@ -1,0 +1,48 @@
+{
+  "scope": "REAL_PRODUCER_STEP_AND_FOUR_SOURCE_RECEIPTS_CORRELATED_TO_PASSIVE_CONSUMPTION",
+  "first": {
+    "runId": 41983864634,
+    "jobId": 127099941559,
+    "fetchStep": {
+      "started_at": "2026-11-05T06:57:29Z",
+      "completed_at": "2026-11-05T06:57:30Z"
+    },
+    "observedConsumerEvent": {
+      "workflowRunId": 41983864634,
+      "requestAcceptedAt": "2026-11-05T06:57:24.593Z",
+      "oldestFetchedAt": "2026-11-05T06:57:30.053Z",
+      "consumedAt": "2026-11-05T06:59:25.182Z"
+    },
+    "producerAndConsumptionCorrelated": true
+  },
+  "second": {
+    "runId": 41985123715,
+    "jobId": 127103958048,
+    "fetchStep": {
+      "name": "Fetch official BLS RSS from GitHub network and POST only to authenticated R5 Worker",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 4,
+      "started_at": "2026-11-05T07:08:32Z",
+      "completed_at": "2026-11-05T07:08:33Z"
+    },
+    "receipt": {
+      "status": "OFFICIAL_BLS_RELAY_INGESTED",
+      "accepted": [
+        "BLS_CPI",
+        "BLS_PPI",
+        "BLS_EMPLOYMENT",
+        "BLS_CALENDAR"
+      ],
+      "fetchFailures": []
+    },
+    "observedConsumerEvent": {
+      "workflowRunId": 41985123715,
+      "requestAcceptedAt": "2026-11-05T07:08:25.219Z",
+      "oldestFetchedAt": "2026-11-05T07:08:32.748Z",
+      "consumedAt": "2026-11-05T07:10:24.349Z"
+    },
+    "producerAndConsumptionCorrelated": true
+  },
+  "bothCorrelated": true
+}

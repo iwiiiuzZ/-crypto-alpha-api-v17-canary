@@ -71,3 +71,12 @@ ETH欧易USDT永续执行、BTC过滤、八模型、4h/1h结构、15m择时、�
 BLS直连403仍存在，备用有运输延迟；日度美债不是盘中报价，DXY实时、独立初请数值、ETF/期权独立自动数值未接入。针对实际方案按原指令终审，不用缺数认定无风险，也不擅加永久交易闸门。十分钟与二十五分钟的通过不保证全天无故障。
 
 可恢复的原完整资料已继承，无法读取的旧聊天全文仍不能宣称逐字全部恢复。主流系统一手研究及适配见RESEARCH.md与docs/RESEARCH_REFRESH_20261031.md，未安装商业内部未知能力或额外模型。正式稳定冻结等待最终验收。
+
+
+## 主分支与工程材料最终核对（2026-11-06）
+
+PR5已合并，源代码提交0b0d091b8a23f0bcc7d83aff4fda89a774eb1797。主分支[CI42147826202](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42147826202)实际60组通过，含8组原生环境；[运维42147826227](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42147826227)的3点/85秒门槛及12源期限检查通过。
+
+[后台工程压缩证据](https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42147826202/artifacts/13471116617)已下载，外层SHA-256为fc1e31cfd7784502a9d2a0d6bf4341cd149e6efd75c09167c002d94c55ff2e9e。内外层CRC通过，运行源码、原配置哈希和60组测试清单已逐项核对；产物保留至12月6日，长期代码及证据仍在仓库不可变提交中。
+
+Cloudflare主分支自动构建e04adbce-4c21-48bc-b685-3fbfefcbf143成功后，另行3点读取仍确认原G精确部署、100%版本和aedfbcd14cd1命名空间不变；没有因合并重复部署或清空状态。具体时间及原始记录见evidence/2026-11-06-post-main-build-identity.json。后续仅保存证据的提交保持Worker、配置、依赖、接口及交易规则逐字不变。
