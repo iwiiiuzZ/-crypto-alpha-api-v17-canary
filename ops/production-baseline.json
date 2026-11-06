@@ -7,8 +7,8 @@
   "sourceSha256": "e5b5b43bf3364d408c1d308f94be361a104c34fe90f8afbadc61f5078b29e5b6",
   "reviewedCommit": "fc5226bf08843c1ffb3f275a345b2ed7d1d01056",
   "releaseCommit": "81a02c773c9a9a6b2a399fcc31e6936357caa15e",
-  "deploymentId": "c6d27090-69a8-4e1e-9b97-3a663eacf9b0",
-  "versionId": "b50f5c5b-d792-4de3-9469-be14202ca5c3",
+  "deploymentId": "2b93bd12-0153-407f-9b90-eb8bd0490fd5",
+  "versionId": "c2bf71c1-c841-45f2-ba6e-f74e6d8d247e",
   "namespaceFingerprint": "aedfbcd14cd1",
   "priorVersionId": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
   "priorDeploymentId": "a164bd59-8b20-4673-9e47-0697c6ed6191",
@@ -54,5 +54,25 @@
   "gptInstalledVerified": false,
   "preparedNotificationLiveVerified": false,
   "strategyProfitabilityVerified": false,
-  "finalDeliveryAccepted": false
+  "finalDeliveryAccepted": false,
+  "credentialRotation": {
+    "kind": "SCANNER_TOKEN_SECRET_ONLY_OWNER_CONFIRMED",
+    "ownerConfirmedThreeLocations": true,
+    "deployedAt": "2026-11-06T08:43:06.797Z",
+    "verifiedAt": "2026-11-06T08:57:32.654Z",
+    "previousDeploymentId": "c6d27090-69a8-4e1e-9b97-3a663eacf9b0",
+    "previousVersionId": "b50f5c5b-d792-4de3-9469-be14202ca5c3",
+    "backendAuthenticationVerified": true,
+    "gptActionAuthenticationIndependentlyVerified": false,
+    "maintenanceRunId": 42151538853,
+    "maintenanceAttempt": 3,
+    "identityRunId": 41296569353,
+    "identityAttempt": 7,
+    "followupIdentityAttempt": 8,
+    "automaticRenewalRunIds": [42189715902, 42191037186],
+    "secondRenewalConsumed": true,
+    "evidence": "evidence/2026-11-06-scanner-token-rotation.json",
+    "scope": "CURRENT_PHYSICAL_IDENTITY_AND_AUTHENTICATED_SAMPLED_RUNTIME_RECONCILED_PRIOR_FULL_CODE_WINDOWS_RETAINED_NOT_REPEATED_OR_REDATED",
+    "olderVersionCredentialCaveat": "OLDER_VERSIONS_MAY_HAVE_OLD_SECRET_STATE_VERIFY_COMPATIBILITY_BEFORE_EXPLICIT_ROLLBACK_DO_NOT_REVERT_CREDENTIALS_IMPLICITLY"
+  }
 }
