@@ -1,7 +1,7 @@
 // Candidate reference-data adapters. Never place orders or change strategy gates.
 const DAY=86400000;
 function fail(code){throw Error(code);}
-function number(value){if(typeof value!=='number'&&typeof value!=='string')fail('INVALID_NUMBER');if(String(value).trim()==='')fail('INVALID_NUMBER');const n=Number(value);if(!Number.isFinite(n)||n<0)fail('INVALID_NUMBER');return n;}
+function number(value){if(typeof value!=='number'&&typeof value!=='string')fail('INVALID_NUMBER');if(typeof value==='string'&&!/^\d+(?:\.\d+)?$/.test(value))fail('INVALID_NUMBER');const n=Number(value);if(!Number.isFinite(n)||n<0)fail('INVALID_NUMBER');return n;}
 function issuerNumber(v){if(typeof v!=='string'||!/^\d{1,3}(?:,\d{3})*(?:\.\d+)?$|^\d+(?:\.\d+)?$/.test(v))fail('INVALID_ISSUER_NUMBER');return number(v.replaceAll(',',''));}
 function dateOnly(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))fail('INVALID_DATE');const n=Date.parse(value+'T00:00:00Z');if(!Number.isFinite(n)||new Date(n).toISOString().slice(0,10)!==value)fail('INVALID_DATE');return n;}
 function datePolicy(asOf,now,maxDays){const t=dateOnly(asOf);if(t>now)fail('FUTURE_DATE');if(now-t>maxDays*DAY)fail('STALE_REFERENCE');return t;}
@@ -45,7 +45,9 @@ export function parseClaimsHtml(text,{series,now=Date.now()}={}){
  for(const tr of text.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)){
   if(!tr[1].includes('series-obs'))continue;
   const cells=[...tr[1].matchAll(/<(td|th)\b[^>]*>([\s\S]*?)<\/\1>/gi)].map(x=>x[2].replace(/<[^>]*>/g,'').replace(/&nbsp;|&#160;/g,' ').trim());
-  if(cells.length!==2||!/^\d{4}-\d{2}-\d{2}$/.test(cells[0]))continue;
+  while(cells.length>2&&cells.at(-1)==='')cells.pop();
+  if(cells.length!==2)continue;cells[0]=cells[0].replace(/:$/,'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(cells[0]))continue;
   const n=issuerNumber(cells[1]);data.push(cells[0]+','+n);
  }
  if(!data.length)fail('CLAIMS_HTML_OBSERVATIONS_MISSING');
