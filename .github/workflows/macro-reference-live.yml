@@ -1,0 +1,26 @@
+name: Macro candidate contracts and live public reference audit
+on:
+  push:
+    branches: [integration/macro-data-20261106]
+    paths: [ops/macro-reference.mjs, ops/macro-reference-live.mjs, tests/test-macro-reference.mjs, .github/workflows/macro-reference-live.yml]
+permissions:
+  contents: read
+jobs:
+  reference-contracts-and-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Verify isolated boundary cases
+        run: node tests/test-macro-reference.mjs
+      - name: Read and parse six current public official references; never call Worker
+        run: node ops/macro-reference-live.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MACRO_REFERENCE_CANDIDATE_LIVE
+          path: macro-reference-live.json
+          retention-days: 30
