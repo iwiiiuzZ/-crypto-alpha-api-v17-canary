@@ -1,0 +1,52 @@
+name: Macro official source read-only feasibility
+on:
+  push:
+    branches: [integration/macro-data-20261106]
+    paths: [.github/workflows/macro-source-feasibility.yml]
+permissions:
+  contents: read
+jobs:
+  source-feasibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read public official sources only; no Worker calls or credentials
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const targets=[
+          ['FRED_ICSA','https://fred.stlouisfed.org/graph.csv?id=ICSA'],
+          ['FRED_CCSA','https://fred.stlouisfed.org/graph.csv?id=CCSA'],
+          ['IBIT','https://www.ishares.com/us/products/333011/ishares-bitcoin-trust-etf/latest-holdings.csv'],
+          ['ETHA','https://www.ishares.com/us/products/337614/ishares-ethereum-trust-etf/latest-holdings.csv'],
+          ['OKX_ETH_OPTIONS','https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=ETH-USD'],
+          ['OKX_BTC_OPTIONS','https://www.okx.com/api/v5/public/open-interest?instType=OPTION&instFamily=BTC-USD'],
+          ['DERIBIT_ETH_OPTIONS','https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=ETH&kind=option'],
+          ['DERIBIT_BTC_OPTIONS','https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option']];
+          const report={scope:'PUBLIC_OFFICIAL_SOURCE_FEASIBILITY_NOT_PRODUCTION_INTEGRATION',startedAt:new Date().toISOString(),sources:[]};
+          for(const [id,url] of targets){
+           const row={id,url,requestedAt:new Date().toISOString()};
+           try{
+            const r=await fetch(url,{method:'GET',redirect:'manual',headers:{accept:'application/json,text/csv;q=0.9','User-Agent':'CryptoAlphaSourceFeasibility/1.0'},signal:AbortSignal.timeout(20000)});
+            row.httpStatus=r.status;row.contentType=r.headers.get('content-type');row.location=r.headers.get('location');
+            const reader=r.body.getReader(),parts=[];let bytes=0;
+            for(;;){const v=await reader.read();if(v.done)break;bytes+=v.value.byteLength;if(bytes>2000000){await reader.cancel();throw Error('BODY_LIMIT');}parts.push(Buffer.from(v.value));}
+            const body=Buffer.concat(parts);row.bytes=bytes;row.sha256=createHash('sha256').update(body).digest('hex');
+            const text=body.toString('utf8');
+            if(id.startsWith('FRED_')||id==='IBIT'||id==='ETHA'){const lines=text.trim().split(/\r?\n/);row.lineCount=lines.length;row.firstLines=lines.slice(0,8);row.lastLines=lines.slice(-6);}
+            else if(r.ok){const j=JSON.parse(text),data=j.data||j.result;row.apiCode=j.code||j.error?.code||null;row.returnedAt=j.usOut||null;row.count=Array.isArray(data)?data.length:null;row.fieldNames=Array.isArray(data)&&data.length?Object.keys(data[0]):[];row.samples=Array.isArray(data)?data.slice(0,2):null;}
+           }catch(e){row.error=e.message==='BODY_LIMIT'?'BODY_LIMIT':e.name==='SyntaxError'?'INVALID_JSON':'FETCH_FAILED';}
+           row.finishedAt=new Date().toISOString();report.sources.push(row);
+          }
+          fs.writeFileSync('macro-source-feasibility.json',JSON.stringify(report,null,2));
+          console.log(JSON.stringify(report,null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MACRO_SOURCE_FEASIBILITY
+          path: macro-source-feasibility.json
+          retention-days: 30
