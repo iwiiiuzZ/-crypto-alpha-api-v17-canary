@@ -1,61 +1,130 @@
 {
   "status": "PRODUCTION_WINDOW_VERIFIED_AWAITING_FINAL_ACCEPTANCE",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5i",
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
-  "sourceGitBlobSha": "75cd9af6323b90fcf411a1ff661a3bb3c7c2e81e",
-  "sourceSha256": "e5b5b43bf3364d408c1d308f94be361a104c34fe90f8afbadc61f5078b29e5b6",
-  "reviewedCommit": "fc5226bf08843c1ffb3f275a345b2ed7d1d01056",
-  "releaseCommit": "81a02c773c9a9a6b2a399fcc31e6936357caa15e",
-  "deploymentId": "53126941-a9f4-49f4-823d-ec31d30f214a",
-  "versionId": "c2bf71c1-c841-45f2-ba6e-f74e6d8d247e",
+  "sourceGitBlobSha": "c8ffcd07d8ea4d1a21331f5aa18e7ce08dd77f49",
+  "reviewedCommit": "7a96ddedf75fdbae4ac57e3687533968e222e0bd",
+  "releaseCommit": "0ef8c99d2d93c8498470408fa5b1eb21d2cc173e",
+  "collectorRef": "crypto-alpha-collector-r5i-20261106",
+  "collectorSourceCommit": "6146e1e2b986c7a613a596fc081874ed58b34fac",
+  "deploymentId": "ef746048-90d9-4a40-b4e7-49a583d2571f",
+  "versionId": "6aab8bea-2f07-4c55-8ad0-9d920af811b6",
+  "deployedAt": "2026-11-07T03:27:55.798Z",
   "namespaceFingerprint": "aedfbcd14cd1",
-  "priorVersionId": "f7b3fdd9-0053-4ee0-83a8-4802ba0fc7fe",
-  "priorDeploymentId": "a164bd59-8b20-4673-9e47-0697c6ed6191",
+  "priorVersionId": "c2bf71c1-c841-45f2-ba6e-f74e6d8d247e",
+  "priorDeploymentId": "53126941-a9f4-49f4-823d-ec31d30f214a",
   "autonomousWindowPassed": true,
   "marketApiAuditPassed": true,
   "blsFourSourceConsumptionVerified": true,
   "allTwelveSourcesConsumed": true,
+  "macroSixReferencesConsumed": true,
   "continuousBlsRenewalPassed": true,
-  "regressionSuites": 60,
+  "regressionSuites": 63,
   "nativeSuites": 8,
-  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41980068034",
-  "artifactUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/41980068034/artifacts/13395402996",
-  "artifactSha256": "798dd197ed56a109aeb92e89a04107c8f339dbb70c83920ad84d973a3ca0c6ed",
-  "startAt": "2026-11-05T06:36:51.077Z",
-  "endAt": "2026-11-05T06:47:03.377Z",
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42333685492",
+  "artifactUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42333685492/artifacts/13559821524",
+  "artifactSha256": "28ab4b6181a478aa89f1e054d986aaef095f954d0a66698181fd9b61b76b6f67",
+  "artifactDigestEvidence": "GITHUB_REPORTED_SHA256",
+  "durableEvidence": "evidence/2026-11-07-i-production-acceptance.json",
+  "startAt": "2026-11-07T03:35:41.175Z",
+  "endAt": "2026-11-07T03:45:53.322Z",
   "sampleCount": 37,
-  "observedSeconds": 612.3,
+  "observedSeconds": 612.147,
   "continuousRenewalWindow": {
-    "startAt": "2026-11-05T06:47:04.134Z",
-    "endAt": "2026-11-05T07:12:04.264Z",
     "passed": true,
     "coveragePassed": true,
     "windowPassed": true,
     "spacedRenewals": true,
     "renewals": [
       {
-        "workflowRunId": 41983864634,
-        "requestAcceptedAt": "2026-11-05T06:57:24.593Z",
-        "oldestFetchedAt": "2026-11-05T06:57:30.053Z",
-        "consumedAt": "2026-11-05T06:59:25.182Z"
+        "workflowRunId": 42336213795,
+        "requestAcceptedAt": "2026-11-07T03:56:24.744Z",
+        "oldestFetchedAt": "2026-11-07T03:56:32.884Z",
+        "consumedAt": "2026-11-07T03:58:25.209Z"
       },
       {
-        "workflowRunId": 41985123715,
-        "requestAcceptedAt": "2026-11-05T07:08:25.219Z",
-        "oldestFetchedAt": "2026-11-05T07:08:32.748Z",
-        "consumedAt": "2026-11-05T07:10:24.349Z"
+        "workflowRunId": 42337028367,
+        "requestAcceptedAt": "2026-11-07T04:07:25.223Z",
+        "oldestFetchedAt": "2026-11-07T04:07:30.898Z",
+        "consumedAt": "2026-11-07T04:09:24.681Z"
       }
     ],
     "sampleCount": 51,
-    "observedSeconds": 1500.13,
-    "scope": "PASSIVE_25_MINUTE_SOURCE_COVERAGE_AND_TWO_SPACED_AUTOMATIC_RENEWALS_NOT_PROFIT_OR_DEVICE_PROOF"
+    "observedSeconds": 1500.127,
+    "scope": "PASSIVE_25_MINUTE_SOURCE_COVERAGE_AND_TWO_SPACED_AUTOMATIC_RENEWALS_NOT_PROFIT_OR_DEVICE_PROOF",
+    "startAt": "2026-11-07T03:45:54.138Z",
+    "endAt": "2026-11-07T04:10:54.265Z"
   },
+  "marketTransportInitial": {
+    "originalUtf8Bytes": 133016,
+    "transferredUtf8Bytes": 87172,
+    "attemptedCompactedUtf8Bytes": null,
+    "compacted": true,
+    "modelAssessmentsTransferredInFull": true,
+    "referenceCount": 3,
+    "sections": {
+      "newsContext": null,
+      "analysisContract": null,
+      "assets": {
+        "ETHUSDT": {
+          "timeframes": null,
+          "opportunityEngine": null,
+          "crossVenueLiquidity": null,
+          "publicOrderflow": null,
+          "capitalFlow": null,
+          "liquidityRisk": null
+        },
+        "BTCUSDT": {
+          "timeframes": null,
+          "opportunityEngine": null,
+          "crossVenueLiquidity": null,
+          "publicOrderflow": null,
+          "capitalFlow": null,
+          "liquidityRisk": null
+        }
+      }
+    }
+  },
+  "marketTransportFinal": {
+    "originalUtf8Bytes": 132554,
+    "transferredUtf8Bytes": 88822,
+    "attemptedCompactedUtf8Bytes": null,
+    "compacted": true,
+    "modelAssessmentsTransferredInFull": true,
+    "referenceCount": 3,
+    "sections": {
+      "newsContext": null,
+      "analysisContract": null,
+      "assets": {
+        "ETHUSDT": {
+          "timeframes": null,
+          "opportunityEngine": null,
+          "crossVenueLiquidity": null,
+          "publicOrderflow": null,
+          "capitalFlow": null,
+          "liquidityRisk": null
+        },
+        "BTCUSDT": {
+          "timeframes": null,
+          "opportunityEngine": null,
+          "crossVenueLiquidity": null,
+          "publicOrderflow": null,
+          "capitalFlow": null,
+          "liquidityRisk": null
+        }
+      }
+    }
+  },
+  "lastVerifiedStatusAt": "2026-11-07T04:11:26.228Z",
   "gptInstalledVerified": false,
+  "gptActionUseUserAcceptanceVerified": true,
+  "gptActionUseEvidenceScope": "OWNER_GPT_ACTION_TEST_ON_2026_11_06_R5G_UNCHANGED_7_6_0_PROTOCOL",
   "preparedNotificationLiveVerified": false,
   "strategyProfitabilityVerified": false,
   "finalDeliveryAccepted": false,
-  "credentialRotation": {
+  "dxy": "NO_AUTHORIZED_REALTIME_SOURCE_CONNECTED",
+  "historicalGCredentialRotation": {
     "kind": "SCANNER_TOKEN_SECRET_ONLY_OWNER_CONFIRMED",
     "ownerConfirmedThreeLocations": true,
     "deployedAt": "2026-11-06T08:43:06.797Z",
@@ -78,7 +147,7 @@
     "scope": "CURRENT_PHYSICAL_IDENTITY_AND_AUTHENTICATED_SAMPLED_RUNTIME_RECONCILED_PRIOR_FULL_CODE_WINDOWS_RETAINED_NOT_REPEATED_OR_REDATED",
     "olderVersionCredentialCaveat": "OLDER_VERSIONS_MAY_HAVE_OLD_SECRET_STATE_VERIFY_COMPATIBILITY_BEFORE_EXPLICIT_ROLLBACK_DO_NOT_REVERT_CREDENTIALS_IMPLICITLY"
   },
-  "currentCodeRollback": {
+  "historicalHRollback": {
     "failedCandidateBuild": "crypto-alpha-worker-v27.6.3-macro-r5h",
     "failedCandidateDeploymentId": "d89b18f5-6d78-49a2-bf20-bba93001cb1b",
     "reason": "MARKET_RESPONSE_BUDGET_EXCEEDED",

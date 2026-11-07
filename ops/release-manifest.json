@@ -5,7 +5,7 @@
   "entry": "main-v188.js",
   "sourceGitBlobSha": "c8ffcd07d8ea4d1a21331f5aa18e7ce08dd77f49",
   "priorLiveBuild": "crypto-alpha-worker-v27.6.3-macro-r5g",
-  "status": "CANDIDATE_NOT_DEPLOYED",
+  "status": "DEPLOYED_AWAITING_FINAL_ACCEPTANCE",
   "collectorRef": "crypto-alpha-collector-r5i-20261106",
   "collectorSourceCommit": "6146e1e2b986c7a613a596fc081874ed58b34fac",
   "wranglerSha256": "a3af225a010f4729e3657e378a1e363612d36d0f0082f7ede2224440cf44fdae"
