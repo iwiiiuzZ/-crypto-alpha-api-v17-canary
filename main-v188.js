@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5h";
+const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5i";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -972,7 +972,7 @@ const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
 const BLS_DISPATCH_STATE_KEY = "news:bls-dispatch:v1";
 const BLS_DISPATCH_REFRESH_MS = 10*60*1000;
 const BLS_DISPATCH_IDS = ["BLS_CPI","BLS_PPI","BLS_EMPLOYMENT","BLS_CALENDAR"];
-const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5h-20261106";
+const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5i-20261106";
 function validBlsCollectorRef(ref){return ref==="main"||/^crypto-alpha-collector-r5[a-z]-\d{8}$/.test(ref);}
 function compactBlsRelayDispatch(state,configured){
  const stamp=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null;
@@ -1225,7 +1225,51 @@ async function acceptClaimsReferenceRelay(payload,env,{get,put}){
  }catch(e){return{error:/^CLAIMS_RELAY_[A-Z_]+$/.test(e.message)?e.message:'CLAIMS_RELAY_INVALID_OR_STORAGE_FAILED'};}
 }
 
-return {acceptClaimsReferenceRelay,cachedMacroReferences,macroReferenceReceipts,summarizeMacroReferences};
+// Transport-only projection. The full news endpoint and background snapshot remain untouched.
+function compactNewsReferenceTransport(out,{calendarPreview=false,riskHeadersOnly=false}={}){
+ const news=out?.newsContext;if(!news||typeof news!=='object')return false;
+ let changed=false;
+ const operational=['transportAgeSeconds','elapsedMs','failureCount','handshakeAt','transportRevision','lastAttemptAt','cacheState'];
+ const optionalSourceDiagnostics=['reason','failureStage','nextAttemptAt','relayReceivedAt','directHttpStatus'];
+ if(!news.fullOperationalDetails){
+  for(const source of Object.values(news.sources||{}))if(source&&typeof source==='object'){
+   for(const k of operational)if(Object.hasOwn(source,k)){delete source[k];changed=true;}
+   for(const k of optionalSourceDiagnostics)if(source[k]===null){delete source[k];changed=true;}
+   const d=source.parseDiagnostics;
+   if(d&&typeof d==='object'){
+    if(d.parserRevision===source.parserRevision){delete d.parserRevision;changed=true;}
+    // Keep counts, content/failure status and unknown fields. Detailed rejection counters are in the full view.
+    if(Object.hasOwn(d,'rejectedReasons')){delete d.rejectedReasons;changed=true;}
+   }
+  }
+  for(const source of news.macroReferences?.sources||[])if(source&&typeof source==='object')for(const k of ['lastAttemptAt','lastSuccessAt','nextAttemptAt','revision'])if(Object.hasOwn(source,k)){delete source[k];changed=true;}
+  if(changed)news.fullOperationalDetails={view:'news',path:'newsContext',scope:'SOURCE_OPERATIONAL_DIAGNOSTICS_ONLY_ALL_REFERENCE_VALUES_RETAINED'};
+ }
+ if(calendarPreview&&Array.isArray(news.upcomingEvents)&&news.upcomingEvents.length>1){
+  // The nearest scheduled event is retained in full; every current event-window item remains intact.
+  news.upcomingEventPreview={available:news.upcomingEvents.length,returned:1,completeView:'news',fullCalendarRequiredForFinalReview:true};
+  news.upcomingEvents=news.upcomingEvents.slice(0,1);changed=true;
+ }
+ if(riskHeadersOnly&&Array.isArray(news.recentRiskHeadlines)&&news.recentRiskHeadlines.some(row=>row.title!==undefined||row.url!==undefined)){
+  // Preserve timing and risk tags for every item. IDs, links and full text
+  // remain in the news view, which is needed for the final news review.
+  news.recentRiskHeadlines=news.recentRiskHeadlines.map(row=>{
+   const {id,title,url,firstSeenAt,ageSeconds,...header}=row;
+   if(header.fetchedAt&&header.fetchedAt===news.sources?.[header.source]?.fetchedAt)delete header.fetchedAt;
+   if(header.eventAt===null)delete header.eventAt;
+   if(header.relevant===true)delete header.relevant;
+   if(header.tradeDirection===null)delete header.tradeDirection;
+   if(header.causality==='NOT_PROVEN_BY_HEADLINE')delete header.causality;
+   if(header.untrustedContent===true)delete header.untrustedContent;
+   return header;
+  });
+  news.riskHeadlineDetails={view:'news',path:'newsContext.recentRiskHeadlines',count:news.recentRiskHeadlines.length,fullNewsRequiredForFinalReview:true,sourceFetchedAtDefault:'newsContext.sources[header.source].fetchedAt',headerDefaults:{eventAt:null,relevant:true,tradeDirection:null,causality:'NOT_PROVEN_BY_HEADLINE',untrustedContent:true}};
+  changed=true;
+ }
+ return changed;
+}
+
+return {compactNewsReferenceTransport,acceptClaimsReferenceRelay,cachedMacroReferences,macroReferenceReceipts,summarizeMacroReferences};
 })();
 // END GENERATED MACRO REFERENCES
 const NEWS_TRANSPORT_REVISION = "27.0.2";
@@ -7239,6 +7283,9 @@ function boundedMarketSnapshot(snapshot) {
     }
   }
   if(!fits()&&referenceRepeatedMarketEvidence(out))note("EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS");
+  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out))note("SOURCE_OPERATIONAL_DETAILS_IN_FULL_NEWS_VIEW");
+  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{calendarPreview:true}))note("FUTURE_CALENDAR_PREVIEW_FULL_LIST_IN_NEWS_VIEW");
+  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{riskHeadersOnly:true}))note("FULL_RISK_HEADLINE_TEXT_IN_NEWS_VIEW");
   if(!fits()){
     return {status:"error",build:snapshot.build,apiVersion:snapshot.apiVersion,generatedAt:snapshot.generatedAt,
       decisionState:"TRANSPORT_ERROR",error:{code:"MARKET_RESPONSE_BUDGET_EXCEEDED",retryable:true},

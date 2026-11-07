@@ -5,10 +5,10 @@ import {requestJson,cloudflareSnapshot,summarizeSample} from './diagnostics.mjs'
 
 export const PRIOR_BASELINE={
  build:'crypto-alpha-worker-v27.6.3-macro-r5g',
- deploymentId:'2b93bd12-0153-407f-9b90-eb8bd0490fd5',
+ deploymentId:'53126941-a9f4-49f4-823d-ec31d30f214a',
  namespaceFingerprint:'aedfbcd14cd1'
 };
-export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5h';
+export const R5_BUILD='crypto-alpha-worker-v27.6.3-macro-r5i';
 
 export function assessR5Preflight({manifest,sourceGitBlobSha,cloudflare,fast,status,now=Date.now()}){
  const ident=fast?.backendIdentity||{},scanId=status?.backendIdentity||{};

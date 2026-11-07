@@ -1,5 +1,6 @@
 import {stripMonitorExtensions} from './preservation-monitor.mjs';
 import assert from 'node:assert/strict';
+import {summarizeMacroReferences,MACRO_REFERENCE_REVISION} from '../ops/macro-reference-cache.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {fixture,market} from './v24-fixtures.mjs';
@@ -56,6 +57,41 @@ await test('all eight nonempty candidates retain every number, cost, target and 
     candidate:{submodel:row.submodel,direction:'LONG',entryZone:{min:2410+i,max:2412+i},stopLoss:2400,firstRealisticTarget:{price:2442+i,basis:'NEAREST_STRUCTURAL_OBSTACLE'},target:2442+i,netRR:2+i/10,
       estimatedRoundTripCostPct:0.15,costStressMultiplier:1.5,eventAt:m.generatedAt,expiresAt:m.generatedAt,routeEvidence:{frozen:true,observations:Array.from({length:20},(_,j)=>({candleAt:m.generatedAt,close:2410+j,protectedLow:2400+j,passed:true})),rationale:'Real structural evidence must remain intact. '.repeat(20)},openNowAllowed:false}}));
   preserve(m,project(current,m));
+});
+await test('actual shadow market with maximum recent risk list and six references fits the existing wire budget',()=>{
+  const m=JSON.parse(fs.readFileSync(new URL('tests/fixtures/market-shadow-20261106.json',root),'utf8'));
+  const ref=JSON.parse(fs.readFileSync(new URL('evidence/2026-11-06-macro-reference-candidate.json',root),'utf8')).live;
+  m.newsContext.macroReferences=summarizeMacroReferences({records:Object.fromEntries(ref.sources.map(s=>[s.id,{...s,revision:MACRO_REFERENCE_REVISION,lastAttemptAt:s.fetchedAt,lastSuccessAt:s.fetchedAt}]))},Date.parse(ref.checkedAt));
+  m.newsContext.recentRiskHeadlines=m.newsContext.headlines.map(s=>({...s,title:'风'.repeat(220),riskTags:['MACRO_EVENT_REVIEW','CENTRAL_BANK_POLICY_REVIEW','USD_YIELD_RISK_REVIEW']}));
+  m.newsContext.eventWindow=m.newsContext.upcomingEvents.slice(0,12);
+  const before=JSON.stringify(m);
+  const oldTransport=load(source.replace(/^  if\(!fits\(\)&&MacroReferences\.compactNewsReferenceTransport.*\n/gm,''));
+  const failed=project(oldTransport,m);
+  assert.equal(failed.error?.code,'MARKET_RESPONSE_BUDGET_EXCEEDED');
+  const out=project(current,m),news=out.newsContext;
+  assert.notEqual(out.decisionState,'TRANSPORT_ERROR',JSON.stringify(out.transportDiagnostics));
+  assert.ok(byteSize(out)<=90000);
+  assert.equal(out.transportDiagnostics.transferredUtf8Bytes,byteSize(out));
+  assert.equal(out.transportDiagnostics.modelAssessmentsTransferredInFull,true);
+  assert.equal(news.riskHeadlineDetails.fullNewsRequiredForFinalReview,true);
+  assert.equal(news.riskHeadlineDetails.view,'news');
+  assert.equal(news.recentRiskHeadlines.length,16);
+  for(let i=0;i<16;i++){
+    const actual=news.recentRiskHeadlines[i],original=m.newsContext.recentRiskHeadlines[i];
+    for(const k of ['source','publishedAt','riskTags','transportFresh'])assert.deepEqual(actual[k],original[k]);
+    assert.equal(actual.fetchedAt??news.sources[actual.source]?.fetchedAt,original.fetchedAt);
+  }
+  assert.deepEqual(news.eventWindow,m.newsContext.eventWindow);
+  assert.deepEqual(news.upcomingEvents[0],m.newsContext.upcomingEvents[0]);
+  assert.deepEqual(news.macroReferences.sources.map(s=>s.data),m.newsContext.macroReferences.sources.map(s=>s.data));
+  for(const [id,r] of Object.entries(m.newsContext.sources))for(const k of ['status','fetchedAt','latestPublishedAt','httpStatus','directHttpStatus','sourceProvenance','parserRevision'])assert.deepEqual(news.sources[id][k]??null,r[k]??null);
+  for(const symbol of ['ETHUSDT','BTCUSDT']){
+    assert.deepEqual(out.assets[symbol].ticker,m.assets[symbol].ticker);
+    for(const tf of ['15m','1h','4h'])for(const key of ['quality','coordinator','indicators','levels'])assert.deepEqual(out.assets[symbol].timeframes[tf][key],m.assets[symbol].timeframes[tf][key]);
+  }
+  assert.deepEqual(out.assets.ETHUSDT.opportunityEngine.models,m.assets.ETHUSDT.opportunityEngine.models);
+  assert.equal(JSON.stringify(m),before);
+  sizes.push({originalUtf8Bytes:byteSize(m),previousAttemptedUtf8Bytes:failed.transportDiagnostics.attemptedCompactedUtf8Bytes,transferredUtf8Bytes:byteSize(out),reductions:out.transportDiagnostics.omitted});
 });
 await test('same-response duplicate references resolve to the exact original object',()=>{
   const m=connected(full()),out=project(current,m),read=(o,p)=>p.split('.').reduce((v,k)=>v?.[k],o);

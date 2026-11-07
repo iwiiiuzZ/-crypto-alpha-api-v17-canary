@@ -33,7 +33,7 @@ if(fs.existsSync(baselineUrl)){
   process.exit(0);
  }
 }
-if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5h'){
+if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5i'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
  const secrets=await requestJson(fetch,'https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/'+encodeURIComponent(config.worker)+'/secrets',{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN});
@@ -43,6 +43,6 @@ if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r4'){
  const preflight=spawnSync(process.execPath,[new URL('./r4-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
 }
-const result=withDispatchSecretFile(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5h'?process.env.GITHUB_ACTIONS_DISPATCH_TOKEN:null,file=>
+const result=withDispatchSecretFile(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5i'?process.env.GITHUB_ACTIONS_DISPATCH_TOKEN:null,file=>
  spawnSync(process.execPath,[wranglerCLI(),'deploy','--config','wrangler.jsonc','--keep-vars',...(file?['--secrets-file',file]:[])],{cwd:root,stdio:'inherit',env:{...process.env,CLOUDFLARE_ACCOUNT_ID:config.accountId,CI:'true'}}));
 process.exitCode=result.status===0?0:(result.status||1);

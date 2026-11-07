@@ -1,0 +1,80 @@
+{
+  "scope": "READ_ONLY_RESPONSE_BUDGET_DIAGNOSIS",
+  "generatedAt": "2026-11-06T11:44:26.767Z",
+  "httpStatus": 503,
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5g",
+  "error": {
+    "code": "MARKET_RESPONSE_BUDGET_EXCEEDED",
+    "retryable": true
+  },
+  "bytes": 2323,
+  "transportDiagnostics": {
+    "responseMode": "BOUNDED_MARKET_V27_1_2",
+    "originalCharacters": 131257,
+    "originalUtf8Bytes": 132083,
+    "maximumUtf8Bytes": 90000,
+    "backgroundCalculation": "FULL_SNAPSHOT_UNCHANGED",
+    "compacted": true,
+    "omitted": [
+      "OVERSIZED_ANALYSIS_NOT_TRANSFERRED"
+    ],
+    "references": {
+      "assets.BTCUSDT.liquidityRisk.realizedLiquidationRisk": "assets.BTCUSDT.liquidationRiskProxy",
+      "assets.ETHUSDT.liquidityRisk.realizedLiquidationRisk": "assets.ETHUSDT.liquidationRiskProxy",
+      "assets.BTCUSDT.dataGaps": "assets.ETHUSDT.dataGaps"
+    },
+    "previewLimits": {
+      "assets.BTCUSDT.timeframes.15m.recentCandles": {
+        "available": 24,
+        "returned": 0
+      },
+      "assets.BTCUSDT.timeframes.1h.recentCandles": {
+        "available": 24,
+        "returned": 0
+      },
+      "assets.BTCUSDT.timeframes.4h.recentCandles": {
+        "available": 24,
+        "returned": 0
+      },
+      "assets.ETHUSDT.timeframes.15m.recentCandles": {
+        "available": 24,
+        "returned": 4
+      },
+      "assets.ETHUSDT.timeframes.1h.recentCandles": {
+        "available": 24,
+        "returned": 4
+      },
+      "assets.ETHUSDT.timeframes.4h.recentCandles": {
+        "available": 24,
+        "returned": 4
+      }
+    },
+    "referenceSemantics": "sameAs is a path to the exact equivalent value in this response",
+    "decisionAnalysisTransferred": false,
+    "rawSnapshotTransferredInFull": false,
+    "modelAssessmentsTransferredInFull": false,
+    "attemptedCompactedUtf8Bytes": 93042,
+    "attemptedSectionUtf8Bytes": {
+      "newsContext": 17805,
+      "analysisContract": 2724,
+      "assets": {
+        "ETHUSDT": {
+          "timeframes": 8424,
+          "opportunityEngine": 4281,
+          "crossVenueLiquidity": 7734,
+          "publicOrderflow": 3206,
+          "capitalFlow": 4509,
+          "liquidityRisk": 2073
+        },
+        "BTCUSDT": {
+          "timeframes": 7073,
+          "opportunityEngine": 0,
+          "crossVenueLiquidity": 0,
+          "publicOrderflow": 0,
+          "capitalFlow": 4509,
+          "liquidityRisk": 2064
+        }
+      }
+    }
+  }
+}

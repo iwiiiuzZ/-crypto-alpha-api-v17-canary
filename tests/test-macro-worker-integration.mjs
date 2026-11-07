@@ -8,9 +8,10 @@ const raw=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 execFileSync(process.execPath,[new URL('../ops/embed-macro-reference.mjs',import.meta.url).pathname,'--check']);
 let restored=raw.replace(/\/\/ BEGIN GENERATED MACRO REFERENCES[\s\S]*?\/\/ END GENERATED MACRO REFERENCES\n/,'');
 const reverse=[
+ ['  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out))note("SOURCE_OPERATIONAL_DETAILS_IN_FULL_NEWS_VIEW");\n  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{calendarPreview:true}))note("FUTURE_CALENDAR_PREVIEW_FULL_LIST_IN_NEWS_VIEW");\n  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{riskHeadersOnly:true}))note("FULL_RISK_HEADLINE_TEXT_IN_NEWS_VIEW");\n',''],
  ["  if(payload?.references!==undefined)return MacroReferences.acceptClaimsReferenceRelay(payload,env,{get:scannerStateGet,put:scannerStatePut});\n",''],
- ['const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5h";','const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5g";'],
- ['const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5h-20261106";','const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5g-20261101";'],
+ ['const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5i";','const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5g";'],
+ ['const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5i-20261106";','const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5g-20261101";'],
  ['function newsContextSummary(records,now=Date.now(),macroReferences=null) {','function newsContextSummary(records,now=Date.now()) {'],
  ['    treasuryDaily,macroReferences,headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),','    treasuryDaily,headlines,recentRiskHeadlines:recent.filter(i=>i.riskTags.length),'],
  ['    await owner.ctx.storage.put(NEWS_STATE_KEY,{records});\n    const macroReferences=await MacroReferences.cachedMacroReferences(owner);\n    return newsContextSummary(records,Date.now(),macroReferences);','    await owner.ctx.storage.put(NEWS_STATE_KEY,{records});return newsContextSummary(records);'],
@@ -33,7 +34,7 @@ for(const available of [true,false]){
 }
 console.log(JSON.stringify({passed:true,scope:'REAL_WORKER_FUNCTIONS_ISOLATED_MARKET_FIXTURES',originalGCoreReconstructionBlob:blob,sourceEmbeddingMatches:true,consumptionAndFailuresVerified:true,responseBudgetVerified:true}));
 
-const auditNow=Date.now(),stamp=new Date(auditNow-1000).toISOString(),build='crypto-alpha-worker-v27.6.3-macro-r5h';
+const auditNow=Date.now(),stamp=new Date(auditNow-1000).toISOString(),build='crypto-alpha-worker-v27.6.3-macro-r5i';
 const context={sources:ids.map(id=>({id,status:'ok',fetchedAt:stamp,transport:'DIRECT'}))};
 const status={backendIdentity:{matched:true,frontendBuild:build,stateOwnerBuild:build},diagnostics:{macroReferenceReceipts:{consumedAt:new Date(auditNow).toISOString(),sources:ids.map(source=>({source,status:'ok',fetchedAt:stamp,transport:'DIRECT'}))}}};
 assert.equal(reconcileMacroReferences(context,status,{now:auditNow,build}).passed,true);

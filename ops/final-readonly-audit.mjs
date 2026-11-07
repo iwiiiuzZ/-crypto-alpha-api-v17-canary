@@ -11,7 +11,7 @@ const errors=[],evidence={scope:'READ_ONLY_CURRENT_RUNTIME_AND_BOUNDED_STATUS_HI
 let market,news,status,fast,schema;
 for(const [name,route,headers] of [['market','/?view=market',{}],['news','/?view=news',{}],['status','/scanner/status',{authorization:'Bearer '+scanner}],['fast','/?view=fast',{}],['schema','/openapi.json',{}]]){
  try{const body=await requestJson(fetch,config.origin+route,headers);if(name==='market')market=body;if(name==='news')news=body;if(name==='status')status=body;if(name==='fast')fast=body;if(name==='schema')schema=body;}
- catch(e){errors.push({view:name,error:e.code||'READ_FAILED',reason:e.reason||null});}
+ catch(e){errors.push({view:name,error:e.code||'READ_FAILED',reason:e.reason||null,...(e.responseBudget?{responseBudget:e.responseBudget}:{})});}
 }
 evidence.context=summarizeReadContext(market,news);
 evidence.candidateChain=summarizeCandidateChain(status);
@@ -24,7 +24,10 @@ if(schema)try{
 }catch{errors.push({view:'schema',error:'LIVE_SCHEMA_DIFFERS_FROM_TESTED_SOURCE'});}
 const models=evidence.context.models.map(m=>m.model).sort();
 const identity=sample.identity;
+const transport=market?.transportDiagnostics;
+const marketBytes=market?Buffer.byteLength(JSON.stringify(market)):null;
 evidence.gates={allReadsSucceeded:errors.length===0,
+ marketResponseBudget:transport?.maximumUtf8Bytes===90000&&transport.modelAssessmentsTransferredInFull===true&&marketBytes<=90000&&transport.transferredUtf8Bytes===marketBytes,
  sourceSchemaMatches:schemaMatches,
  frontendOwnerIdentity:sample.build===R5_BUILD&&identity.frontendBuild===R5_BUILD&&identity.stateOwnerBuild===R5_BUILD&&identity.matched&&identity.stateOwnerContract===config.stateContract,
  sixRequiredStructureSeries:evidence.context.structure.length===6&&evidence.context.structure.every(r=>r.status==='ok'&&r.qualityPassed&&!!r.newestClosedAt&&!!r.expectedClosedAt&&r.newestClosedAt===r.expectedClosedAt&&Number.isFinite(r.collectionAgeSeconds)&&r.collectionAgeSeconds>=-2&&r.collectionAgeSeconds<=({'15m':180,'1h':420,'4h':660})[r.timeframe]),
