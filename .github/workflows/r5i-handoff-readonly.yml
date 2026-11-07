@@ -1,0 +1,81 @@
+name: R5I handoff read-only evidence
+on:
+  push:
+    branches: [ops/r5i-handoff-readonly-20261107]
+    paths: [.github/workflows/r5i-handoff-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Read existing production state and summarize forward research
+        env:
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {setTimeout as delay} from 'node:timers/promises';
+          import {requestJson, summarizeSample, assessNewsReceiptCoverage, cloudflareSnapshot, safeOutput} from './ops/diagnostics.mjs';
+          import {reconcileMacroReferences} from './ops/macro-reference-consumption-check.mjs';
+          const config=JSON.parse(fs.readFileSync('ops/config.json','utf8'));
+          const baseline=JSON.parse(fs.readFileSync('ops/production-baseline.json','utf8'));
+          const scanner=process.env.SCANNER_TOKEN,token=process.env.CLOUDFLARE_API_TOKEN;
+          if(!scanner||!token)throw new Error('READ_ONLY_CREDENTIALS_NOT_AVAILABLE');
+          const allowedCode=x=>typeof x==='string'&&/^[A-Za-z0-9_/:-]{1,120}$/.test(x)?x:null;
+          const stamp=x=>typeof x==='string'&&Number.isFinite(Date.parse(x))?new Date(x).toISOString():null;
+          const count=x=>Number.isSafeInteger(x)&&x>=0?x:null;
+          const finite=x=>typeof x==='number'&&Number.isFinite(x)?x:null;
+          const captureStudy=r=>{
+           if(!r||typeof r!=='object')return {returned:false};
+           const horizons=Object.fromEntries(['INTRADAY','SWING','UNKNOWN'].filter(k=>r.byHoldingHorizon?.[k]).map(k=>{
+            const x=r.byHoldingHorizon[k];
+            return [k,{resolved:count(x.resolved),meanNetR:finite(x.meanNetR),sampleWinRate:finite(x.winRate)}];
+           }));
+           return {returned:true,scope:allowedCode(r.scope),status:allowedCode(r.status),build:allowedCode(r.build),retained:count(r.retainedRecords),
+             active:count(r.active),resolved:count(r.resolved),unresolved:count(r.unknown),minimumReviewSample:count(r.minimumReviewSample),
+             sampleWinRate:finite(r.sampleWinRate),meanNetR:finite(r.meanNetR),sufficientForPerformanceClaim:r.sufficientForPerformanceClaim===true,
+             horizons,accountFillsVerified:false};
+          };
+          const recordSource=s=>s?{status:allowedCode(s.status),reason:allowedCode(s.reason),failureStage:allowedCode(s.failureStage),httpStatus:count(s.httpStatus),
+           fetchedAt:stamp(s.fetchedAt),lastAttemptAt:stamp(s.lastAttemptAt),retryAt:stamp(s.nextAttemptAt),cacheState:allowedCode(s.cacheState)}:null;
+          const auth={authorization:'Bearer '+scanner};
+          const before=await cloudflareSnapshot(fetch,config,token);
+          const samples=[];
+          const began=Date.now();
+          for(const offset of [0,25000,85000]){
+           await delay(Math.max(0,began+offset-Date.now()));
+           const [fast,status]=await Promise.all([
+            requestJson(fetch,config.origin+'/?view=fast'),requestJson(fetch,config.origin+'/scanner/status',auth)
+           ]);
+           const sample=summarizeSample(fast,status);
+           samples.push({readAt:sample.readAt,identity:sample.identity,apiVersion:sample.apiVersion,quote:sample.health,
+             lastSuccessfulCycleAt:sample.scanner.lastSuccessfulCycleAt,newestCompleteReview:sample.receipts.find(r=>r.status==='completed'&&r.inspectedModels===8&&r.modelDataReady)||null,
+             stateReadSucceeded:sample.scanner.stateReadSucceeded,coverage:assessNewsReceiptCoverage(sample),jin10:recordSource(status.discovery?.newsStatus?.sources?.JIN10),
+             candidateChain:sample.candidateChain,notifications:sample.notifications,forwardStudy:captureStudy(status.discovery?.forwardStudy)});
+          }
+          const news=await requestJson(fetch,config.origin+'/?view=news');
+          const afterStatus=await requestJson(fetch,config.origin+'/scanner/status',auth);
+          const after=await cloudflareSnapshot(fetch,config,token);
+          const identityMatches=before.deploymentId===baseline.deploymentId&&after.deploymentId===before.deploymentId&&after.bindingMatches===true&&after.singleVersion===true&&
+           after.versions?.[0]?.id===baseline.versionId&&after.versions[0].percentage===100&&samples.every(s=>s.identity.matched&&s.identity.frontendBuild===baseline.build&&s.identity.stateOwnerBuild===baseline.build&&s.apiVersion===baseline.apiVersion&&s.stateReadSucceeded);
+          const evidence={scope:'READ_ONLY_HANDOFF_EVIDENCE',generatedAt:new Date().toISOString(),identityMatches,baselineBuild:baseline.build,before,after,samples,
+           publicNewsReadAfterWindow:{jin10:recordSource(news.newsContext?.sources?.JIN10),macro:reconcileMacroReferences(news.newsContext?.macroReferences,afterStatus,{build:baseline.build})},
+           preparedNotificationDeviceDeliveryVerified:false,gptEditorSavedContentVerified:false,realStrategyProfitabilityVerified:false};
+          const serialized=safeOutput(evidence,[scanner,token]);
+          fs.writeFileSync('r5i-handoff-readonly-evidence.json',serialized);
+          console.log(serialized);
+          if(!identityMatches)process.exitCode=1;
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R5I_HANDOFF_READONLY_EVIDENCE
+          path: r5i-handoff-readonly-evidence.json
+          retention-days: 30
