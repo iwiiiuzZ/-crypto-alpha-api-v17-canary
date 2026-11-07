@@ -1,11 +1,11 @@
 {
   "approved": true,
   "purpose": "R5_STABLE_PRODUCTION_RELEASE",
-  "reviewedCommit": "3660dbab16fb4e4206db9c57d9918c537070431a",
-  "sourceGitBlobSha": "b2f7b328c0a62a6089d147fef7422078974bd407",
-  "build": "crypto-alpha-worker-v27.6.3-macro-r5h",
-  "priorDeploymentId": "2b93bd12-0153-407f-9b90-eb8bd0490fd5",
+  "reviewedCommit": "7a96ddedf75fdbae4ac57e3687533968e222e0bd",
+  "sourceGitBlobSha": "c8ffcd07d8ea4d1a21331f5aa18e7ce08dd77f49",
+  "build": "crypto-alpha-worker-v27.6.3-macro-r5i",
+  "priorDeploymentId": "53126941-a9f4-49f4-823d-ec31d30f214a",
   "rollbackOnFailure": true,
   "noOrderExecution": true,
-  "notes": "Continue authorized macro reference completion. Exact existing G after scanner-secret rotation is the restore target. All63 isolated/native suites passed locally including authenticated claims relay, direct520 fallback, durable cache and scanner receipts; whole original G core hash reconstruction passes outside explicit reference plumbing. Six references only: DOL/FRED weekly claims via authenticated original-content relay, two issuer daily holdings, two OKX option OI snapshots. DXY remains unavailable by user confirmation, no paid dependency, no substitute index, no new trade/notification gates, no test push or order. Controlled deployment requires identity convergence, original12 news receipts, six fresh reference consumption, full readonly audit,10-minute runtime window and25-minute two spaced automatic relay renewals; guarded exact-identity rollback on failure. Natural prepared/device and profitability evidence remain separate."
+  "notes": "Resume the authorized release after observed market wire-budget failure and exact rollback. G also exceeded 90000 bytes under live load. Keep the existing limit, full eight-model output, all structures, six numerical references, current events and timing/risk summaries. Full operational diagnostics, future calendar and headline text are available through the existing news view. Regression replays the sanitized production shadow shape with 16 multibyte risk headlines and 12 events. All 63 local suites passed including 8 native suites. Require two complete market audits, six reference consumption gates and both production windows. Restore the exact prior G version on failure. DXY unavailable; no paid source, order or test push."
 }
