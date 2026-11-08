@@ -3,10 +3,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {fixture} from './v24-fixtures.mjs';
 const raw=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 execFileSync(process.execPath,[new URL('../ops/embed-macro-reference.mjs',import.meta.url).pathname,'--check']);
-let restored=raw.replace(/\/\/ BEGIN GENERATED MACRO REFERENCES[\s\S]*?\/\/ END GENERATED MACRO REFERENCES\n/,'');
+// First reverse the exact, reviewed desk diff and verify the immutable R5i source.
+const scratch=fs.mkdtempSync(join(tmpdir(),'alpha-desk-macro-'));
+let r5i;
+try {
+ fs.writeFileSync(join(scratch,'main-v188.js'),raw);
+ execFileSync('git',['apply','--reverse',fileURLToPath(new URL('./baselines/desk-dual-r1.patch',import.meta.url))],{cwd:scratch});
+ r5i=fs.readFileSync(join(scratch,'main-v188.js'),'utf8');
+} finally { fs.rmSync(scratch,{recursive:true,force:true}); }
+const r5iBytes=Buffer.from(r5i);
+assert.equal(createHash('sha1').update(Buffer.from('blob '+r5iBytes.length+'\0')).update(r5iBytes).digest('hex'),'c8ffcd07d8ea4d1a21331f5aa18e7ce08dd77f49');
+let restored=r5i.replace(/\/\/ BEGIN GENERATED MACRO REFERENCES[\s\S]*?\/\/ END GENERATED MACRO REFERENCES\n/,'');
 const reverse=[
  ['  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out))note("SOURCE_OPERATIONAL_DETAILS_IN_FULL_NEWS_VIEW");\n  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{calendarPreview:true}))note("FUTURE_CALENDAR_PREVIEW_FULL_LIST_IN_NEWS_VIEW");\n  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{riskHeadersOnly:true}))note("FULL_RISK_HEADLINE_TEXT_IN_NEWS_VIEW");\n',''],
  ["  if(payload?.references!==undefined)return MacroReferences.acceptClaimsReferenceRelay(payload,env,{get:scannerStateGet,put:scannerStatePut});\n",''],
