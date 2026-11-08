@@ -21,7 +21,7 @@ const deskCandidate=manifest.build===DESK_BUILD;
 const deskDispatch=deskCandidate&&isAuthorizedDeskDispatch();
 if(deskCandidate&&!deskDispatch){console.log(JSON.stringify({status:'DESK_PREVIEW_NO_PRODUCTION_MUTATION',build:manifest.build}));process.exit(0);}
 if(manifest.status==='CANDIDATE_NOT_DEPLOYED'&&process.env.CRYPTO_ALPHA_CONTROLLED_RELEASE!=='1'&&!deskDispatch){console.log(JSON.stringify({status:'CANDIDATE_PREVIEW_NO_PRODUCTION_MUTATION',build:manifest.build}));process.exit(0);}
-const baselineUrl=new URL('./production-baseline.json',import.meta.url);
+const baselineUrl=new URL(deskCandidate?'./desk-production-baseline.json':'./production-baseline.json',import.meta.url);
 if(fs.existsSync(baselineUrl)){
  const baseline=JSON.parse(fs.readFileSync(baselineUrl,'utf8'));
  if(baseline.build===manifest.build){
@@ -37,7 +37,15 @@ if(fs.existsSync(baselineUrl)){
   process.exit(0);
  }
 }
-if(deskDispatch)await deskPreflight(config,JSON.parse(fs.readFileSync(baselineUrl,'utf8')));
+if(deskDispatch){
+ const bytes=fs.readFileSync(new URL('../main-v188.js',import.meta.url));
+ const blob=createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex');
+ const workerConfig=createHash('sha256').update(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url))).digest('hex');
+ if(blob!==manifest.sourceGitBlobSha||workerConfig!==manifest.wranglerSha256)throw Error('DESK_REVIEWED_SOURCE_OR_CONFIG_MISMATCH');
+ const baseline=JSON.parse(fs.readFileSync(baselineUrl,'utf8'));
+ if(baseline.build!==manifest.priorLiveBuild)throw Error('DESK_PRIOR_BUILD_MISMATCH');
+ await deskPreflight(config,baseline);
+}
 if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5i'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
