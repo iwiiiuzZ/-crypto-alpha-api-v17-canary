@@ -10,11 +10,16 @@ const BLS_FEEDS=Object.freeze([
  {id:'BLS_EMPLOYMENT',url:'https://www.bls.gov/feed/empsit.rss'},
  {id:'BLS_CALENDAR',url:'https://www.bls.gov/schedule/news_release/bls.ics'}
 ]);
-const DESK_RELAY_BUILDS = ["crypto-alpha-worker-v27.6.3-desk-dual-r1", "crypto-alpha-worker-v27.6.3-desk-dual-r2"];
+const DESK_RELAY_BUILDS = [
+ "crypto-alpha-worker-v27.6.3-desk-dual-r1",
+ "crypto-alpha-worker-v27.6.3-desk-dual-r2",
+ "crypto-alpha-worker-v27.6.3-desk-dual-r3",
+];
 export function reviewedRelayTarget(expected, actual) {
  if (/^crypto-alpha-worker-v27\.6\.3-macro-r5[a-z]?$/.test(expected||'')) return actual===expected;
- if (expected!==DESK_RELAY_BUILDS[1]) throw Error('EXACT_RELAY_BUILD_REQUIRED');
- return DESK_RELAY_BUILDS.includes(actual);
+ const release = DESK_RELAY_BUILDS.indexOf(expected);
+ if (release < 1) throw Error('EXACT_RELAY_BUILD_REQUIRED');
+ return actual === expected || actual === DESK_RELAY_BUILDS[release - 1];
 }
 export function validOfficialBlSResponse({url,text,contentType,source}){
  const u=new URL(url),correct=u.protocol==='https:'&&u.hostname==='www.bls.gov'&&u.username===''&&u.password==='';
