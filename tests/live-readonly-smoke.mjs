@@ -3,8 +3,9 @@
 // NEVER requests full snapshot or scanner cycles,
 // and never accesses plan, test-push or other authenticated/mutating endpoints.
 import fs from 'node:fs';
+import { DESK_BUILD } from '../ops/desk-release.mjs';
 const manifest=JSON.parse(fs.readFileSync(new URL('../ops/release-manifest.json',import.meta.url),'utf8'));
-const desk=manifest.build==='crypto-alpha-worker-v27.6.3-desk-dual-r2';
+const desk=manifest.build===DESK_BUILD;
 const baseline=JSON.parse(fs.readFileSync(new URL(desk?'../ops/desk-production-baseline.json':'../ops/production-baseline.json',import.meta.url),'utf8'));
 if(desk&&baseline.build!==manifest.priorLiveBuild)throw Error('PINNED_PRIOR_DESK_BUILD_MISMATCH');
 const allowedBuild=build=>build===baseline.build||(desk&&build===manifest.build);

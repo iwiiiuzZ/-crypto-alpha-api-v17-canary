@@ -16,6 +16,10 @@ const reviewedDesk='crypto-alpha-worker-v27.6.3-desk-dual-r2', priorDesk='crypto
 assert.equal(reviewedRelayTarget(reviewedDesk,reviewedDesk),true);
 assert.equal(reviewedRelayTarget(reviewedDesk,priorDesk),true);
 assert.equal(reviewedRelayTarget(reviewedDesk,'crypto-alpha-worker-v27.6.3-desk-dual-r3'),false);
+const nextDesk='crypto-alpha-worker-v27.6.3-desk-dual-r3';
+assert.equal(reviewedRelayTarget(nextDesk,nextDesk),true);
+assert.equal(reviewedRelayTarget(nextDesk,reviewedDesk),true);
+assert.equal(reviewedRelayTarget(nextDesk,priorDesk),false);
 assert.equal(reviewedRelayTarget('crypto-alpha-worker-v27.6.3-macro-r5i',priorDesk),false);
 assert.throws(()=>reviewedRelayTarget('unreviewed',priorDesk),/EXACT_RELAY_BUILD_REQUIRED/);
 assert.equal(scannerAuthorized(new Request('https://worker.test',{headers:{authorization:'Bearer accepted'}}),{SCANNER_TOKEN:'accepted'}),true);

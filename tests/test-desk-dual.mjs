@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { market } from "./v24-fixtures.mjs";
+import { runInContext } from "node:vm";
+import { fixture, market } from "./v24-fixtures.mjs";
 
 const source = await readFile(new URL("../main-v188.js", import.meta.url), "utf8");
 const moduleSource = source + "\nexport {AlphaDeskDecision,AlphaDeskBridge,buildDeskOpportunityScan,discoverRangeReversalBase};";
@@ -53,6 +54,55 @@ assert.equal(result.assets.ETH.models.length, 8);
 assert.equal(result.assets.BTC.closedBarAt, closedBarAt);
 assert.equal(result.assets.BTC.liquidity.passed, true);
 assert.equal(result.best.asset, "BTC");
+
+// Exercise the production shared scan, including a concurrent ETH recheck.
+const deskFixture = fixture();
+deskFixture.advance(now - deskFixture.now());
+const runtimeSnapshot = structuredClone(snapshot);
+runtimeSnapshot.assets.ETHUSDT.crossVenueLiquidity.checkedAt = iso(now - 60000);
+const ethStarted = Promise.withResolvers(), releaseEth = Promise.withResolvers();
+const sampledSymbols = [], fallbackSymbols = [];
+let ethUnavailable = false;
+deskFixture.c.deskSnapshot = async () => structuredClone(runtimeSnapshot);
+deskFixture.c.deskModels = asset => asset.opportunityEngine;
+deskFixture.c.deskLiquidity = async (_owner, _publicOwner, _modules, symbol) => {
+  sampledSymbols.push(symbol);
+  if (symbol === "ETH") {
+    ethStarted.resolve();
+    await releaseEth.promise;
+    if (ethUnavailable) throw Error("TEST_ETH_LIQUIDITY_OUTAGE");
+  }
+  return { ...runtimeSnapshot.assets[symbol + "USDT"].crossVenueLiquidity, checkedAt: iso(now), executionQuote: quote(now) };
+};
+deskFixture.c.deskFallback = async (_owner, symbol) => {
+  fallbackSymbols.push(symbol);
+  return quote(now);
+};
+const runtime = runInContext(`
+  buildSnapshot = deskSnapshot;
+  buildDeskOpportunityScan = deskModels;
+  sampleCrossVenueLiquidity = deskLiquidity;
+  deskDirectQuote = deskFallback;
+  ({ scan: sharedDeskAnalysis, collect: collectCrossVenueLiquidity });
+`, deskFixture.c);
+const runtimeOwner = { ctx: {}, env: {} };
+const scan = runtime.scan(runtimeOwner, true);
+await ethStarted.promise;
+const concurrentRecheck = runtime.collect(runtimeOwner, {});
+releaseEth.resolve();
+const [refreshed, ethRecheck] = await Promise.all([scan, concurrentRecheck]);
+assert.deepEqual(sampledSymbols.sort(), ["BTC", "ETH"], "concurrent ETH readers share one fresh collection");
+assert.deepEqual(fallbackSymbols, [], "fresh two-venue reports provide the execution quotes");
+assert.equal(refreshed.assets.BTC.liquidity.checkedAt, iso(now));
+assert.equal(refreshed.assets.ETH.liquidity.checkedAt, ethRecheck.checkedAt);
+assert.equal(refreshed.assets.ETH.liquidity.passed, true, "the scan must replace the expired ETH cache");
+ethUnavailable = true;
+const unavailable = await runtime.scan(runtimeOwner, true);
+assert.deepEqual(fallbackSymbols, ["ETH"]);
+assert.equal(unavailable.assets.ETH.quote.ready, true);
+assert.equal(unavailable.assets.ETH.liquidity.passed, false, "a current OKX quote cannot replace an unavailable cross-venue review");
+assert.equal(unavailable.assets.ETH.liquidity.reason, "LIQUIDITY_RECHECK_FAILED");
+
 snapshot.assets.ETHUSDT = asset("ETH", 118);
 result = deskAnalysis(snapshot, { origin: "shared-worker", monitor: true, now });
 assert.equal(result.best.asset, "ETH");

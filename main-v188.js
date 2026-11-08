@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r2";
+const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r3";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -423,9 +423,13 @@ function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(
  report.limitations=["SAMPLED_L2_NOT_IDENTIFIABLE_ORDERS","MISSING_TRADE_OVERLAP_PREVENTS_CANCEL_FILL_ATTRIBUTION","NO_WALL_IS_A_GUARANTEED_SUPPORT","VISIBLE_DEPTH_AND_CONNECTED_VENUES_ONLY"];
  return {report,state};
 }
-async function collectCrossVenueLiquidity(owner,modules,base="ETH"){
- const publicOwner=owner;
- if(base==="BTC")owner=owner.deskBtcLiquidityOwner ||= {ctx:owner.ctx};
+async function collectCrossVenueLiquidity(publicOwner, modules, base = "ETH") {
+ const owner = base === "BTC" ? (publicOwner.deskBtcLiquidityOwner ||= {ctx:publicOwner.ctx}) : publicOwner;
+ if (owner.liquidityCollection) return owner.liquidityCollection;
+ owner.liquidityCollection = sampleCrossVenueLiquidity(owner, publicOwner, modules, base);
+ try { return await owner.liquidityCollection; } finally { owner.liquidityCollection = null; }
+}
+async function sampleCrossVenueLiquidity(owner,publicOwner,modules,base){
  const storageKey=base==="ETH"?LIQUIDITY_STATE_KEY:LIQUIDITY_STATE_KEY+":BTC";
  owner.liquidityReady ||= (async()=>{owner.liquidityPersistent=await owner.ctx.storage.get(storageKey)||{metadata:{},cooldowns:{},tracking:{}};owner.liquidityPersistent.metadata ||= {};owner.liquidityPersistent.cooldowns ||= {};owner.liquidityCache=new Map(Object.entries(owner.liquidityPersistent.metadata));})();await owner.liquidityReady;
  const defs=liquidityFeedDefinitions(base);
@@ -8018,14 +8022,16 @@ async function sharedDeskAnalysis(owner, force = false) {
     const env=fastLocalEnvironment(owner);
     const snapshot=await buildSnapshot({env,scannerMode:true,coinalyzeApiKey:env.COINALYZE_API_KEY});
     const btc=snapshot.assets.BTCUSDT,eth=snapshot.assets.ETHUSDT;
-    const [liquidity,ethQuote]=await Promise.all([
+    const [btcLiquidity,ethLiquidity]=await Promise.all([
       collectCrossVenueLiquidity(owner, {}, "BTC").catch(()=>null),
-      deskDirectQuote(owner,"ETH").catch(()=>null),
+      collectCrossVenueLiquidity(owner, {}, "ETH").catch(()=>null),
     ]);
-    btc.crossVenueLiquidity=liquidity||{status:"unavailable",arrivalRecheck:{passed:false}};
-    if(liquidity?.executionQuote&&genuineExecutionQuote(liquidity.executionQuote))btc.ticker=liquidity.executionQuote;
-    else {const quote=await deskDirectQuote(owner,"BTC").catch(()=>null);if(quote)btc.ticker=quote;}
-    if(ethQuote)eth.ticker=ethQuote;
+    await Promise.all([[btc,"BTC",btcLiquidity],[eth,"ETH",ethLiquidity]].map(async ([asset,symbol,liquidity])=>{
+      asset.crossVenueLiquidity=liquidity||{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}};
+      const sampled=liquidity?.executionQuote;
+      const quote=sampled&&genuineExecutionQuote(sampled)?sampled:await deskDirectQuote(owner,symbol).catch(()=>null);
+      if(quote)asset.ticker=quote;
+    }));
     btc.holdingProfile={...HOLDING_PROFILE,minimumFirstTargetMoveUsd:0};
     btc.opportunityEngine=buildDeskOpportunityScan(btc,null);
     eth.opportunityEngine=buildDeskOpportunityScan(eth,btc);
