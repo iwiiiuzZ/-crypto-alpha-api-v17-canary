@@ -1,0 +1,721 @@
+--- a/main-v188.js
++++ b/main-v188.js
+@@ -1,4 +1,4 @@
+-const BUILD = "crypto-alpha-worker-v27.6.3-macro-r5i";
++const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r1";
+ const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
+ const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
+ const API_VERSION = "7.6.0";
+@@ -67,8 +67,11 @@
+     && (!ticker.lastTradeTimestamp || usableTimestamp(Date.parse(ticker.lastTradeTimestamp),maximumSeconds))
+     && (!ticker.bookTimestamp || usableTimestamp(Date.parse(ticker.bookTimestamp),maximumSeconds));
+ }
+-function orderflowPaths() {
+-  return ["/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP", "/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500", "/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400"];
++function orderflowPaths(base = "ETH") {
++  const id = ASSETS[base + "USDT"].instrumentId;
++  return ["/api/v5/public/instruments?instType=SWAP&instId=" + id,
++    "/api/v5/market/trades?instId=" + id + "&limit=500",
++    "/api/v5/market/books?instId=" + id + "&sz=400"];
+ }
+ function publicMarketDefinitions() {
+   return [
+@@ -99,7 +102,7 @@
+     const state=owner.publicRecords, old=state.entries[path], family=cooldownKey(OKX_BASE+path);
+     const age=old?(Date.now()-old.storedAt)/1000:Infinity;
+     if(old && !force && age>=0 && age<=policy.freshSeconds){
+-      const flowPaths=orderflowPaths(),tradeFlow=path===flowPaths[1],bookFlow=path===flowPaths[2]||path==="/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400";
++      const tradeFlow=/market\/trades\?instId=(ETH|BTC)-USDT-SWAP&limit=500$/.test(path),bookFlow=/market\/books(?:-full)?\?instId=(ETH|BTC)-USDT-SWAP&sz=400$/.test(path);
+       const exchangeAt=tradeFlow?Math.max(...(old.rows||[]).map(r=>Number(r.ts))):bookFlow?Number(old.rows?.[0]?.ts):null;
+       // Collection age alone is insufficient: a cached response can already
+       // contain older exchange trades. Reserve room for the next delayed tick.
+@@ -143,12 +146,12 @@
+ // never clear the primary circuit, rotate hosts, or accept an aged snapshot.
+ async function coordinatedOrderflowEndpoint(owner,path,policy,force=false) {
+   const primary=await coordinatedPublicEndpoint(owner,path,policy,force);
+-  if(path!==orderflowPaths()[2])return primary;
++  if(!["ETH","BTC"].some(base=>path===orderflowPaths(base)[2]))return primary;
+   const valid=item=>!item?.error&&["live","shared-fresh-cache"].includes(item?.state)
+     &&usableTimestamp(item.rows?.[0]?.ts,10)&&Number(item.rows[0].bids?.[0]?.[0])>0
+     &&Number(item.rows[0].asks?.[0]?.[0])>0&&Number(item.rows[0].bids[0][0])<=Number(item.rows[0].asks[0][0]);
+   if(valid(primary))return primary;
+-  const fallbackPath="/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400";
++  const fallbackPath=path.replace("/market/books?", "/market/books-full?");
+   const fallback=await coordinatedPublicEndpoint(owner,fallbackPath,policy,force);
+   // Full-depth fallback has three columns (price, contracts, order count).
+   // Normalize to the existing four-column organic-book contract, never RPI.
+@@ -167,7 +170,7 @@
+   return recovered;
+ }
+ function publicMarketPersistable(records) {
+-  const ephemeral=new Set(orderflowPaths().slice(1));
++  const ephemeral=new Set(["ETH","BTC"].flatMap(base=>orderflowPaths(base).slice(1)));
+   return {...records,entries:Object.fromEntries(Object.entries(records.entries).filter(([path])=>!ephemeral.has(path)))};
+ }
+ async function persistPublicMarketIfChanged(owner) {
+@@ -324,13 +327,13 @@
+ // V27.4: free public perpetual liquidity, explicitly limited to connected venues.
+ const LIQUIDITY_STATE_KEY="market:multi-venue-eth:v1";
+ const LIQUIDITY_VENUES=["OKX","BINANCE","BYBIT","GATE"];
+-function liquidityFeedDefinitions(){return {
+- BINANCE:{meta:"https://fapi.binance.com/fapi/v1/exchangeInfo",book:"https://fapi.binance.com/fapi/v1/depth?symbol=ETHUSDT&limit=500",trades:"https://fapi.binance.com/fapi/v1/trades?symbol=ETHUSDT&limit=500"},
+- BYBIT:{meta:"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=ETHUSDT",book:"https://api.bybit.com/v5/market/orderbook?category=linear&symbol=ETHUSDT&limit=1000",trades:"https://api.bybit.com/v5/market/recent-trade?category=linear&symbol=ETHUSDT&limit=1000"},
+- GATE:{meta:"https://api.gateio.ws/api/v4/futures/usdt/contracts/ETH_USDT",book:"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=ETH_USDT&limit=100&with_id=true",trades:"https://api.gateio.ws/api/v4/futures/usdt/trades?contract=ETH_USDT&limit=500"}
++function liquidityFeedDefinitions(base = "ETH"){return {
++ BINANCE:{meta:"https://fapi.binance.com/fapi/v1/exchangeInfo",book:"https://fapi.binance.com/fapi/v1/depth?symbol=" + base + "USDT&limit=500",trades:"https://fapi.binance.com/fapi/v1/trades?symbol=" + base + "USDT&limit=500"},
++ BYBIT:{meta:"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=" + base + "USDT",book:"https://api.bybit.com/v5/market/orderbook?category=linear&symbol=" + base + "USDT&limit=1000",trades:"https://api.bybit.com/v5/market/recent-trade?category=linear&symbol=" + base + "USDT&limit=1000"},
++ GATE:{meta:"https://api.gateio.ws/api/v4/futures/usdt/contracts/" + base + "_USDT",book:"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=" + base + "_USDT&limit=100&with_id=true",trades:"https://api.gateio.ws/api/v4/futures/usdt/trades?contract=" + base + "_USDT&limit=500"}
+ };}
+ 
+-async function liquidityFeed(owner,url,metadata=false,force=false){
++async function liquidityFeed(owner,url,metadata=false,force=false,base="ETH"){
+  owner.liquidityCache ||= new Map();owner.liquidityInflight ||= new Map();
+  const persistent=owner.liquidityPersistent;persistent.failures ||= {};persistent.lastSuccess ||= {};
+  const cached=owner.liquidityCache.get(url),age=cached?(Date.now()-cached.fetchedAt)/1000:Infinity;
+@@ -339,8 +342,8 @@
+  const work=(async()=>{
+   const until=persistent.cooldowns[url]||0,last=persistent.failures[url];
+   if(until>Date.now())return {error:'SOURCE_COOLDOWN',httpStatus:last?.httpStatus||null,failedAt:last?.failedAt||null,retryAt:new Date(until).toISOString(),lastSuccessAt:persistent.lastSuccess[url]||null,fetchedAt:null};
+-  try{const body=await fetchJson(url,'Public ETH liquidity',1,false,b=>{if((b?.retCode!==undefined&&b.retCode!==0)||(b?.code!==undefined&&!['0',0].includes(b.code)))throw new Error('UPSTREAM_BODY_ERROR');return b;},2500);
+-   const cleanBody=metadata&&url.includes('exchangeInfo')?{symbols:(body?.symbols||[]).filter(x=>x.symbol==='ETHUSDT')}:body;
++  try{const body=await fetchJson(url,'Public '+base+' liquidity',1,false,b=>{if((b?.retCode!==undefined&&b.retCode!==0)||(b?.code!==undefined&&!['0',0].includes(b.code)))throw new Error('UPSTREAM_BODY_ERROR');return b;},2500);
++   const cleanBody=metadata&&url.includes('exchangeInfo')?{symbols:(body?.symbols||[]).filter(x=>x.symbol===base+'USDT')}:body;
+    const item={body:cleanBody,fetchedAt:Date.now()};if(metadata)persistent.metadata[url]=item;
+    persistent.lastSuccess[url]=new Date(item.fetchedAt).toISOString();delete persistent.failures[url];delete persistent.cooldowns[url];owner.liquidityCache.set(url,item);return item;
+   }catch(e){if([403,418,429,451].includes(e?.status))persistent.cooldowns[url]=Date.now()+Math.max([403,451].includes(e.status)?300:60,Number(e.retryAfterSeconds)||0)*1000;
+@@ -348,20 +351,21 @@
+    return {...failure,retryAt:persistent.cooldowns[url]?new Date(persistent.cooldowns[url]).toISOString():null,lastSuccessAt:persistent.lastSuccess[url]||null,fetchedAt:null};}
+  })();owner.liquidityInflight.set(url,work);try{return await work;}finally{owner.liquidityInflight.delete(url);}
+ }
+-function normalizeLiquidityVenue(venue,input,now=Date.now()){
++function normalizeLiquidityVenue(venue,input,now=Date.now(),base="ETH"){
++ const symbol=base+"USDT",instId=base+"-USDT-SWAP",gateId=base+"_USDT";
+  const fail=reason=>({venue,status:"unavailable",reason,diagnostics:Object.fromEntries(["meta","book","trades"].map(k=>{const x=input?.[k];return [k,{httpStatus:x?.httpStatus??null,failedAt:x?.failedAt||null,retryAt:x?.retryAt||null,lastSuccessAt:x?.lastSuccessAt||(Number.isFinite(x?.fetchedAt)?new Date(x.fetchedAt).toISOString():null)}];}))});
+  if(!input||[input.meta,input.book,input.trades].some(x=>!x||x.error))return fail([input?.meta,input?.book,input?.trades].map(x=>x?.error).filter(Boolean).join(';')||"MISSING_PUBLIC_FEED");
+  let unit=1,bids,asks,bookAt,bookId,rawTrades;
+  const b=input.book.body,m=input.meta.body,t=input.trades.body;
+  if(!Number.isFinite(input.meta.fetchedAt)||now-input.meta.fetchedAt>86400000||input.meta.fetchedAt>now+2000)return fail("CONTRACT_METADATA_EXPIRED");
+  if(venue==="OKX"){
+-  const meta=m?.find(x=>x.instId==="ETH-USDT-SWAP");if(meta?.ctType!=="linear"||meta.ctValCcy!=="ETH"||meta.settleCcy!=="USDT"||!(Number(meta.ctVal)>0))return fail("CONTRACT_UNITS_NOT_VERIFIED");unit=Number(meta.ctVal);const row=b?.[0];bids=row?.bids;asks=row?.asks;bookAt=Number(row?.ts);bookId=String(row?.seqId||row?.ts);rawTrades=(t||[]).map(x=>({id:x.tradeId,ts:Number(x.ts),price:Number(x.px),quantity:Number(x.sz)*unit,side:x.side,valid:x.instId==="ETH-USDT-SWAP"}));
++  const meta=m?.find(x=>x.instId===instId);if(meta?.ctType!=="linear"||meta.ctValCcy!==base||meta.settleCcy!=="USDT"||!(Number(meta.ctVal)>0))return fail("CONTRACT_UNITS_NOT_VERIFIED");unit=Number(meta.ctVal);const row=b?.[0];bids=row?.bids;asks=row?.asks;bookAt=Number(row?.ts);bookId=String(row?.seqId||row?.ts);rawTrades=(t||[]).map(x=>({id:x.tradeId,ts:Number(x.ts),price:Number(x.px),quantity:Number(x.sz)*unit,side:x.side,valid:x.instId===instId}));
+  }else if(venue==="BINANCE"){
+-  const meta=m?.symbols?.find(x=>x.symbol==="ETHUSDT");if(meta?.baseAsset!=="ETH"||meta.quoteAsset!=="USDT"||meta.contractType!=="PERPETUAL")return fail("CONTRACT_UNITS_NOT_VERIFIED");bids=b?.bids;asks=b?.asks;bookAt=Number(b?.T||b?.E);bookId=String(b?.lastUpdateId);rawTrades=Array.isArray(t)?t.filter(x=>!x.isRPITrade).map(x=>({id:x.id,ts:Number(x.time),price:Number(x.price),quantity:Number(x.qty),side:x.isBuyerMaker===true?"sell":x.isBuyerMaker===false?"buy":null,valid:typeof x.isBuyerMaker==="boolean"})):[];
++  const meta=m?.symbols?.find(x=>x.symbol===symbol);if(meta?.baseAsset!==base||meta.quoteAsset!=="USDT"||meta.contractType!=="PERPETUAL")return fail("CONTRACT_UNITS_NOT_VERIFIED");bids=b?.bids;asks=b?.asks;bookAt=Number(b?.T||b?.E);bookId=String(b?.lastUpdateId);rawTrades=Array.isArray(t)?t.filter(x=>!x.isRPITrade).map(x=>({id:x.id,ts:Number(x.time),price:Number(x.price),quantity:Number(x.qty),side:x.isBuyerMaker===true?"sell":x.isBuyerMaker===false?"buy":null,valid:typeof x.isBuyerMaker==="boolean"})):[];
+  }else if(venue==="BYBIT"){
+-  const meta=m?.result?.list?.find(x=>x.symbol==="ETHUSDT");if(meta?.baseCoin!=="ETH"||meta.quoteCoin!=="USDT"||meta.settleCoin!=="USDT"||meta.contractType!=="LinearPerpetual"||b?.result?.s!=="ETHUSDT"||t?.result?.category!=="linear")return fail("CONTRACT_UNITS_NOT_VERIFIED");bids=b.result.b;asks=b.result.a;bookAt=Number(b.result.cts||b.result.ts);bookId=String(b.result.u);rawTrades=(t.result.list||[]).filter(x=>!x.isBlockTrade&&!x.isRPITrade).map(x=>({id:x.execId,ts:Number(x.time),price:Number(x.price),quantity:Number(x.size),side:x.side==="Buy"?"buy":x.side==="Sell"?"sell":null,valid:x.symbol==="ETHUSDT"}));
++  const meta=m?.result?.list?.find(x=>x.symbol===symbol);if(meta?.baseCoin!==base||meta.quoteCoin!=="USDT"||meta.settleCoin!=="USDT"||meta.contractType!=="LinearPerpetual"||b?.result?.s!==symbol||t?.result?.category!=="linear")return fail("CONTRACT_UNITS_NOT_VERIFIED");bids=b.result.b;asks=b.result.a;bookAt=Number(b.result.cts||b.result.ts);bookId=String(b.result.u);rawTrades=(t.result.list||[]).filter(x=>!x.isBlockTrade&&!x.isRPITrade).map(x=>({id:x.execId,ts:Number(x.time),price:Number(x.price),quantity:Number(x.size),side:x.side==="Buy"?"buy":x.side==="Sell"?"sell":null,valid:x.symbol===symbol}));
+  }else if(venue==="GATE"){
+-  if(m?.name!=="ETH_USDT"||!(Number(m.quanto_multiplier)>0)||m.type&&m.type!=="direct")return fail("CONTRACT_UNITS_NOT_VERIFIED");unit=Number(m.quanto_multiplier);bids=(b?.bids||[]).map(x=>[x.p,x.s]);asks=(b?.asks||[]).map(x=>[x.p,x.s]);bookAt=Number(b?.update||b?.current);if(bookAt<1e12)bookAt*=1000;bookId=String(b?.id||bookAt);rawTrades=Array.isArray(t)?t.map(x=>({id:x.id,ts:epochMilliseconds(x.create_time_ms||x.create_time),price:Number(x.price),quantity:Math.abs(Number(x.size))*unit,side:Number(x.size)>0?"buy":Number(x.size)<0?"sell":null,valid:true})):[];
++  if(m?.name!==gateId||!(Number(m.quanto_multiplier)>0)||m.type&&m.type!=="direct")return fail("CONTRACT_UNITS_NOT_VERIFIED");unit=Number(m.quanto_multiplier);bids=(b?.bids||[]).map(x=>[x.p,x.s]);asks=(b?.asks||[]).map(x=>[x.p,x.s]);bookAt=Number(b?.update||b?.current);if(bookAt<1e12)bookAt*=1000;bookId=String(b?.id||bookAt);rawTrades=Array.isArray(t)?t.map(x=>({id:x.id,ts:epochMilliseconds(x.create_time_ms||x.create_time),price:Number(x.price),quantity:Math.abs(Number(x.size))*unit,side:Number(x.size)>0?"buy":Number(x.size)<0?"sell":null,valid:true})):[];
+  }else return fail("UNSUPPORTED_VENUE");
+  const age=(now-bookAt)/1000;if(!Number.isFinite(age)||age< -2||age>10)return fail("BOOK_EXPIRED_OR_TIME_INVALID");
+  const levels=(rows,side)=>(Array.isArray(rows)?rows:[]).map(r=>({price:Number(r[0]),quantity:Math.abs(Number(r[1]))*unit,side})).filter(x=>x.price>0&&x.quantity>0&&Number.isFinite(x.price*x.quantity)).map(x=>({...x,notional:x.price*x.quantity}));
+@@ -371,9 +375,9 @@
+  const trades=[...unique.values()].sort((a,b)=>a.ts-b.ts),latest=trades.at(-1),tradeAge=latest?(now-latest.ts)/1000:null;
+  return {status:"ok",venue,mid:(bids[0].price+asks[0].price)/2,bids,asks,bookAt,bookId,bookAge:age,tradeAge,trades,rejected,tradeFresh:Number.isFinite(tradeAge)&&tradeAge>=-2&&tradeAge<=10,unit};
+ }
+-function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now()){
++function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(),base="ETH"){
+  const okx=venues.find(v=>v.venue==="OKX"&&v.status==="ok"),reference=okx?.mid;
+- const report={status:"unavailable",source:"PUBLIC_MULTI_VENUE_ETH_USDT_PERPETUAL",checkedAt:new Date(now).toISOString(),referencePrice:reference||null,
++ const report={status:"unavailable",source:"PUBLIC_MULTI_VENUE_"+base+"_USDT_PERPETUAL",checkedAt:new Date(now).toISOString(),referencePrice:reference||null,
+   requestedVenues:LIQUIDITY_VENUES,connectedVenues:[],allMarketCoverage:false,exactOrderFillOrCancelKnown:false,continuousCoverageVerified:false,priceMapping:"OKX_MID_DIVIDED_BY_VENUE_MID",maximumAgeSeconds:10,venues:[],clusters:[],changes:[],arrivalRecheck:{passed:false}};
+  const state={observedAt:now,venues:{}};if(!reference)return {report:{...report,reason:"FRESH_OKX_REFERENCE_REQUIRED"},state};
+  const bins=new Map(),binWidth=1;let priorMissing=0;
+@@ -419,23 +423,30 @@
+  report.limitations=["SAMPLED_L2_NOT_IDENTIFIABLE_ORDERS","MISSING_TRADE_OVERLAP_PREVENTS_CANCEL_FILL_ATTRIBUTION","NO_WALL_IS_A_GUARANTEED_SUPPORT","VISIBLE_DEPTH_AND_CONNECTED_VENUES_ONLY"];
+  return {report,state};
+ }
+-async function collectCrossVenueLiquidity(owner,modules){
+- owner.liquidityReady ||= (async()=>{owner.liquidityPersistent=await owner.ctx.storage.get(LIQUIDITY_STATE_KEY)||{metadata:{},cooldowns:{},tracking:{}};owner.liquidityPersistent.metadata ||= {};owner.liquidityPersistent.cooldowns ||= {};owner.liquidityCache=new Map(Object.entries(owner.liquidityPersistent.metadata));})();await owner.liquidityReady;
+- const defs=liquidityFeedDefinitions();
++async function collectCrossVenueLiquidity(owner,modules,base="ETH"){
++ const publicOwner=owner;
++ if(base==="BTC")owner=owner.deskBtcLiquidityOwner ||= {ctx:owner.ctx};
++ const storageKey=base==="ETH"?LIQUIDITY_STATE_KEY:LIQUIDITY_STATE_KEY+":BTC";
++ owner.liquidityReady ||= (async()=>{owner.liquidityPersistent=await owner.ctx.storage.get(storageKey)||{metadata:{},cooldowns:{},tracking:{}};owner.liquidityPersistent.metadata ||= {};owner.liquidityPersistent.cooldowns ||= {};owner.liquidityCache=new Map(Object.entries(owner.liquidityPersistent.metadata));})();await owner.liquidityReady;
++ const defs=liquidityFeedDefinitions(base);
+  const wave=async force=>{
+-  const paths=orderflowPaths();let okxItems=paths.map(p=>modules[p]);
+-  if(force){const d=publicMarketDefinitions();okxItems=await Promise.all(paths.map(p=>coordinatedOrderflowEndpoint(owner,p,d.find(x=>x.path===p).policy,p!==paths[0])));}
++  const paths=orderflowPaths(base);
++  const okxItems=await Promise.all(paths.map((path,i)=>{
++    if(!force&&modules?.[path])return modules[path];
++    const policy=publicMarketDefinitions()[i].policy;
++    return coordinatedOrderflowEndpoint(publicOwner,path,policy,force&&i>0);
++  }));
+   const okxInput=Object.fromEntries(['meta','trades','book'].map((k,i)=>[k,{body:okxItems[i]?.rows,error:okxItems[i]?.error||(!okxItems[i]?.rows?'OKX_PUBLIC_FEED_MISSING':null),fetchedAt:okxItems[i]?.storedAt}]));
+-  const peers=await Promise.all(Object.entries(defs).map(async([venue,d])=>{const[meta,book,trades]=await Promise.all([liquidityFeed(owner,d.meta,true),liquidityFeed(owner,d.book,false,force),liquidityFeed(owner,d.trades,false,force)]);return normalizeLiquidityVenue(venue,{meta,book,trades});}));
+-  return [normalizeLiquidityVenue("OKX",okxInput),...peers];
++  const peers=await Promise.all(Object.entries(defs).map(async([venue,d])=>{const[meta,book,trades]=await Promise.all([liquidityFeed(owner,d.meta,true,false,base),liquidityFeed(owner,d.book,false,force,base),liquidityFeed(owner,d.trades,false,force,base)]);return normalizeLiquidityVenue(venue,{meta,book,trades},Date.now(),base);}));
++  return [normalizeLiquidityVenue("OKX",okxInput,Date.now(),base),...peers];
+  };
+  const first=await wave(false);await new Promise(r=>setTimeout(r,350));const second=await wave(true);
+- const prior=owner.liquidityPersistent.tracking||{},intermediate=aggregateVenueLiquidity(first,prior,null),final=aggregateVenueLiquidity(second,intermediate.state,first);
++ const prior=owner.liquidityPersistent.tracking||{},intermediate=aggregateVenueLiquidity(first,prior,null,Date.now(),base),final=aggregateVenueLiquidity(second,intermediate.state,first,Date.now(),base);
+  // Compare second wave with persisted baseline as well, so meaningful older walls are not forgotten.
+- const historical=aggregateVenueLiquidity(second,prior,first);final.report.changes=[...historical.report.changes,...final.report.changes].filter((x,i,a)=>a.findIndex(y=>y.venue===x.venue&&y.side===x.side&&y.nativePrice===x.nativePrice)===i).slice(0,6);
++ const historical=aggregateVenueLiquidity(second,prior,first,Date.now(),base);final.report.changes=[...historical.report.changes,...final.report.changes].filter((x,i,a)=>a.findIndex(y=>y.venue===x.venue&&y.side===x.side&&y.nativePrice===x.nativePrice)===i).slice(0,6);
+  const currentOkx=second.find(v=>v.venue==="OKX"&&v.status==="ok"&&v.tradeFresh);
+  if(currentOkx){final.report.executionDepth=liquidityDepthReference(currentOkx);const last=currentOkx.trades.at(-1);final.report.executionQuote={status:"ok",source:"OKX_USDT_PERPETUAL",priceType:"LAST_TRADE_PLUS_REAL_BOOK",last:last.price,bid:currentOkx.bids[0].price,ask:currentOkx.asks[0].price,exchangeTimestamp:new Date(Math.min(last.ts,currentOkx.bookAt)).toISOString(),lastTradeTimestamp:new Date(last.ts).toISOString(),bookTimestamp:new Date(currentOkx.bookAt).toISOString()};}
+- owner.liquidityPersistent.tracking={...final.state,venues:{...(prior.venues||{}),...final.state.venues}};owner.liquidityPersistent.report=final.report;await owner.ctx.storage.put(LIQUIDITY_STATE_KEY,owner.liquidityPersistent);return final.report;
++ owner.liquidityPersistent.tracking={...final.state,venues:{...(prior.venues||{}),...final.state.venues}};owner.liquidityPersistent.report=final.report;await owner.ctx.storage.put(storageKey,owner.liquidityPersistent);return final.report;
+ }
+ function liquidityDepthReference(venue){
+  return [1000,10000,50000].map(notional=>({notionalUsdt:notional,...Object.fromEntries([["buy",venue.asks],["sell",venue.bids]].map(([side,rows])=>{
+@@ -683,6 +694,9 @@
+ async function localScannerOperation(owner,input){
+  const storage=owner.ctx.storage,env=fastLocalEnvironment(owner);
+  if(input.op==='stateIdentity')return {stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT};
++ if(input.op==='deskAnalysis')return sharedDeskAnalysis(owner);
++ if(input.op==='deskStatus')return DeskBridge.status(owner);
++ if(input.op==='deskChange')return DeskBridge.change(owner,input);
+  if(input.op==='scannerCycle'){
+   if(input.ensureMonitor)await ensureFastMonitor(owner);
+   return {stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT,...await runScanner(env,input.options||{})};
+@@ -5619,7 +5633,7 @@
+   const localOwner=env?.[LOCAL_SCANNER_OWNER];
+   if(localOwner)return localScannerOperation(localOwner,payload);
+   if(!scannerStateStub(env)?.fetch)return null;
+-  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="scannerCycle"?50000:payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck"].includes(payload.op)?28000:4000;
++  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="scannerCycle"?50000:payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck","deskAnalysis","deskChange"].includes(payload.op)?28000:4000;
+   for(let attempt=0;attempt<attempts;attempt++){
+     let timer;
+     try {
+@@ -6439,7 +6453,7 @@
+       isArchive: "1",
+       level: notification.level || "active",
+       sound: notification.level === "timeSensitive" ? "alarm" : "bell",
+-      url: scannerText(env?.ALERT_OPEN_URL, "", 1000) || undefined,
++      url: notification.url || scannerText(env?.ALERT_OPEN_URL, "", 1000) || undefined,
+     }),
+   });
+   if (!response.ok) {const error=new Error(`Bark HTTP ${response.status}`);error.httpStatus=response.status;throw error;}
+@@ -6978,7 +6992,7 @@
+           summary: "Get realtime BTC and ETH perpetual market data",
+           description: "Live ETH/BTC data, eight entry models and swing assessments. market supports recheck=true; liquidity rechecks multi-venue entry pricing; fast reports actual background sampling and review freshness. News is timestamped. Private scanner records require Bearer authentication.",
+           security: [],
+-          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","fast","news","diagnostics","scanner-status"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; fast: compact actual sampling/review telemetry; news: feeds/calendar; diagnostics: connectivity; scanner-status: private Bearer."}],
++          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","fast","news","diagnostics","scanner-status","desk"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; fast: compact actual sampling/review telemetry; news: feeds/calendar; desk: both BTC and ETH, all 16 model results and first-target net RR; diagnostics: connectivity; scanner-status: private Bearer."}],
+           responses: {
+             200: {
+               description: "Realtime market snapshot",
+@@ -7407,6 +7421,479 @@
+   return { status: "cancelled", planId: plan.planId, observationCancellation, notification };
+ }
+ 
++// The desk contract is isolated from the original GPT plan/observation keys.
++const AlphaDeskDecision = (() => {
++// Converts the pinned Crypto Alpha engine's evidence to the single desk contract.
++const MODELS = ["A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2"];
++const PERIODS = { "15m": 900000, "1h": 3600000, "4h": 14400000 };
++const SOURCES = ["OKX_USDT_PERPETUAL", "GATE_USDT_PERPETUAL"];
++const isNum = value => typeof value === "number" && Number.isFinite(value);
++const positive = value => isNum(value) && value > 0;
++const validDate = value => typeof value === "string" && Number.isFinite(Date.parse(value));
++const dateOrNull = value => validDate(value) ? value : null;
++const round = (value, digits = 5) => isNum(value) ? Number(value.toFixed(digits)) : null;
++
++function expectedClosedAt(now, period) {
++  const duration = PERIODS[period];
++  return Math.floor((now - 30000) / duration) * duration - duration;
++}
++
++function deskNetRR(direction, entry, stop, target, costPct) {
++  if (![entry, stop, target].every(positive) || !isNum(costPct) || costPct < 0) return null;
++  const sign = direction === "LONG" ? 1 : -1;
++  const risk = (entry - stop) * sign;
++  const reward = (target - entry) * sign;
++  const cost = entry * costPct / 100;
++  return risk > 0 && reward > 0 ? (reward - cost) / (risk + cost) : null;
++}
++
++function deskQuote(ticker, now = Date.now(), maxAgeMs = 35000) {
++  const snapshotAt = dateOrNull(ticker?.exchangeTimestamp);
++  const tradeAt = dateOrNull(ticker?.lastTradeTimestamp);
++  const bookAt = dateOrNull(ticker?.bookTimestamp);
++  const fresh = time => time && now - Date.parse(time) >= -2000 && now - Date.parse(time) <= maxAgeMs;
++  const independent = Boolean(tradeAt && bookAt);
++  const ready = ticker?.status === "ok"
++    && ["OKX_USDT_PERPETUAL", "OKX_USDT_PERPETUAL_DIRECT_VERIFIED"].includes(ticker.source)
++    && ticker.priceType !== "MARK_PRICE_ONLY"
++    && [ticker.last, ticker.bid, ticker.ask].every(positive) && ticker.bid <= ticker.ask
++    && Boolean(fresh(snapshotAt) && (!tradeAt || fresh(tradeAt)) && (!bookAt || fresh(bookAt)));
++  return {
++    last: ready ? ticker.last : null, bid: ready ? ticker.bid : null, ask: ready ? ticker.ask : null,
++    tradeAt, bookAt, snapshotAt, ready: Boolean(ready), independent,
++  };
++}
++
++function structureStatus(asset, period, now) {
++  const tf = asset?.timeframes?.[period];
++  const expected = expectedClosedAt(now, period);
++  const newest = dateOrNull(tf?.quality?.newestClosedCandleAt ?? tf?.newestClosedCandleAt);
++  const lastRefresh = Date.parse(tf?.coordinator?.lastRefreshAt ?? tf?.dataFreshness?.storedAt ?? "");
++  const ageLimit = { "15m": 180000, "1h": 420000, "4h": 660000 }[period];
++  const latestActual = Math.floor(now / PERIODS[period]) * PERIODS[period] - PERIODS[period];
++  const ready = tf?.status === "ok" && tf?.quality?.passed === true
++    && SOURCES.includes(tf.source) && Date.parse(newest) >= expected && Date.parse(newest) <= latestActual
++    && now - lastRefresh >= -2000 && now - lastRefresh <= ageLimit;
++  return { source: tf?.source ?? null, closedAt: newest, expectedAt: new Date(expected).toISOString(), ready };
++}
++
++function stableId(value) {
++  let hash = 2166136261;
++  for (const char of value) {
++    hash ^= char.charCodeAt(0);
++    hash = Math.imul(hash, 16777619);
++  }
++  return (hash >>> 0).toString(36);
++}
++
++function planFrom(symbol, quote, model, candidate, horizon, capturedAt) {
++  if (!candidate || !["LONG", "SHORT"].includes(candidate.direction ?? model.direction)) return null;
++  const direction = candidate.direction ?? model.direction;
++  const pricing = candidate.liquidityPricing ?? (horizon === "INTRADAY" ? model.liquidityPricing : null);
++  const zone = pricing?.rrQualifiedEntryZone ?? candidate.rrQualifiedEntryZone;
++  const low = zone?.min;
++  const high = zone?.max;
++  const stop = candidate.stopLoss;
++  const target = pricing?.liquidityAdjustedFirstTarget ?? candidate.target;
++  const invalidation = candidate.modelInvalidationPrice ?? candidate.protectivePrice ?? stop;
++  const current = direction === "LONG" ? quote.ask : quote.bid;
++  const costPct = candidate.estimatedRoundTripCostPct ?? model.estimatedRoundTripCostPct;
++  const expiry = candidate.expiresAt ?? model.eventEvidence?.expiresAt;
++  if (![low, high, stop, target, invalidation, current].every(positive) || low > high
++      || !isNum(costPct) || costPct < 0 || !validDate(expiry) || Date.parse(expiry) <= Date.parse(capturedAt)) return null;
++  const long = direction === "LONG";
++  if (long ? stop >= low || invalidation > low || target <= high || current <= invalidation || current >= target
++           : stop <= high || invalidation < high || target >= low || current >= invalidation || current <= target) return null;
++  const zoneRR = deskNetRR(direction, long ? low : high, stop, target, costPct);
++  if (zoneRR === null || zoneRR < 2) return null;
++  const worstRR = deskNetRR(direction, long ? high : low, stop, target, costPct);
++  // Boundary rounding may leave a small overshoot. Recalculate at the actual quote again on arrival.
++  if (worstRR === null || worstRR < 1.99995) return null;
++  const currentRR = deskNetRR(direction, current, stop, target, costPct);
++  const atPrice = current >= low && current <= high && currentRR !== null && currentRR >= 2;
++  const eventAt = dateOrNull(model.eventEvidence?.eventAt ?? candidate.breakoutAt ?? candidate.eventAt ?? candidate.candleAt);
++  const eventKey = model.eventEvidence?.eventKey ?? eventAt ?? expiry;
++  const id = [symbol, model.submodel, direction, horizon, stableId(String(eventKey))].join("-");
++  const revision = stableId([id, low, high, stop, target, invalidation, costPct, expiry].join("|"));
++  const liquidityPending = pricing?.entryReviewPassed !== true;
++  const active = pricing?.temporaryObstacleReviewRequired !== true;
++  const state = atPrice ? liquidityPending ? "WAIT_LIQUIDITY" : "REVIEW" : "WAIT_PRICE";
++  const costs = (candidate.holdingFunding?.scenarios ?? model.swingAssessment?.funding?.scenarios ?? [])
++    .filter(row => [2, 7, 14].includes(row.days))
++    .map(row => ({ days: row.days, netRR: round(row.netRR), totalCostPct: round(row.totalCostPct) }));
++  return { id, revision, asset: symbol, model: model.submodel, direction, horizon, state, low, high, stop, target, invalidation,
++    current, currentRR: round(currentRR), zoneRR: round(zoneRR), costPct, costs, eventAt,
++    expiresAt: expiry, capturedAt, monitorable: active,
++    finalReview: ["复核消息与宏观执行风险", "核对实际费用与滑点", ...(liquidityPending ? ["复核跨所流动性"] : [])] };
++}
++
++function modelSummary(model, id) {
++  const evidence = model?.eventEvidence;
++  const level = evidence?.triggerCloseRule ?? evidence?.retestCloseRule;
++  const next = level && positive(level.level)
++    ? "等 15 分钟收盘 " + level.operator + " " + level.level
++    : model?.state === "WAIT_PRICE" ? "等待欧易对手价进入净盈亏比合格区" : null;
++  return { model: id, state: model?.state ?? "DATA_BLOCKED", reason: model?.failedGate ?? model?.swingAssessment?.reason ?? null,
++    eventAt: dateOrNull(evidence?.eventAt), next };
++}
++
++function assetSummary(asset, symbol, capturedAt) {
++  const now = Date.parse(capturedAt);
++  const quote = deskQuote(asset?.ticker, now);
++  const structure = Object.fromEntries(Object.keys(PERIODS).map(tf => [tf, structureStatus(asset, tf, now)]));
++  const engine = asset?.opportunityEngine;
++  const checkedAt = Date.parse(engine?.checkedAt ?? "");
++  const structureReady = Object.values(structure).every(tf => tf.ready)
++    && new Set(Object.values(structure).map(tf => tf.source)).size === 1;
++  const ready = quote.ready && structureReady && Array.isArray(engine?.models)
++    && now - checkedAt >= -2000 && now - checkedAt <= 35000;
++  const models = MODELS.map(id => modelSummary(ready ? engine.models.find(m => m.submodel === id) : null, id));
++  const plans = ready ? engine.models.flatMap(model => {
++    const swing = model.swingAssessment;
++    const swingPlan = planFrom(symbol, quote, model, swing?.candidate ?? swing?.pendingCandidate, "SWING", capturedAt);
++    const intraday = model.candidate ?? (["WAIT_PRICE", "WAIT_LIQUIDITY", "STRUCTURE_READY"].includes(model.state) ? model : null);
++    const intradayPlan = planFrom(symbol, quote, model, intraday, "INTRADAY", capturedAt);
++    return [swingPlan, intradayPlan].filter(Boolean);
++  }) : [];
++  return { asset: symbol, quote, structure, ready, plans, models,
++    reason: !quote.ready ? "欧易真实成交或盘口缺失、过期" : !structureReady ? "同源三周期已收盘结构待核验"
++      : !ready ? "策略扫描证据暂不可用" : null };
++}
++
++function orderPlans(plans, rrKey) {
++  return [...plans].sort((a, b) =>
++    Number(b.horizon === "SWING") - Number(a.horizon === "SWING")
++    || (b[rrKey] ?? -Infinity) - (a[rrKey] ?? -Infinity)
++    || a.id.localeCompare(b.id));
++}
++
++function rankDeskPlans(plans) {
++  const current = plans.filter(p => p.state === "REVIEW" && p.currentRR !== null && p.currentRR >= 2);
++  const waiting = plans.filter(p => p.state !== "REVIEW");
++  return { best: orderPlans(current, "currentRR")[0] ?? null, waiting: orderPlans(waiting, "zoneRR")[0] ?? null };
++}
++
++function macroSummary(context) {
++  const rows = [];
++  const treasury = context?.treasuryDaily;
++  for (const [key, label] of [["yield2yPct", "美国 2 年期国债收益率"], ["yield10yPct", "美国 10 年期国债收益率"]]) {
++    if (isNum(treasury?.[key])) rows.push({ label, value: treasury[key].toFixed(2) + "%（日度）",
++      observedAt: dateOrNull(treasury.asOf), source: "美国财政部" });
++  }
++  const labels = { US_INITIAL_CLAIMS: "美国初请失业金人数", US_CONTINUED_CLAIMS: "美国续请失业金人数",
++    IBIT_HOLDINGS: "IBIT（比特币基金）持仓", ETHA_HOLDINGS: "ETHA（以太坊基金）持仓",
++    OKX_BTC_OPTIONS: "欧易 BTC（比特币）期权", OKX_ETH_OPTIONS: "欧易 ETH（以太坊）期权" };
++  for (const row of context?.macroReferences?.sources ?? []) {
++    if (row.status !== "ok" || !row.data || !labels[row.id]) continue;
++    const data = row.data;
++    const observedAt = dateOrNull(data.asOf ?? data.weekEnding ?? data.exchangeTimestamp ?? row.fetchedAt);
++    const value = isNum(data.count) ? data.count.toLocaleString("zh-CN") + " 人（周度）"
++      : isNum(data.assetQuantity) ? data.assetQuantity.toLocaleString("zh-CN") + " " + (data.asset === "BTC" ? "比特币" : "以太坊") + "（日度）"
++        : isNum(data.totalOiContracts) ? data.totalOiContracts.toLocaleString("zh-CN") + " 张未平仓" : null;
++    if (value) rows.push({ label: labels[row.id], value, observedAt,
++      source: data.count != null ? "美国劳工部经圣路易斯联储" : data.assetQuantity != null ? "iShares（安硕）发行方" : "欧易" });
++  }
++  return rows;
++}
++
++function deskAnalysis(snapshot, { origin = "site-engine", monitor = false, now = Date.now() } = {}) {
++  const capturedAt = new Date(now).toISOString();
++  const assets = Object.fromEntries(["BTC", "ETH"].map(symbol => [
++    symbol, assetSummary(snapshot?.assets?.[symbol + "USDT"], symbol, capturedAt),
++  ]));
++  const plans = Object.values(assets).flatMap(a => a.plans);
++  const news = (snapshot?.newsContext?.recentRiskHeadlines ?? []).filter(row => typeof row.title === "string")
++    .slice(0, 6).map(row => ({
++      title: row.title.slice(0, 200), source: String(row.source ?? row.sourceId ?? "上游新闻"),
++      at: dateOrNull(row.publishedAt), ...(typeof row.url === "string" && row.url.startsWith("https://") ? { url: row.url } : {}),
++    }));
++  return { build: String(snapshot?.build ?? "未知"), apiVersion: String(snapshot?.apiVersion ?? "未知"), capturedAt,
++    origin, monitor, assets, ...rankDeskPlans(plans), news, macro: macroSummary(snapshot?.newsContext) };
++}
++
++return {deskNetRR,deskQuote,deskAnalysis,rankDeskPlans};
++})();
++
++const AlphaDeskBridge = (() => {
++const {deskNetRR,deskQuote}=AlphaDeskDecision;
++const DESK_SITE_PUBLIC_KEY = {"kty":"EC","x":"MoGuRJAV-711i0iNq0tYXEWq1c9Bwqy1dt3s9LcTi0I","y":"B1m6miGiGW_qgoLwhYFelYtKVQrNml2yIG-s6yhoARM","crv":"P-256"};
++
++const WATCH_KEY = "desk:v1:watches";
++const NONCE_KEY = "desk:v1:nonces";
++const MAX_ACTIVE = 8;
++const MAX_HISTORY = 80;
++const ORIGIN = "https://market-desk-cn.darkboard1.chatgpt.site";
++const LIVE = new Set(["ACTIVE", "ARRIVED"]);
++const iso = (time = Date.now()) => new Date(time).toISOString();
++const reply = (body, status = 200) => ({ body, status });
++const problem = (status, error) => reply({ connected: false, watches: [], error }, status);
++
++function requestId(value) {
++  return value && /^(BTC|ETH)-[ABCD][12]-(LONG|SHORT)-(SWING|INTRADAY)-[a-z0-9]{1,12}$/.test(value.id)
++    && /^[a-z0-9]{1,12}$/.test(value.revision)
++    && ["BTC", "ETH"].includes(value.asset) && value.id.startsWith(value.asset + "-");
++}
++
++async function signedPayload(request, path) {
++  const time = request.headers.get("X-Desk-Time") ?? "";
++  const nonce = request.headers.get("X-Desk-Nonce") ?? "";
++  const sig = request.headers.get("X-Desk-Signature") ?? "";
++  if (!/^\d{13}$/.test(time) || Math.abs(Date.now() - Number(time)) > 30000
++      || !/^[a-f0-9-]{36}$/.test(nonce) || !/^[a-zA-Z0-9_-]{86}$/.test(sig)) return null;
++  const body = request.method === "GET" ? "" : await request.text();
++  if (body.length > 1024) return null;
++  try {
++    const signature = Uint8Array.from(atob(sig.replaceAll("-", "+").replaceAll("_", "/") + "=="), char => char.charCodeAt(0));
++    const publicKey = await crypto.subtle.importKey(
++      "jwk", DESK_SITE_PUBLIC_KEY, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"],
++    );
++    const message = [request.method, path, time, nonce, body].join("\n");
++    const valid = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, signature, new TextEncoder().encode(message));
++    return valid ? { nonce, body } : null;
++  } catch {
++    return null;
++  }
++}
++
++function recentWatches(value) {
++  return Array.isArray(value) ? value : [];
++}
++
++function planQuote(plan, ticker, now) {
++  const quote = deskQuote(ticker, now, 20000);
++  if (!quote.ready || !quote.independent) return null;
++  const long = plan.direction === "LONG";
++  const price = long ? quote.ask : quote.bid;
++  const stopped = long ? quote.bid <= Math.max(plan.stop, plan.invalidation) : quote.ask >= Math.min(plan.stop, plan.invalidation);
++  const targetPassed = long ? Math.max(quote.last, quote.bid) >= plan.target : Math.min(quote.last, quote.ask) <= plan.target;
++  const rr = deskNetRR(plan.direction, price, plan.stop, plan.target, plan.costPct);
++  return { quote, price, stopped, targetPassed, rr, inside: !stopped && !targetPassed
++    && price >= plan.low && price <= plan.high && rr !== null && rr >= 2 };
++}
++
++function confirmDeskArrival(plan, tickers, now = Date.now()) {
++  if (!Array.isArray(tickers) || tickers.length !== 2 || Date.parse(plan.expiresAt) <= now) return null;
++  const first = planQuote(plan, tickers[0], now), second = planQuote(plan, tickers[1], now);
++  if (!first?.inside || !second?.inside) return null;
++  // A second HTTP call served by the same book snapshot is not independent.
++  if (Date.parse(second.quote.bookAt) <= Date.parse(first.quote.bookAt)) return null;
++  return second;
++}
++
++function watchView(watch) {
++  const { pending, lease, ...publicWatch } = watch;
++  return publicWatch;
++}
++
++async function consumeNonce(storage, nonce, now) {
++  return storage.transaction(async txn => {
++    const previous = await txn.get(NONCE_KEY) ?? {};
++    const live = Object.fromEntries(Object.entries(previous).filter(([, at]) => now - at < 65000));
++    if (live[nonce] || Object.keys(live).length >= 128) return false;
++    live[nonce] = now;
++    await txn.put(NONCE_KEY, live);
++    return true;
++  });
++}
++
++function matches(watch, plan) {
++  return watch.plan.id === plan.id && watch.plan.revision === plan.revision;
++}
++
++function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, notify }) {
++  async function status(owner) {
++    const watches = recentWatches(await owner.ctx.storage.get(WATCH_KEY));
++    const latestCheckAt = watches.map(watch => watch.lastCheckAt).filter(Boolean).sort().at(-1) ?? null;
++    return { connected: canMonitor(owner), build, latestCheckAt, watches: watches.map(watchView) };
++  }
++
++  async function change(owner, input) {
++    const storage = owner.ctx.storage;
++    if (!input.nonce || !await consumeNonce(storage, input.nonce, Date.now())) return problem(409, "DUPLICATE_SIGNED_REQUEST");
++    const id = input.value;
++    if (!requestId(id)) return problem(400, "INVALID_PLAN_KEY");
++    if (input.method === "DELETE") {
++      await storage.transaction(async txn => {
++        const old = recentWatches(await txn.get(WATCH_KEY));
++        const next = old.map(watch => matches(watch, id) && LIVE.has(watch.state) ? {
++          ...watch, state: "CANCELLED", pending: null, lease: null, updatedAt: iso(), reason: "已按编号取消",
++        } : watch);
++        await txn.put(WATCH_KEY, next);
++      });
++      return reply(await status(owner));
++    }
++    if (!canMonitor(owner)) return problem(503, "SCANNER_OR_BARK_NOT_CONFIGURED");
++    const analysis = await analyse(owner);
++    const plan = analysis.assets[id.asset].plans.find(row => row.id === id.id && row.revision === id.revision);
++    if (!plan?.monitorable || Date.parse(plan.expiresAt) <= Date.now()) return problem(409, "PLAN_REFRESH_REQUIRED");
++    const scheduled = await ensureMonitor(owner);
++    if (!scheduled?.scheduled) return problem(503, "ALARM_NOT_SCHEDULED");
++    const saved = await storage.transaction(async txn => {
++      const old = recentWatches(await txn.get(WATCH_KEY));
++      const same = old.find(watch => matches(watch, plan));
++      if (same && LIVE.has(same.state)) return true;
++      if (old.some(watch => watch.plan.id === plan.id && LIVE.has(watch.state))) return false;
++      if (old.filter(watch => LIVE.has(watch.state)).length >= MAX_ACTIVE) return false;
++      const now = iso();
++      const watch = { plan, state: "ACTIVE", updatedAt: now, lastCheckAt: null, arrivedAt: null, reason: "等待欧易对手价", delivery: null };
++      const recent = old.filter(row => !matches(row, plan));
++      await txn.put(WATCH_KEY, [watch, ...recent.filter(row => LIVE.has(row.state)),
++        ...recent.filter(row => !LIVE.has(row.state)).slice(0, MAX_HISTORY - MAX_ACTIVE)]);
++      return true;
++    });
++    return saved ? reply(await status(owner)) : problem(409, "WATCH_LIMIT_OR_ACTIVE_REVISION");
++  }
++
++  async function handleRequest(request, path, stateCall) {
++    if (!["GET", "POST", "DELETE"].includes(request.method)) return problem(405, "METHOD_NOT_ALLOWED");
++    const signed = await signedPayload(request, path);
++    if (!signed) return problem(401, "DESK_SIGNATURE_REQUIRED");
++    if (path === "/desk/v1/analysis" && request.method === "GET") return reply(await stateCall({ op: "deskAnalysis" }));
++    if (path !== "/desk/v1/monitors") return problem(404, "UNKNOWN_DESK_ROUTE");
++    if (request.method === "GET") return reply(await stateCall({ op: "deskStatus" }));
++    let value;
++    try { value = JSON.parse(signed.body); } catch { return problem(400, "INVALID_JSON"); }
++    return stateCall({ op: "deskChange", method: request.method, value, nonce: signed.nonce });
++  }
++
++  async function update(storage, key, f) {
++    return storage.transaction(async txn => {
++      const old = recentWatches(await txn.get(WATCH_KEY));
++      const current = old.find(watch => matches(watch, key));
++      if (!current || !LIVE.has(current.state)) return null;
++      const next = f(current);
++      if (!next) return null;
++      await txn.put(WATCH_KEY, old.map(watch => matches(watch, key) ? next : watch));
++      return next;
++    });
++  }
++
++  async function checkOne(owner, watch, firstTicker) {
++    const { plan } = watch;
++    const now = Date.now();
++    const storage = owner.ctx.storage;
++    const end = (state, reason) => update(storage, plan, current => ({
++      ...current, state, pending: null, lease: null, updatedAt: iso(now), lastCheckAt: iso(now), reason,
++    }));
++    const keep = reason => update(storage, plan, current => ({ ...current, lastCheckAt: iso(now), reason }));
++    if (Date.parse(plan.expiresAt) <= now) return end("EXPIRED", "入场事件到期");
++    const first = planQuote(plan, firstTicker, now);
++    if (!first) return keep("真实成交与盘口待复核");
++    if (first.stopped) return end("INVALIDATED", "触及结构失效或止损");
++    if (first.targetPassed) return end("INVALIDATED", "第一目标已穿越");
++    if (watch.delivery === "ACCEPTED") return keep("已发到区提醒，等待人工终审");
++    if (!first.inside) return keep("等待欧易对手价进入净盈亏比合格区");
++    if (watch.pending?.nextAt > now || watch.lease?.until > now) return null;
++    await new Promise(resolve => setTimeout(resolve, 500));
++    const secondTicker = await quote(owner, plan.asset);
++    if (!confirmDeskArrival(plan, [firstTicker, secondTicker])) return keep("等待第二份独立盘口");
++    const current = await analyse(owner, true);
++    const updated = current.assets[plan.asset].plans.find(row => row.id === plan.id && row.revision === plan.revision);
++    if (!updated?.monitorable) return keep("当前模型或首个障碍已变化，等待复核");
++    // The model review can take longer than a quote lifetime. Sample again after it completes.
++    const resample = await quote(owner, plan.asset);
++    await new Promise(resolve => setTimeout(resolve, 500));
++    const lastTicker = await quote(owner, plan.asset);
++    const arrival = confirmDeskArrival(plan, [resample, lastTicker]);
++    if (!arrival) return keep("终审前报价变化，等待重新到区");
++    const lease = crypto.randomUUID();
++    const locked = await update(storage, plan, existing => {
++      if (existing.delivery === "ACCEPTED" || existing.lease?.until > Date.now()) return null;
++      return { ...existing, state: "ARRIVED", lastCheckAt: iso(), updatedAt: iso(), arrivedAt: existing.arrivedAt ?? iso(),
++        reason: "已到区，待新闻与实际成本终审", delivery: "PENDING", lease: { id: lease, until: Date.now() + 25000 } };
++    });
++    if (!locked) return null;
++    try {
++      const verified = await notify(owner, {
++        title: plan.asset + (plan.direction === "LONG" ? " 做多" : " 做空") + "｜已到区待终审",
++        body: "欧易 " + arrival.price + " · 入场 " + plan.low + "–" + plan.high + " · 止损 " + plan.stop
++          + " · 第一止盈 " + plan.target + " · 净盈亏比 1∶" + arrival.rr.toFixed(2)
++          + " · 北京时间 " + new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) + " · " + plan.id,
++        level: "timeSensitive", url: ORIGIN + "/?plan=" + encodeURIComponent(plan.id) + "#overview",
++      }, plan.id);
++      if (verified?.sent !== true) throw new Error("PROVIDER_REJECTED");
++      return update(storage, plan, row => row.lease?.id === lease ? { ...row, lease: null, pending: null, delivery: "ACCEPTED", updatedAt: iso() } : null);
++    } catch {
++      return update(storage, plan, row => {
++        if (row.lease?.id !== lease) return null;
++        const attempts = (row.pending?.attempts ?? 0) + 1;
++        return { ...row, lease: null, delivery: "FAILED", updatedAt: iso(),
++          pending: { attempts, nextAt: Date.now() + Math.min(300000, 10000 * 2 ** Math.min(attempts, 5)) } };
++      });
++    }
++  }
++
++  async function check(owner) {
++    if (owner.deskWatchWork) return owner.deskWatchWork;
++    if (!canMonitor(owner)) return null;
++    owner.deskWatchWork = (async () => {
++      const active = recentWatches(await owner.ctx.storage.get(WATCH_KEY)).filter(watch => LIVE.has(watch.state));
++      const assets = [...new Set(active.map(watch => watch.plan.asset))];
++      await Promise.all(assets.map(async asset => {
++        let ticker;
++        try { ticker = await quote(owner, asset); } catch { ticker = null; }
++        for (const watch of active.filter(row => row.plan.asset === asset)) {
++          try { await checkOne(owner, watch, ticker); } catch { /* Re-evaluate the live plan on the next alarm. */ }
++        }
++      }));
++    })();
++    try { await owner.deskWatchWork; } finally { owner.deskWatchWork = null; }
++  }
++
++  return { status, change, handleRequest, check };
++}
++
++return {createDeskBridge,confirmDeskArrival};
++})();
++
++async function deskDirectQuote(owner, asset) {
++  const id = ASSETS[asset+"USDT"].instrumentId;
++  const [tradeResult, bookResult] = await Promise.all([
++    coordinatedPublicEndpoint(owner, "/api/v5/market/trades?instId="+id+"&limit=1", {freshSeconds:0,staleSeconds:0}, true),
++    coordinatedPublicEndpoint(owner, "/api/v5/market/books?instId="+id+"&sz=1", {freshSeconds:0,staleSeconds:0}, true),
++  ]);
++  const trade=tradeResult.rows?.[0],book=bookResult.rows?.[0];
++  if (trade?.instId!==id || !trade.ts || !book?.ts) return null;
++  const ts=Number(trade.ts),bt=Number(book.ts);
++  if(!usableTimestamp(ts,20)||!usableTimestamp(bt,20))return null;
++  const ticker={status:"ok",source:"OKX_USDT_PERPETUAL_DIRECT_VERIFIED",priceType:"LAST_TRADE_PLUS_REAL_BOOK",
++    last:Number(trade.px),bid:Number(book.bids?.[0]?.[0]),ask:Number(book.asks?.[0]?.[0]),
++    lastTradeTimestamp:new Date(ts).toISOString(),bookTimestamp:new Date(bt).toISOString(),
++    exchangeTimestamp:new Date(Math.min(ts,bt)).toISOString()};
++  const mid=(ticker.ask+ticker.bid)/2;
++  return genuineExecutionQuote(ticker,20)&&(ticker.ask-ticker.bid)/mid*10000<=20&&Math.abs(ticker.last/mid-1)*10000<=25?ticker:null;
++}
++
++async function sharedDeskAnalysis(owner, force = false) {
++  if(!force&&owner.deskAnalysisCache&&Date.now()-Date.parse(owner.deskAnalysisCache.capturedAt)<=4000)return owner.deskAnalysisCache;
++  if(owner.deskAnalysisWork)return owner.deskAnalysisWork;
++  owner.deskAnalysisWork=(async()=>{
++    const env=fastLocalEnvironment(owner);
++    const snapshot=await buildSnapshot({env,scannerMode:true,coinalyzeApiKey:env.COINALYZE_API_KEY});
++    const btc=snapshot.assets.BTCUSDT,eth=snapshot.assets.ETHUSDT;
++    const [liquidity,ethQuote]=await Promise.all([
++      collectCrossVenueLiquidity(owner, {}, "BTC").catch(()=>null),
++      deskDirectQuote(owner,"ETH").catch(()=>null),
++    ]);
++    btc.crossVenueLiquidity=liquidity||{status:"unavailable",arrivalRecheck:{passed:false}};
++    if(liquidity?.executionQuote&&genuineExecutionQuote(liquidity.executionQuote))btc.ticker=liquidity.executionQuote;
++    else {const quote=await deskDirectQuote(owner,"BTC").catch(()=>null);if(quote)btc.ticker=quote;}
++    if(ethQuote)eth.ticker=ethQuote;
++    btc.holdingProfile={...HOLDING_PROFILE,minimumFirstTargetMoveUsd:0};
++    btc.opportunityEngine=buildOpportunityScan(btc,null);
++    eth.opportunityEngine=buildOpportunityScan(eth,btc);
++    const result=AlphaDeskDecision.deskAnalysis(snapshot,{origin:"shared-worker",monitor:fastMonitorConfigured(owner.env)});
++    owner.deskAnalysisCache=result;
++    return result;
++  })();
++  try{return await owner.deskAnalysisWork;}finally{owner.deskAnalysisWork=null;}
++}
++const DeskBridge=AlphaDeskBridge.createDeskBridge({
++  build:BUILD, analyse:sharedDeskAnalysis, quote:deskDirectQuote, ensureMonitor:ensureFastMonitor,
++  canMonitor:owner=>fastMonitorConfigured(owner.env),
++  notify:(owner,notification,eventId)=>sendBark(fastLocalEnvironment(owner),notification,{kind:"PLAN",eventId:"DESK:"+eventId,stage:"VERIFIED_ENTRY_ZONE_PENDING_FINAL_REVIEW"}),
++});
++
+ export class ScannerState {
+   constructor(ctx, env = {}) {
+     this.ctx = ctx;
+@@ -7414,7 +7901,9 @@
+   }
+ 
+   async alarm() {
+-    await runFastMonitorAlarm(this);
++    await Promise.all([runFastMonitorAlarm(this), DeskBridge.check(this).catch(error => {
++      console.error("desk alarm failed", String(error?.message || error).slice(0, 120));
++    })]);
+   }
+ 
+   async fetch(request) {
+@@ -7424,6 +7913,7 @@
+     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
+     if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
+     if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
++    if(["deskAnalysis","deskStatus","deskChange"].includes(input?.op))return Response.json(await localScannerOperation(this,input));
+     if(input?.op==="officialBlsRelayMaintenance")return Response.json(await maintainOfficialBlsRelay(this));
+     if(input?.op==="pushAuditAppend")return Response.json(await appendPushAuditStorage(this.ctx.storage,input.attempt,input.patch));
+     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
+@@ -7570,6 +8060,19 @@
+       if(!scannerAuthorized(request,env))return json({error:"UNAUTHORIZED",code:"SCANNER_TOKEN_REQUIRED",build:BUILD,workerReached:true},401,{"cache-control":"no-store"});
+       return json(await scannerStatus(env),200,{"cache-control":"no-store"});
+     }
++    if (path.startsWith("/desk/v1/")) {
++      try {
++        const result = await DeskBridge.handleRequest(request, path, input => durableStateCall(env, input));
++        return json(result.body, result.status, {"cache-control":"no-store"});
++      } catch { return json({error:"DESK_STATE_UNAVAILABLE"}, 503, {"cache-control":"no-store"}); }
++    }
++    if (request.method === "GET" && path === "/" && url.searchParams.get("view") === "desk") {
++      try {
++        const result = await durableStateCall(env, {op:"deskAnalysis"});
++        if (!result) throw Error("DESK_STATE_REQUIRED");
++        return json(result, 200, {"cache-control":"no-store"});
++      } catch { return json({error:"DESK_ANALYSIS_UNAVAILABLE"}, 503, {"cache-control":"no-store"}); }
++    }
+     if (request.method === "GET" && path === "/") return handleSnapshot(request, env, ctx);
+     if(request.method==="GET"&&path==="/monitor")return new Response(monitorPage(),{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","referrer-policy":"no-referrer","content-security-policy":"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}});
+     if (path === "/health") {

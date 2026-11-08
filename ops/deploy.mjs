@@ -5,6 +5,7 @@ import {validateTarget,wranglerCLI} from './deployment.mjs';
 import {assessCurrentRelease} from './current-release.mjs';
 import {cloudflareSnapshot,requestJson} from './diagnostics.mjs';
 import {withDispatchSecretFile} from './dispatch-secret-file.mjs';
+import { DESK_BUILD, isAuthorizedDeskDispatch, deskPreflight, deskPostflight } from './desk-release.mjs';
 const root=new URL('../',import.meta.url);
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
 const wrangler=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
@@ -16,7 +17,10 @@ if(tests.status!==0)process.exit(tests.status||1);
 // A missing scanner credential or inaccessible production endpoint fails closed.
 const manifest=JSON.parse(fs.readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
 // Preview builds may test candidates; only the reviewed release workflow can publish.
-if(manifest.status==='CANDIDATE_NOT_DEPLOYED'&&process.env.CRYPTO_ALPHA_CONTROLLED_RELEASE!=='1'){console.log(JSON.stringify({status:'CANDIDATE_PREVIEW_NO_PRODUCTION_MUTATION',build:manifest.build}));process.exit(0);}
+const deskCandidate=manifest.build===DESK_BUILD;
+const deskDispatch=deskCandidate&&isAuthorizedDeskDispatch();
+if(deskCandidate&&!deskDispatch){console.log(JSON.stringify({status:'DESK_PREVIEW_NO_PRODUCTION_MUTATION',build:manifest.build}));process.exit(0);}
+if(manifest.status==='CANDIDATE_NOT_DEPLOYED'&&process.env.CRYPTO_ALPHA_CONTROLLED_RELEASE!=='1'&&!deskDispatch){console.log(JSON.stringify({status:'CANDIDATE_PREVIEW_NO_PRODUCTION_MUTATION',build:manifest.build}));process.exit(0);}
 const baselineUrl=new URL('./production-baseline.json',import.meta.url);
 if(fs.existsSync(baselineUrl)){
  const baseline=JSON.parse(fs.readFileSync(baselineUrl,'utf8'));
@@ -33,6 +37,7 @@ if(fs.existsSync(baselineUrl)){
   process.exit(0);
  }
 }
+if(deskDispatch)await deskPreflight(config,JSON.parse(fs.readFileSync(baselineUrl,'utf8')));
 if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5i'){
  const preflight=spawnSync(process.execPath,[new URL('./r5-preflight.mjs',import.meta.url).pathname],{cwd:root,stdio:'inherit',env:process.env});
  if(preflight.status!==0)process.exit(preflight.status||1);
@@ -46,3 +51,4 @@ if(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r4'){
 const result=withDispatchSecretFile(manifest.build==='crypto-alpha-worker-v27.6.3-macro-r5i'?process.env.GITHUB_ACTIONS_DISPATCH_TOKEN:null,file=>
  spawnSync(process.execPath,[wranglerCLI(),'deploy','--config','wrangler.jsonc','--keep-vars',...(file?['--secrets-file',file]:[])],{cwd:root,stdio:'inherit',env:{...process.env,CLOUDFLARE_ACCOUNT_ID:config.accountId,CI:'true'}}));
 process.exitCode=result.status===0?0:(result.status||1);
+if(deskDispatch&&result.status===0)await deskPostflight(config,manifest);
