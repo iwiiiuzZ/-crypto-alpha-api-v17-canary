@@ -18,8 +18,9 @@ const wranglerBytes=fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url)
 assert.equal(manifest.wranglerSha256,createHash('sha256').update(wranglerBytes).digest('hex'),'Deployment configuration must match its reviewed manifest');
 assert.equal(content.match(/^const BLS_COLLECTOR_REF = "([^"]+)";/m)?.[1],manifest.collectorRef);
 assert.match(manifest.collectorSourceCommit,/^[a-f0-9]{40}$/);
+assert.ok(fs.readFileSync(new URL('../.github/workflows/official-bls-relay.yml',import.meta.url),'utf8').includes('ref: '+manifest.collectorSourceCommit));
 assert.notEqual(build,manifest.priorLiveBuild,'Changed candidate must never impersonate currently deployed build');
-assert.equal(build,'crypto-alpha-worker-v27.6.3-desk-dual-r1');
+assert.equal(build,'crypto-alpha-worker-v27.6.3-desk-dual-r2');
 // User-created GitHub secrets cannot use its reserved GITHUB_ prefix.
 const workflows=new URL('../.github/workflows/',import.meta.url);
 for(const file of fs.readdirSync(workflows).filter(file=>/\.ya?ml$/.test(file))){

@@ -10,6 +10,12 @@ const BLS_FEEDS=Object.freeze([
  {id:'BLS_EMPLOYMENT',url:'https://www.bls.gov/feed/empsit.rss'},
  {id:'BLS_CALENDAR',url:'https://www.bls.gov/schedule/news_release/bls.ics'}
 ]);
+const DESK_RELAY_BUILDS = ["crypto-alpha-worker-v27.6.3-desk-dual-r1", "crypto-alpha-worker-v27.6.3-desk-dual-r2"];
+export function reviewedRelayTarget(expected, actual) {
+ if (/^crypto-alpha-worker-v27\.6\.3-macro-r5[a-z]?$/.test(expected||'')) return actual===expected;
+ if (expected!==DESK_RELAY_BUILDS[1]) throw Error('EXACT_RELAY_BUILD_REQUIRED');
+ return DESK_RELAY_BUILDS.includes(actual);
+}
 export function validOfficialBlSResponse({url,text,contentType,source}){
  const u=new URL(url),correct=u.protocol==='https:'&&u.hostname==='www.bls.gov'&&u.username===''&&u.password==='';
  const isCalendar=source==='BLS_CALENDAR';
@@ -66,15 +72,14 @@ export async function deliverClaimsReferences(fetcher,origin,token,data){
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const target=process.env.CRYPTO_ALPHA_WORKER_ORIGIN,token=process.env.SCANNER_TOKEN;
  if(!target||!token)throw new Error('RELAY_ENV_MISSING');
- // Do not post to an old R4: a cron running before R5 deployment is harmless.
+ // The reviewed desk collector can renew official sources on either side of the controlled release.
  const health=await fetch(target+'/health',{signal:AbortSignal.timeout(12000)});
  const current=await health.json();
  const manifestUrl=new URL('./release-manifest.json',import.meta.url);
  const expected=process.env.EXPECTED_RELAY_BUILD||(fs.existsSync(manifestUrl)?JSON.parse(fs.readFileSync(manifestUrl,'utf8')).build:null);
- if(!/^crypto-alpha-worker-v27\.6\.3-macro-r5[a-z]?$/.test(expected||''))throw Error('EXACT_RELAY_BUILD_REQUIRED');
- if(current.build!==expected){
+ if(!reviewedRelayTarget(expected,current.build)){
   if(process.env.GITHUB_EVENT_NAME==='workflow_dispatch')throw Error('EXPLICIT_RELAY_TARGET_BUILD_MISMATCH');
-  console.log(JSON.stringify({status:'SKIPPED_R5_NOT_DEPLOYED',currentBuild:current.build||'unknown'}));process.exit(0);
+  console.log(JSON.stringify({status:'SKIPPED_UNREVIEWED_RELAY_TARGET',currentBuild:current.build||'unknown'}));process.exit(0);
  }
  const data=await collectBlsSources();
  const result=await deliverBlsSources(fetch,target,token,data);

@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r1";
+const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r2";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -699,7 +699,13 @@ async function localScannerOperation(owner,input){
  if(input.op==='deskChange')return DeskBridge.change(owner,input);
  if(input.op==='scannerCycle'){
   if(input.ensureMonitor)await ensureFastMonitor(owner);
-  return {stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT,...await runScanner(env,input.options||{})};
+  try {
+   return {stateOwnerBuild:BUILD,stateOwnerContract:STATE_OWNER_CONTRACT,...await runScanner(env,input.options||{})};
+  } finally {
+   if(input.deskMinute&&typeof owner.ctx.waitUntil==='function')owner.ctx.waitUntil(recordDeskMinute(owner).catch(()=>{
+    console.error('desk minute receipt unavailable');
+   }));
+  }
  }
  if(input.op==='publicMarket')return coordinatedMarketBundle(owner);
  if(input.op==='directQuote')return coordinatedDirectQuote(owner,input.symbol);
@@ -986,7 +992,7 @@ const BLS_RELAY_MAX_AGE_MS = 20*60*1000;
 const BLS_DISPATCH_STATE_KEY = "news:bls-dispatch:v1";
 const BLS_DISPATCH_REFRESH_MS = 10*60*1000;
 const BLS_DISPATCH_IDS = ["BLS_CPI","BLS_PPI","BLS_EMPLOYMENT","BLS_CALENDAR"];
-const BLS_COLLECTOR_REF = "crypto-alpha-collector-r5i-20261106";
+const BLS_COLLECTOR_REF = "main";
 function validBlsCollectorRef(ref){return ref==="main"||/^crypto-alpha-collector-r5[a-z]-\d{8}$/.test(ref);}
 function compactBlsRelayDispatch(state,configured){
  const stamp=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null;
@@ -7432,6 +7438,12 @@ const positive = value => isNum(value) && value > 0;
 const validDate = value => typeof value === "string" && Number.isFinite(Date.parse(value));
 const dateOrNull = value => validDate(value) ? value : null;
 const round = (value, digits = 5) => isNum(value) ? Number(value.toFixed(digits)) : null;
+const numberOrNull = value => isNum(value) ? value : null;
+const textOrNull = value => typeof value === "string" && value.length ? value.slice(0, 200) : null;
+const zoneOrNull = value => positive(value?.min) && positive(value?.max) && value.min <= value.max
+  ? { min: value.min, max: value.max } : null;
+const closeRuleOrNull = value => ["<", ">"].includes(value?.operator) && positive(value?.level)
+  ? { operator: value.operator, level: value.level } : null;
 
 function expectedClosedAt(now, period) {
   const duration = PERIODS[period];
@@ -7439,7 +7451,8 @@ function expectedClosedAt(now, period) {
 }
 
 function deskNetRR(direction, entry, stop, target, costPct) {
-  if (![entry, stop, target].every(positive) || !isNum(costPct) || costPct < 0) return null;
+  if (!["LONG", "SHORT"].includes(direction) || ![entry, stop, target].every(positive)
+      || !isNum(costPct) || costPct < 0 || costPct >= 100) return null;
   const sign = direction === "LONG" ? 1 : -1;
   const risk = (entry - stop) * sign;
   const reward = (target - entry) * sign;
@@ -7486,55 +7499,114 @@ function stableId(value) {
   return (hash >>> 0).toString(36);
 }
 
+function compactPricing(pricing) {
+  if (!pricing) return null;
+  return { status: textOrNull(pricing.status), checkedAt: dateOrNull(pricing.checkedAt),
+    validUntil: dateOrNull(pricing.validUntil), freshRecheckPassed: pricing.freshRecheckPassed === true,
+    entryReviewPassed: pricing.entryReviewPassed === true, temporaryObstacleReviewRequired: pricing.temporaryObstacleReviewRequired === true,
+    reasons: Array.isArray(pricing.reasons) ? pricing.reasons.map(textOrNull).filter(Boolean).slice(0, 8) : [] };
+}
+
+function deskPricingCurrent(pricing, now) {
+  const checked = Date.parse(pricing?.checkedAt), until = Date.parse(pricing?.validUntil);
+  return pricing?.status === "REFERENCE_PRICED" && pricing.freshRecheckPassed === true
+    && Number.isFinite(checked) && checked <= now + 2000 && now < until && until - checked <= 10000;
+}
+
+function executableDeskSpread(quote) {
+  const mid = (quote.bid + quote.ask) / 2;
+  return quote.independent && mid > 0 && (quote.ask - quote.bid) / mid * 10000 <= 20
+    && Math.abs(quote.last / mid - 1) * 10000 <= 25;
+}
+
 function planFrom(symbol, quote, model, candidate, horizon, capturedAt) {
   if (!candidate || !["LONG", "SHORT"].includes(candidate.direction ?? model.direction)) return null;
   const direction = candidate.direction ?? model.direction;
-  const pricing = candidate.liquidityPricing ?? (horizon === "INTRADAY" ? model.liquidityPricing : null);
-  const zone = pricing?.rrQualifiedEntryZone ?? candidate.rrQualifiedEntryZone;
-  const low = zone?.min;
-  const high = zone?.max;
+  const pricing = candidate.liquidityPricing ?? (horizon === "SWING" ? model.swingAssessment?.liquidityPricing : model.liquidityPricing);
+  if (["MODEL_EVENT_EXPIRED", "MODEL_EVENT_TIME_UNVERIFIABLE"].includes(pricing?.status)) return null;
+  const zone = pricing?.status === "REFERENCE_PRICED" ? pricing.rrQualifiedEntryZone : candidate.rrQualifiedEntryZone;
   const stop = candidate.stopLoss;
   const target = pricing?.liquidityAdjustedFirstTarget ?? candidate.target;
-  const invalidation = candidate.modelInvalidationPrice ?? candidate.protectivePrice ?? stop;
+  const long = direction === "LONG";
+  const protection = [stop, pricing?.modelProtectionPrice, candidate.modelInvalidationPrice, candidate.protectivePrice,
+    candidate.entryTriggerProtectionPrice, model.eventEvidence?.protectivePrice].filter(positive);
+  const invalidation = long ? Math.max(...protection) : Math.min(...protection);
   const current = direction === "LONG" ? quote.ask : quote.bid;
   const costPct = candidate.estimatedRoundTripCostPct ?? model.estimatedRoundTripCostPct;
   const expiry = candidate.expiresAt ?? model.eventEvidence?.expiresAt;
-  if (![low, high, stop, target, invalidation, current].every(positive) || low > high
-      || !isNum(costPct) || costPct < 0 || !validDate(expiry) || Date.parse(expiry) <= Date.parse(capturedAt)) return null;
-  const long = direction === "LONG";
-  if (long ? stop >= low || invalidation > low || target <= high || current <= invalidation || current >= target
-           : stop <= high || invalidation < high || target >= low || current >= invalidation || current <= target) return null;
+  const now = Date.parse(capturedAt);
+  if (!zoneOrNull(zone) || ![stop, target, invalidation, current].every(positive)
+      || !isNum(costPct) || costPct < 0 || costPct >= 100 || !validDate(expiry) || Date.parse(expiry) <= now) return null;
+  if (long ? Math.min(quote.bid, quote.last) <= invalidation || Math.max(current, quote.last) >= target
+           : Math.max(quote.ask, quote.last) >= invalidation || Math.min(current, quote.last) <= target) return null;
+  const cap = (target + 2 * stop) / (3 * (long ? 1 + costPct / 100 : 1 - costPct / 100));
+  const epsilon = Math.max(.000000001, current * 1e-12);
+  const low = long ? Math.max(zone.min, invalidation + epsilon) : Math.max(zone.min, target + epsilon, cap + epsilon);
+  const high = long ? Math.min(zone.max, target - epsilon, cap - epsilon) : Math.min(zone.max, invalidation - epsilon);
+  if (low > high) return null;
   const zoneRR = deskNetRR(direction, long ? low : high, stop, target, costPct);
-  if (zoneRR === null || zoneRR < 2) return null;
   const worstRR = deskNetRR(direction, long ? high : low, stop, target, costPct);
-  // Boundary rounding may leave a small overshoot. Recalculate at the actual quote again on arrival.
-  if (worstRR === null || worstRR < 1.99995) return null;
+  if (zoneRR === null || zoneRR < 2 || worstRR === null || worstRR < 2) return null;
   const currentRR = deskNetRR(direction, current, stop, target, costPct);
   const atPrice = current >= low && current <= high && currentRR !== null && currentRR >= 2;
   const eventAt = dateOrNull(model.eventEvidence?.eventAt ?? candidate.breakoutAt ?? candidate.eventAt ?? candidate.candleAt);
-  const eventKey = model.eventEvidence?.eventKey ?? eventAt ?? expiry;
+  if (!eventAt || Date.parse(eventAt) + PERIODS["15m"] > now) return null;
+  const eventKey = model.eventEvidence?.eventKey ?? eventAt;
   const id = [symbol, model.submodel, direction, horizon, stableId(String(eventKey))].join("-");
   const revision = stableId([id, low, high, stop, target, invalidation, costPct, expiry].join("|"));
-  const liquidityPending = pricing?.entryReviewPassed !== true;
-  const active = pricing?.temporaryObstacleReviewRequired !== true;
-  const state = atPrice ? liquidityPending ? "WAIT_LIQUIDITY" : "REVIEW" : "WAIT_PRICE";
+  const liquidity = compactPricing(pricing);
+  const liquidityCurrent = deskPricingCurrent(liquidity, now) && executableDeskSpread(quote)
+    && !liquidity.temporaryObstacleReviewRequired;
+  const arrived = liquidityCurrent && liquidity.entryReviewPassed && liquidity.reasons.length === 0;
+  const state = atPrice ? arrived ? "REVIEW" : "WAIT_LIQUIDITY" : "WAIT_PRICE";
+  const priceOnlyReasons = ["CURRENT_PRICE_OUTSIDE_MODEL_ZONE", "CONFIRMED_FIRST_OBSTACLE_NET_RR_BELOW_2"];
+  const monitorable = atPrice ? arrived : liquidityCurrent && liquidity.reasons.every(reason => priceOnlyReasons.includes(reason));
   const costs = (candidate.holdingFunding?.scenarios ?? model.swingAssessment?.funding?.scenarios ?? [])
     .filter(row => [2, 7, 14].includes(row.days))
     .map(row => ({ days: row.days, netRR: round(row.netRR), totalCostPct: round(row.totalCostPct) }));
   return { id, revision, asset: symbol, model: model.submodel, direction, horizon, state, low, high, stop, target, invalidation,
     current, currentRR: round(currentRR), zoneRR: round(zoneRR), costPct, costs, eventAt,
-    expiresAt: expiry, capturedAt, monitorable: active,
-    finalReview: ["复核消息与宏观执行风险", "核对实际费用与滑点", ...(liquidityPending ? ["复核跨所流动性"] : [])] };
+    expiresAt: expiry, capturedAt, monitorable, liquidity,
+    finalReview: ["复核消息与宏观执行风险", "核对实际费用与滑点", ...(!arrived ? ["复核跨所流动性"] : [])] };
 }
 
 function modelSummary(model, id) {
   const evidence = model?.eventEvidence;
-  const level = evidence?.triggerCloseRule ?? evidence?.retestCloseRule;
-  const next = level && positive(level.level)
-    ? "等 15 分钟收盘 " + level.operator + " " + level.level
-    : model?.state === "WAIT_PRICE" ? "等待欧易对手价进入净盈亏比合格区" : null;
+  const level = closeRuleOrNull(model?.state === "WAIT_RETEST" ? evidence?.retestCloseRule
+    : model?.state === "RETEST_ACCEPTED" ? evidence?.triggerCloseRule : null);
+  const next = level ? "等 15 分钟收盘 " + level.operator + " " + level.level
+    : model?.state === "WAIT_PRICE" ? "等待欧易对手价进入净盈亏比合格区"
+      : model?.state === "WAIT_LIQUIDITY" ? "等待新鲜跨所盘口与成交复核" : null;
+  const pricing = model?.liquidityPricing ?? model?.candidate?.liquidityPricing;
+  const eventAt = dateOrNull(evidence?.eventAt);
+  const twoClose = closeRuleOrNull(evidence?.twoCloseInvalidation);
   return { model: id, state: model?.state ?? "DATA_BLOCKED", reason: model?.failedGate ?? model?.swingAssessment?.reason ?? null,
-    eventAt: dateOrNull(evidence?.eventAt), next };
+    eventAt, next, evidence: !evidence && !pricing ? null : {
+      eventAt, boundary: numberOrNull(evidence?.boundary), expiresAt: dateOrNull(evidence?.expiresAt),
+      direction: ["LONG", "SHORT"].includes(evidence?.direction ?? model?.direction) ? evidence?.direction ?? model.direction : null,
+      progress: textOrNull(evidence?.progress), frozenEntryZone: zoneOrNull(evidence?.frozenEntryZone),
+      retestBand: zoneOrNull(evidence?.retestBand), retestCloseRule: closeRuleOrNull(evidence?.retestCloseRule),
+      retestAt: dateOrNull(evidence?.retestAt), triggerCloseRule: closeRuleOrNull(evidence?.triggerCloseRule),
+      triggerAt: dateOrNull(evidence?.triggerAt), protectivePrice: numberOrNull(evidence?.protectivePrice),
+      stopLoss: numberOrNull(model?.candidate?.stopLoss ?? model?.stopLoss ?? evidence?.stopLoss),
+      twoCloseInvalidation: twoClose && evidence.twoCloseInvalidation.count === 2 ? { ...twoClose, count: 2 } : null,
+      rrQualifiedEntryZone: zoneOrNull(pricing?.status === "REFERENCE_PRICED" ? pricing.rrQualifiedEntryZone
+        : model?.candidate?.rrQualifiedEntryZone ?? model?.rrQualifiedEntryZone),
+      firstTarget: numberOrNull(pricing?.liquidityAdjustedFirstTarget ?? model?.candidate?.target ?? model?.target),
+      netRR: numberOrNull(pricing?.currentNetRR ?? model?.candidate?.netRR ?? model?.netRR), liquidity: compactPricing(pricing),
+    } };
+}
+
+function assetLiquidity(asset, now) {
+  const context = asset?.crossVenueLiquidity;
+  if (!context) return null;
+  const checkedAt = dateOrNull(context.checkedAt), age = now - Date.parse(checkedAt);
+  return { status: textOrNull(context.status), source: textOrNull(context.source), checkedAt,
+    validUntil: checkedAt ? new Date(Date.parse(checkedAt) + 10000).toISOString() : null,
+    connectedVenues: Array.isArray(context.connectedVenues) ? context.connectedVenues.map(textOrNull).filter(Boolean).slice(0, 8) : [],
+    independentVenueCount: numberOrNull(context.arrivalRecheck?.independentVenueCount),
+    passed: age >= -2000 && age < 10000 && context.status === "ok" && context.arrivalRecheck?.passed === true,
+    reason: textOrNull(context.reason) ?? (context.arrivalRecheck?.passed === true && age >= 10000 ? "LIQUIDITY_RECHECK_EXPIRED" : null) };
 }
 
 function assetSummary(asset, symbol, capturedAt) {
@@ -7542,20 +7614,23 @@ function assetSummary(asset, symbol, capturedAt) {
   const quote = deskQuote(asset?.ticker, now);
   const structure = Object.fromEntries(Object.keys(PERIODS).map(tf => [tf, structureStatus(asset, tf, now)]));
   const engine = asset?.opportunityEngine;
-  const checkedAt = Date.parse(engine?.checkedAt ?? "");
+  const checkedAt = dateOrNull(engine?.checkedAt), checkedAge = now - Date.parse(checkedAt);
+  const closedBarAt = dateOrNull(engine?.closedBarAt);
   const structureReady = Object.values(structure).every(tf => tf.ready)
     && new Set(Object.values(structure).map(tf => tf.source)).size === 1;
-  const ready = quote.ready && structureReady && Array.isArray(engine?.models)
-    && now - checkedAt >= -2000 && now - checkedAt <= 35000;
-  const models = MODELS.map(id => modelSummary(ready ? engine.models.find(m => m.submodel === id) : null, id));
-  const plans = ready ? engine.models.flatMap(model => {
+  const engineFresh = checkedAge >= -2000 && checkedAge <= 35000 && Array.isArray(engine?.models);
+  const modelRows = MODELS.map(id => engineFresh ? engine.models.find(m => m?.submodel === id && typeof m.state === "string") : null);
+  const ready = quote.ready && structureReady && modelRows.every(Boolean) && closedBarAt === structure["15m"].closedAt;
+  const models = MODELS.map((id, index) => modelSummary(modelRows[index], id));
+  const plans = ready ? modelRows.flatMap(model => {
     const swing = model.swingAssessment;
     const swingPlan = planFrom(symbol, quote, model, swing?.candidate ?? swing?.pendingCandidate, "SWING", capturedAt);
-    const intraday = model.candidate ?? (["WAIT_PRICE", "WAIT_LIQUIDITY", "STRUCTURE_READY"].includes(model.state) ? model : null);
+    const intraday = model.candidate ?? (["WAIT_PRICE", "WAIT_LIQUIDITY"].includes(model.state)
+      || (model.state === "STRUCTURE_READY" && !model.failedGate) ? model : null);
     const intradayPlan = planFrom(symbol, quote, model, intraday, "INTRADAY", capturedAt);
     return [swingPlan, intradayPlan].filter(Boolean);
   }) : [];
-  return { asset: symbol, quote, structure, ready, plans, models,
+  return { asset: symbol, quote, structure, ready, plans, models, checkedAt, closedBarAt, liquidity: assetLiquidity(asset, now),
     reason: !quote.ready ? "欧易真实成交或盘口缺失、过期" : !structureReady ? "同源三周期已收盘结构待核验"
       : !ready ? "策略扫描证据暂不可用" : null };
 }
@@ -7607,15 +7682,20 @@ function deskAnalysis(snapshot, { origin = "site-engine", monitor = false, now =
       title: row.title.slice(0, 200), source: String(row.source ?? row.sourceId ?? "上游新闻"),
       at: dateOrNull(row.publishedAt), ...(typeof row.url === "string" && row.url.startsWith("https://") ? { url: row.url } : {}),
     }));
+  const newsSources = Object.entries(snapshot?.newsContext?.sources ?? {}).slice(0, 16).map(([id, row]) => ({
+    id, status: textOrNull(row?.status), fetchedAt: dateOrNull(row?.fetchedAt), latestPublishedAt: dateOrNull(row?.latestPublishedAt),
+    transportAgeSeconds: numberOrNull(row?.transportAgeSeconds), sourceProvenance: textOrNull(row?.sourceProvenance), reason: textOrNull(row?.reason),
+  }));
   return { build: String(snapshot?.build ?? "未知"), apiVersion: String(snapshot?.apiVersion ?? "未知"), capturedAt,
-    origin, monitor, assets, ...rankDeskPlans(plans), news, macro: macroSummary(snapshot?.newsContext) };
+    origin, monitor, assets, ...rankDeskPlans(plans), news, newsSources, macro: macroSummary(snapshot?.newsContext) };
 }
 
-return {deskNetRR,deskQuote,deskAnalysis,rankDeskPlans};
+return {deskNetRR,deskQuote,deskAnalysis,rankDeskPlans,deskPricingCurrent,executableDeskSpread};
 })();
 
+const DESK_MINUTE_RECEIPT_KEY = "desk:v1:minute-receipt";
 const AlphaDeskBridge = (() => {
-const {deskNetRR,deskQuote}=AlphaDeskDecision;
+const {deskNetRR,deskQuote,deskPricingCurrent,executableDeskSpread}=AlphaDeskDecision;
 const DESK_SITE_PUBLIC_KEY = {"kty":"EC","x":"MoGuRJAV-711i0iNq0tYXEWq1c9Bwqy1dt3s9LcTi0I","y":"B1m6miGiGW_qgoLwhYFelYtKVQrNml2yIG-s6yhoARM","crv":"P-256"};
 
 const WATCH_KEY = "desk:v1:watches";
@@ -7661,10 +7741,11 @@ function recentWatches(value) {
 
 function planQuote(plan, ticker, now) {
   const quote = deskQuote(ticker, now, 20000);
-  if (!quote.ready || !quote.independent) return null;
+  if (!quote.ready || !executableDeskSpread(quote)) return null;
   const long = plan.direction === "LONG";
   const price = long ? quote.ask : quote.bid;
-  const stopped = long ? quote.bid <= Math.max(plan.stop, plan.invalidation) : quote.ask >= Math.min(plan.stop, plan.invalidation);
+  const stopped = long ? Math.min(quote.last,quote.bid) <= Math.max(plan.stop, plan.invalidation)
+    : Math.max(quote.last,quote.ask) >= Math.min(plan.stop, plan.invalidation);
   const targetPassed = long ? Math.max(quote.last, quote.bid) >= plan.target : Math.min(quote.last, quote.ask) <= plan.target;
   const rr = deskNetRR(plan.direction, price, plan.stop, plan.target, plan.costPct);
   return { quote, price, stopped, targetPassed, rr, inside: !stopped && !targetPassed
@@ -7702,9 +7783,12 @@ function matches(watch, plan) {
 
 function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, notify }) {
   async function status(owner) {
-    const watches = recentWatches(await owner.ctx.storage.get(WATCH_KEY));
+    const [storedWatches, receipt] = await Promise.all([owner.ctx.storage.get(WATCH_KEY), owner.ctx.storage.get(DESK_MINUTE_RECEIPT_KEY)]);
+    const watches = recentWatches(storedWatches);
     const latestCheckAt = watches.map(watch => watch.lastCheckAt).filter(Boolean).sort().at(-1) ?? null;
-    return { connected: canMonitor(owner), build, latestCheckAt, watches: watches.map(watchView) };
+    const latestQuoteVerifiedAt = watches.map(watch => watch.lastQuoteVerifiedAt).filter(Boolean).sort().at(-1) ?? null;
+    return { connected: canMonitor(owner), build, latestCheckAt, latestQuoteVerifiedAt,
+      minuteScan: receipt?.build === build ? receipt : null, watches: watches.map(watchView) };
   }
 
   async function change(owner, input) {
@@ -7724,14 +7808,16 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     }
     if (!canMonitor(owner)) return problem(503, "SCANNER_OR_BARK_NOT_CONFIGURED");
     const analysis = await analyse(owner);
-    const plan = analysis.assets[id.asset].plans.find(row => row.id === id.id && row.revision === id.revision);
-    if (!plan?.monitorable || Date.parse(plan.expiresAt) <= Date.now()) return problem(409, "PLAN_REFRESH_REQUIRED");
+    const plan = analysis.assets?.[id.asset]?.plans.find(row => row.id === id.id && row.revision === id.revision);
+    if (!plan?.monitorable || !deskPricingCurrent(plan.liquidity,Date.now()) || Date.parse(plan.expiresAt) <= Date.now())
+      return problem(409, "PLAN_REFRESH_OR_LIQUIDITY_REVIEW_REQUIRED");
     const scheduled = await ensureMonitor(owner);
     if (!scheduled?.scheduled) return problem(503, "ALARM_NOT_SCHEDULED");
     const saved = await storage.transaction(async txn => {
       const old = recentWatches(await txn.get(WATCH_KEY));
       const same = old.find(watch => matches(watch, plan));
       if (same && LIVE.has(same.state)) return true;
+      if (same?.delivery === "ACCEPTED") return false;
       if (old.some(watch => watch.plan.id === plan.id && LIVE.has(watch.state))) return false;
       if (old.filter(watch => LIVE.has(watch.state)).length >= MAX_ACTIVE) return false;
       const now = iso();
@@ -7775,44 +7861,54 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     const end = (state, reason) => update(storage, plan, current => ({
       ...current, state, pending: null, lease: null, updatedAt: iso(now), lastCheckAt: iso(now), reason,
     }));
-    const keep = reason => update(storage, plan, current => ({ ...current, lastCheckAt: iso(now), reason }));
+    const keep = (reason, verified = false) => update(storage, plan, current => ({ ...current, lastCheckAt: iso(now),
+      ...(verified ? {lastQuoteVerifiedAt:iso(now)} : {}), reason }));
     if (Date.parse(plan.expiresAt) <= now) return end("EXPIRED", "入场事件到期");
     const first = planQuote(plan, firstTicker, now);
     if (!first) return keep("真实成交与盘口待复核");
     if (first.stopped) return end("INVALIDATED", "触及结构失效或止损");
     if (first.targetPassed) return end("INVALIDATED", "第一目标已穿越");
-    if (watch.delivery === "ACCEPTED") return keep("已发到区提醒，等待人工终审");
-    if (!first.inside) return keep("等待欧易对手价进入净盈亏比合格区");
+    if (watch.delivery === "ACCEPTED") return keep("已发到区提醒，等待人工终审",true);
+    if (!first.inside) return keep("等待欧易对手价进入净盈亏比合格区",true);
     if (watch.pending?.nextAt > now || watch.lease?.until > now) return null;
     await new Promise(resolve => setTimeout(resolve, 500));
     const secondTicker = await quote(owner, plan.asset);
-    if (!confirmDeskArrival(plan, [firstTicker, secondTicker])) return keep("等待第二份独立盘口");
+    if (!confirmDeskArrival(plan, [firstTicker, secondTicker])) return keep("等待第二份独立盘口",true);
     const current = await analyse(owner, true);
-    const updated = current.assets[plan.asset].plans.find(row => row.id === plan.id && row.revision === plan.revision);
-    if (!updated?.monitorable) return keep("当前模型或首个障碍已变化，等待复核");
+    const updated = current.assets?.[plan.asset]?.plans.find(row => row.id === plan.id && row.revision === plan.revision);
+    if (!updated) return keep("当前模型或首个障碍已变化，等待复核",true);
+    if (updated.state !== "REVIEW" || !updated.monitorable || !updated.liquidity?.entryReviewPassed
+        || !deskPricingCurrent(updated.liquidity,Date.now())) return keep("到区后等待跨所流动性和当前模型复核",true);
     // The model review can take longer than a quote lifetime. Sample again after it completes.
     const resample = await quote(owner, plan.asset);
     await new Promise(resolve => setTimeout(resolve, 500));
     const lastTicker = await quote(owner, plan.asset);
     const arrival = confirmDeskArrival(plan, [resample, lastTicker]);
-    if (!arrival) return keep("终审前报价变化，等待重新到区");
+    if (!arrival) return keep("终审前报价变化，等待重新到区",true);
+    if (!deskPricingCurrent(updated.liquidity,Date.now())) return keep("跨所复核已过有效期，等待重新到区",true);
     const lease = crypto.randomUUID();
     const locked = await update(storage, plan, existing => {
       if (existing.delivery === "ACCEPTED" || existing.lease?.until > Date.now()) return null;
-      return { ...existing, state: "ARRIVED", lastCheckAt: iso(), updatedAt: iso(), arrivedAt: existing.arrivedAt ?? iso(),
+      return { ...existing, state: "ARRIVED", lastCheckAt: iso(), lastQuoteVerifiedAt: iso(), updatedAt: iso(), arrivedAt: existing.arrivedAt ?? iso(),
         reason: "已到区，待新闻与实际成本终审", delivery: "PENDING", lease: { id: lease, until: Date.now() + 25000 } };
     });
     if (!locked) return null;
+    if (!deskPricingCurrent(updated.liquidity,Date.now()) || Date.parse(plan.expiresAt)<=Date.now()) {
+      return update(storage,plan,row=>row.lease?.id===lease ? {...row,state:"ACTIVE",lease:null,delivery:null,
+        arrivedAt:null,reason:"跨所复核已过有效期，等待重新到区"} : null);
+    }
     try {
       const verified = await notify(owner, {
         title: plan.asset + (plan.direction === "LONG" ? " 做多" : " 做空") + "｜已到区待终审",
         body: "欧易 " + arrival.price + " · 入场 " + plan.low + "–" + plan.high + " · 止损 " + plan.stop
           + " · 第一止盈 " + plan.target + " · 净盈亏比 1∶" + arrival.rr.toFixed(2)
           + " · 北京时间 " + new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) + " · " + plan.id,
-        level: "timeSensitive", url: ORIGIN + "/?plan=" + encodeURIComponent(plan.id) + "#overview",
+        level: "timeSensitive", url: ORIGIN + "/?plan=" + encodeURIComponent(plan.id) + "&revision=" + encodeURIComponent(plan.revision) + "#overview",
       }, plan.id);
       if (verified?.sent !== true) throw new Error("PROVIDER_REJECTED");
-      return update(storage, plan, row => row.lease?.id === lease ? { ...row, lease: null, pending: null, delivery: "ACCEPTED", updatedAt: iso() } : null);
+      return update(storage, plan, row => row.lease?.id === lease ? { ...row, lease: null, pending: null, delivery: "ACCEPTED", updatedAt: iso(),
+        deliveryReceipt: { provider: "BARK", providerAcceptedAt: verified.providerAcceptedAt ?? null,
+          auditAttemptId: verified.auditAttemptId ?? null, auditPersisted: verified.auditPersisted === true, deviceReceiptVerified: false } } : null);
     } catch {
       return update(storage, plan, row => {
         if (row.lease?.id !== lease) return null;
@@ -7864,6 +7960,57 @@ async function deskDirectQuote(owner, asset) {
   return genuineExecutionQuote(ticker,20)&&(ticker.ask-ticker.bid)/mid*10000<=20&&Math.abs(ticker.last/mid-1)*10000<=25?ticker:null;
 }
 
+function deskOwnStructureContext(asset) {
+  // Reuse the original detector's structure-readiness gate on BTC's own bars.
+  // No external trend is supplied when BTC itself is the execution instrument.
+  return {timeframes:Object.fromEntries(Object.entries(asset.timeframes||{}).map(([period,frame])=>{
+    const {status,source,quality,dataFreshness,coordinator}=frame;
+    return [period,{status,source,quality,dataFreshness,coordinator}];
+  }))};
+}
+
+function deskRangeLifecycle(asset,original) {
+  if(!original||!genuineExecutionQuote(asset?.ticker))return null;
+  const rows=observationCandles(asset),windowBars=8,barMs=900000;
+  const atr=asset.timeframes?.["15m"]?.indicators?.atr14,long=original.direction==="LONG";
+  if(!(Number.isFinite(atr)&&atr>0))return null;
+  const shift=RANGE_CONFIG.sweepAtr*atr,boundary=original.boundary;
+  // Match the original detector's latest event of the same family in its last eight closed bars.
+  const event=rows.slice(Math.max(4,rows.length-windowBars),-1).findLast(row=>original.submodel==="C2"
+    ?(long?row.c<boundary-shift:row.c>boundary+shift)
+    :(long?row.l<boundary-shift&&row.c>boundary:row.h>boundary+shift&&row.c<boundary));
+  const eventMs=Date.parse(event?.ts),sequence=rows.slice(rows.indexOf(event));
+  if(!Number.isFinite(eventMs)||sequence.length<2||!sequence.every((row,index)=>Date.parse(row.ts)===eventMs+index*barMs))return null;
+  // It leaves that window when the eighth following bar has closed.
+  const expires=eventMs+(windowBars+1)*barMs;
+  if(expires<=Date.now())return null;
+  const entry=long?asset.ticker.ask:asset.ticker.bid,target=original.target,stop=original.stopLoss,cost=original.estimatedRoundTripCostPct;
+  if(long?entry>=target:entry<=target)return null;
+  const protection=long?Math.min(...sequence.map(row=>row.l)):Math.max(...sequence.map(row=>row.h));
+  const epsilon=Math.max(.000001,entry*.00000001),cap=(target+2*stop)/(3*(long?1+cost/100:1-cost/100));
+  const zone=long?{min:Math.max(original.entryZone.min,protection+epsilon),max:Math.min(original.entryZone.max,cap)}
+    :{min:Math.max(original.entryZone.min,cap),max:Math.min(original.entryZone.max,protection-epsilon)};
+  return {...original,entry,atr,eventAt:event.ts,expiresAt:new Date(expires).toISOString(),triggerAt:rows.at(-1).ts,protectivePrice:protection,
+    netRR:AlphaDeskDecision.deskNetRR(original.direction,entry,stop,target,cost),
+    rrQualifiedEntryZone:Number.isFinite(cap)&&zone.min<=zone.max?zone:null};
+}
+
+function buildDeskOpportunityScan(asset,btc) {
+  const context=asset.symbol==="BTCUSDT"&&btc===null?deskOwnStructureContext(asset):btc;
+  const audit=buildOpportunityScan(asset,context);
+  const range=deskRangeLifecycle(asset,discoverRangeReversalBase(asset,context));
+  if(!range)return audit;
+  const pending=!priceInsideEntryZone(range.entry,range.rrQualifiedEntryZone)||!(range.netRR>=MIN_NET_RR);
+  const result=withLiquidityPricing({...range,submodel:range.submodel,direction:range.direction,
+    state:pending?(range.rrQualifiedEntryZone?"WAIT_PRICE":"STRUCTURE_READY"):"CANDIDATE_FOR_REVIEW",
+    minNetRR:MIN_NET_RR,candidate:pending?null:range,
+    failedGate:pending?(range.rrQualifiedEntryZone?"WAIT_RR_QUALIFIED_PRICE_NO_CHASING":"FIRST_TARGET_NET_RR_BELOW_2"):null},asset,range);
+  const reviewed={...result,eventEvidence:modelEventEvidence(range,{state:"STRUCTURE_READY",protectivePrice:range.protectivePrice,
+    triggerAt:range.triggerAt,stopLoss:range.stopLoss})};
+  if(asset.holdingProfile)reviewed.swingAssessment=compactSwingAssessment(assessSwingOpportunity(asset,reviewed));
+  return {...audit,models:audit.models.map(model=>model.submodel===range.submodel?reviewed:model)};
+}
+
 async function sharedDeskAnalysis(owner, force = false) {
   if(!force&&owner.deskAnalysisCache&&Date.now()-Date.parse(owner.deskAnalysisCache.capturedAt)<=4000)return owner.deskAnalysisCache;
   if(owner.deskAnalysisWork)return owner.deskAnalysisWork;
@@ -7880,13 +8027,27 @@ async function sharedDeskAnalysis(owner, force = false) {
     else {const quote=await deskDirectQuote(owner,"BTC").catch(()=>null);if(quote)btc.ticker=quote;}
     if(ethQuote)eth.ticker=ethQuote;
     btc.holdingProfile={...HOLDING_PROFILE,minimumFirstTargetMoveUsd:0};
-    btc.opportunityEngine=buildOpportunityScan(btc,null);
-    eth.opportunityEngine=buildOpportunityScan(eth,btc);
+    btc.opportunityEngine=buildDeskOpportunityScan(btc,null);
+    eth.opportunityEngine=buildDeskOpportunityScan(eth,btc);
     const result=AlphaDeskDecision.deskAnalysis(snapshot,{origin:"shared-worker",monitor:fastMonitorConfigured(owner.env)});
     owner.deskAnalysisCache=result;
     return result;
   })();
   try{return await owner.deskAnalysisWork;}finally{owner.deskAnalysisWork=null;}
+}
+async function recordDeskMinute(owner) {
+  if (owner.deskMinuteWork) return owner.deskMinuteWork;
+  owner.deskMinuteWork = (async () => {
+    const storage = owner.ctx.storage;
+    const previous = await storage.get(DESK_MINUTE_RECEIPT_KEY);
+    if (previous?.build === BUILD && Math.floor(Date.parse(previous.checkedAt) / 60000) === Math.floor(Date.now() / 60000)) return;
+    const result = await sharedDeskAnalysis(owner, true);
+    const assets = Object.fromEntries(Object.entries(result.assets).map(([symbol, asset]) => [symbol, {
+      ready: asset.ready, models: asset.models.map(({ model, state }) => ({ model, state })),
+    }]));
+    await storage.put(DESK_MINUTE_RECEIPT_KEY, { build: BUILD, checkedAt: result.capturedAt, assets });
+  })();
+  try { await owner.deskMinuteWork; } finally { owner.deskMinuteWork = null; }
 }
 const DeskBridge=AlphaDeskBridge.createDeskBridge({
   build:BUILD, analyse:sharedDeskAnalysis, quote:deskDirectQuote, ensureMonitor:ensureFastMonitor,
@@ -8123,7 +8284,7 @@ export default {
     // Monitoring must continue during manual queries; shared endpoint/structure coordination deduplicates upstream work.
     const task = (async () => {
       // A single external hop; state, structures and model review stay inside the owner.
-      const result=await durableStateCall(env,{op:'scannerCycle',ensureMonitor:true});
+      const result=await durableStateCall(env,{op:'scannerCycle',ensureMonitor:true,deskMinute:true});
       if(result?.stateOwnerBuild!==BUILD||result?.stateOwnerContract!==STATE_OWNER_CONTRACT)throw Error('SCANNER_STATE_OWNER_VERSION_MISMATCH');
       return result;
     })().catch((error) => console.error("scheduled scanner failed", error));

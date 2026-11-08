@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
+import {reviewedRelayTarget} from '../ops/official-bls-relay.mjs';
 const raw=readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 const code=raw.replace(/^export\s+(default\s+)?/gm,(_,def)=>def?'const defaultExport = ':'');
 const {officialBlsRelayUrl,officialBlsRelayRecord,acceptOfficialBlsRelay,newsContextSummary,parseNewsXml,scannerAuthorized}=
@@ -11,6 +12,12 @@ const sha256=createHash('sha256').update(xml).digest('hex');
 const input={sources:[{id:'BLS_CPI',sourceUrl:origin,body:xml,fetchedAt,sha256}]};
 const kv=new Map(),env={ALERT_STATE:{get:async(key)=>kv.get(key)||null,put:async(key,json)=>kv.set(key,JSON.parse(json))}};
 const req=obj=>new Request('https://worker.test/scanner/official-macro-relay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(obj)});
+const reviewedDesk='crypto-alpha-worker-v27.6.3-desk-dual-r2', priorDesk='crypto-alpha-worker-v27.6.3-desk-dual-r1';
+assert.equal(reviewedRelayTarget(reviewedDesk,reviewedDesk),true);
+assert.equal(reviewedRelayTarget(reviewedDesk,priorDesk),true);
+assert.equal(reviewedRelayTarget(reviewedDesk,'crypto-alpha-worker-v27.6.3-desk-dual-r3'),false);
+assert.equal(reviewedRelayTarget('crypto-alpha-worker-v27.6.3-macro-r5i',priorDesk),false);
+assert.throws(()=>reviewedRelayTarget('unreviewed',priorDesk),/EXACT_RELAY_BUILD_REQUIRED/);
 assert.equal(scannerAuthorized(new Request('https://worker.test',{headers:{authorization:'Bearer accepted'}}),{SCANNER_TOKEN:'accepted'}),true);
 assert.equal(scannerAuthorized(new Request('https://worker.test',{headers:{authorization:'Bearer invalid'}}),{SCANNER_TOKEN:'accepted'}),false);
 assert.equal(officialBlsRelayUrl('BLS_CPI'),origin);
