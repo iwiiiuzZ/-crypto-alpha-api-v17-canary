@@ -8,6 +8,7 @@ fs.writeFileSync(path.join(dir,'app.mjs'),`const RealDate=globalThis.Date;class 
 fs.writeFileSync(path.join(dir,'entry.mjs'),`
 import app,{setClock} from './app.mjs';export {ScannerState} from './app.mjs';
 export default {async fetch(req,env,ctx){const u=new URL(req.url);
+ if(u.pathname==='/__fixture/desk')return env.SCANNER_STATE.get(env.SCANNER_STATE.idFromName('crypto-alpha-primary')).fetch('https://internal/state',{method:'POST',body:JSON.stringify({op:'deskAnalysis'})});
  if(u.pathname==='/__fixture/public')return env.SCANNER_STATE.get(env.SCANNER_STATE.idFromName('crypto-alpha-primary')).fetch('https://internal/state',{method:'POST',body:JSON.stringify({op:'publicMarket'})});
  if(u.pathname==='/__fixture/control'){const q=await req.json();if(q.now)setClock(q.now);return fetch('https://fixtures.invalid/control',{method:'POST',body:JSON.stringify(q)});}
  return app.fetch(req,env,ctx);
@@ -81,6 +82,9 @@ try{
  const first=await call('/');assert.equal(first.http,200,JSON.stringify(first.body));assert.equal(first.body.assets.ETHUSDT.ticker.last,2400);checks.push('production market request bootstraps the existing Durable Object alarm');
  let status=await until(async()=>{const r=(await call('/?view=fast')).body.fastMonitor;return r?.status==='ok'?r:null;},15000);
  assert.equal(status.executionQuote.last,2400);assert.equal(status.samplingHealthy,true);assert.ok(status.nextAlarmAt);checks.push('native alarm fired with 2.5-second-old trades; all later healthy-state polls enforce the original ten-second quote limit');
+ const baseline=(await call('/__fixture/desk')).body.analysisReceipt?.assets?.ETH?.volatility;
+ assert.ok(baseline?.atr2h>0&&baseline?.atr4h>0&&baseline.threshold<40,JSON.stringify(baseline));
+ checks.push('desk bootstrap derives the fast threshold from full closed 2h/4h candles');
  const initial=status.lastSuccessAt;
  await call('/__fixture/control',{quote:2440,barkFail:true});
  // Only a read-only status endpoint is polled after this point. No market query or scanner/run is invoked.

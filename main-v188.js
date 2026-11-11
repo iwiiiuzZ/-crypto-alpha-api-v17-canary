@@ -1,4 +1,4 @@
-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r3";
+const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r4";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -450,6 +450,7 @@ async function sampleCrossVenueLiquidity(owner,publicOwner,modules,base){
  const historical=aggregateVenueLiquidity(second,prior,first,Date.now(),base);final.report.changes=[...historical.report.changes,...final.report.changes].filter((x,i,a)=>a.findIndex(y=>y.venue===x.venue&&y.side===x.side&&y.nativePrice===x.nativePrice)===i).slice(0,6);
  const currentOkx=second.find(v=>v.venue==="OKX"&&v.status==="ok"&&v.tradeFresh);
  if(currentOkx){final.report.executionDepth=liquidityDepthReference(currentOkx);const last=currentOkx.trades.at(-1);final.report.executionQuote={status:"ok",source:"OKX_USDT_PERPETUAL",priceType:"LAST_TRADE_PLUS_REAL_BOOK",last:last.price,bid:currentOkx.bids[0].price,ask:currentOkx.asks[0].price,exchangeTimestamp:new Date(Math.min(last.ts,currentOkx.bookAt)).toISOString(),lastTradeTimestamp:new Date(last.ts).toISOString(),bookTimestamp:new Date(currentOkx.bookAt).toISOString()};}
+ await recordDeskTape(publicOwner,base,second);
  owner.liquidityPersistent.tracking={...final.state,venues:{...(prior.venues||{}),...final.state.venues}};owner.liquidityPersistent.report=final.report;await owner.ctx.storage.put(storageKey,owner.liquidityPersistent);return final.report;
 }
 function liquidityDepthReference(venue){
@@ -671,10 +672,10 @@ function fastWindowFromTrades(previous,venue,now=Date.now()){
   buyUsdt:round(buy,2),sellUsdt:round(sell,2),dominantShare:total?round(Math.max(buy,sell)/total,4):0,direction:buy>sell?'BUY':sell>buy?'SELL':null,priceChangeUsd:round(change,4),priceChangePct:first?round(change/first.firstPrice*100,5):null,
   minimumObservedPrice:prices.length?Math.min(...prices):null,maximumObservedPrice:prices.length?Math.max(...prices):null,overlapsPreviousSample:overlap,samplingGapReset:reset,continuousCoverageVerified:false}};
 }
-function fastMaterialEvent(window,price,atr15,now=Date.now()){
- const threshold=Math.max(12,price*.005,(Number(atr15)||0)*1.25),sameDirection=window.direction==='BUY'?window.priceChangeUsd>0:window.direction==='SELL'?window.priceChangeUsd<0:false;
+function fastMaterialEvent(window,price,atr15,now=Date.now(),baseline=undefined){
+ const threshold=baseline===undefined?Math.max(12,price*.005,(Number(atr15)||0)*1.25):Number.isFinite(baseline?.threshold)&&baseline.threshold>0&&now-Date.parse(baseline.checkedAt)>=0&&now-Date.parse(baseline.checkedAt)<300000?baseline.threshold:Infinity,sameDirection=window.direction==='BUY'?window.priceChangeUsd>0:window.direction==='SELL'?window.priceChangeUsd<0:false;
  const eligible=window.newRecords>0&&window.seconds>=30&&window.sampledRecords>=20&&(window.buyUsdt+window.sellUsdt)>=500000&&window.dominantShare>=.7&&sameDirection&&Math.abs(window.priceChangeUsd)>=threshold;
- return {eligible,direction:window.direction,moveUsd:window.priceChangeUsd,movePct:window.priceChangePct,thresholdUsd:round(threshold,3),firstObservedAt:window.startAt,lastObservedAt:window.endAt,detectedAt:new Date(now).toISOString(),kind:'SAMPLED_EXECUTED_FLOW_AND_PRICE_CHANGE',standaloneEntryPermission:false};
+ return {eligible,direction:window.direction,moveUsd:window.priceChangeUsd,movePct:window.priceChangePct,thresholdUsd:Number.isFinite(threshold)?round(threshold,3):null,volatilityBaselineReady:Number.isFinite(threshold),firstObservedAt:window.startAt,lastObservedAt:window.endAt,detectedAt:new Date(now).toISOString(),kind:'SAMPLED_EXECUTED_FLOW_AND_PRICE_CHANGE',standaloneEntryPermission:false};
 }
 async function fastSendPending(owner,state,event,now=Date.now()){
  const old=state.pendingAlert;
@@ -701,6 +702,7 @@ async function localScannerOperation(owner,input){
  if(input.op==='deskAnalysis')return sharedDeskAnalysis(owner);
  if(input.op==='deskStatus')return DeskBridge.status(owner);
  if(input.op==='deskChange')return DeskBridge.change(owner,input);
+ if(input.op==='deskOperations')return deskOperations(owner);
  if(input.op==='scannerCycle'){
   if(input.ensureMonitor)await ensureFastMonitor(owner);
   try {
@@ -881,7 +883,7 @@ async function runFastMonitorAlarm(owner){
     exchangeTimestamp:new Date(Math.min(last.ts,venue.bookAt)).toISOString(),lastTradeTimestamp:new Date(last.ts).toISOString(),bookTimestamp:new Date(venue.bookAt).toISOString()};
    if(!genuineExecutionQuote(quote,10))throw Error('FAST_QUOTE_EXPIRED');
    const mid=(quote.bid+quote.ask)/2;if((quote.ask-quote.bid)/mid*10000>20||Math.abs(quote.last/mid-1)*10000>25)throw Error('FAST_EXECUTION_SPREAD_OR_TRADE_BOOK_MISMATCH');
-   const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,event=fastMaterialEvent(window.window,quote.last,model?.atr15);
+   const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,baseline=(await refreshDeskVolatility(owner))?.ETH,event=fastMaterialEvent(window.window,quote.last,model?.atr15,Date.now(),baseline||null);
    state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.quoteLastSuccessAt=state.lastSuccessAt;state.nextFlowAttemptAt=0;state.lastError=null;state.failureCount=0;
    const noticeBefore=JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]);
    await fastSendPending(owner,state,event);
@@ -7563,8 +7565,8 @@ function planFrom(symbol, quote, model, candidate, horizon, capturedAt) {
     && !liquidity.temporaryObstacleReviewRequired;
   const arrived = liquidityCurrent && liquidity.entryReviewPassed && liquidity.reasons.length === 0;
   const state = atPrice ? arrived ? "REVIEW" : "WAIT_LIQUIDITY" : "WAIT_PRICE";
-  const priceOnlyReasons = ["CURRENT_PRICE_OUTSIDE_MODEL_ZONE", "CONFIRMED_FIRST_OBSTACLE_NET_RR_BELOW_2"];
-  const monitorable = atPrice ? arrived : liquidityCurrent && liquidity.reasons.every(reason => priceOnlyReasons.includes(reason));
+  // Registration is observation only. Fresh execution/liquidity gates remain mandatory at arrival.
+  const monitorable = executableDeskSpread(quote);
   const costs = (candidate.holdingFunding?.scenarios ?? model.swingAssessment?.funding?.scenarios ?? [])
     .filter(row => [2, 7, 14].includes(row.days))
     .map(row => ({ days: row.days, netRR: round(row.netRR), totalCostPct: round(row.totalCostPct) }));
@@ -7698,6 +7700,98 @@ return {deskNetRR,deskQuote,deskAnalysis,rankDeskPlans,deskPricingCurrent,execut
 })();
 
 const DESK_MINUTE_RECEIPT_KEY = "desk:v1:minute-receipt";
+const AlphaDeskAutonomy = (() => {
+// Pure, versioned lifecycle. Paper observations are never actual fills or execution permission.
+const POLICY = 'desk-forward-v1';
+const iso = n => new Date(n).toISOString();
+const finite = n => typeof n === 'number' && Number.isFinite(n);
+const positive = n => finite(n) && n > 0;
+function observable(plan, asset, now) {
+  if (!asset?.ready || !asset.quote?.ready || !asset.quote.independent || !plan || Date.parse(plan.expiresAt) <= now) return false;
+  if (now-Date.parse(plan.capturedAt)>35000 || Date.parse(plan.capturedAt)>now+2000) return false;
+  if (![plan.low,plan.high,plan.stop,plan.target,plan.invalidation].every(positive) || plan.low>plan.high || !finite(plan.costPct) || plan.costPct<0 || plan.costPct>=100) return false;
+  const long=plan.direction==='LONG';
+  if (!long && plan.direction!=='SHORT') return false;
+  if (long ? plan.stop>=plan.low || plan.invalidation>=plan.low || plan.target<=plan.high : plan.stop<=plan.high || plan.invalidation<=plan.high || plan.target>=plan.low) return false;
+  const entry=long?plan.high:plan.low, sign=long?1:-1, cost=entry*plan.costPct/100;
+  return ((plan.target-entry)*sign-cost)/((entry-plan.stop)*sign+cost)>=2;
+}
+function volatility(asset, now) {
+  const rows=asset?.timeframes?.['1h']?.candles ?? asset?.timeframes?.['1h']?.recentCandles;
+  // An aggregate 2h bar is valid only with both contiguous fully closed 1h bars.
+  const candles=Array.isArray(rows)?rows.filter(r=>r.confirmed!==false).map(r=>({at:Date.parse(r.ts),o:r.o,h:r.h,l:r.l,c:r.c})).filter(r=>[r.at,r.o,r.h,r.l,r.c].every(finite)&&r.at+3600000<=now).sort((a,b)=>a.at-b.at):[];
+  function aggregate(hours) {
+    const groups=new Map();
+    for(const r of candles){const t=Math.floor(r.at/(hours*3600000))*hours*3600000; const g=groups.get(t)||[];g.push(r);groups.set(t,g);}
+    const bars=[...groups.entries()].filter(([t,g])=>g.length===hours&&g.every((r,i)=>r.at===t+i*3600000)).map(([at,g])=>({at,h:Math.max(...g.map(r=>r.h)),l:Math.min(...g.map(r=>r.l)),c:g.at(-1).c}));
+    if(bars.length<15||bars.at(-1).at+hours*3600000<now-hours*3600000-60000)return null;
+    const last=bars.slice(-15);if(last.some((r,i)=>i&&r.at-last[i-1].at!==hours*3600000))return null;
+    return last.slice(1).reduce((n,r,i)=>n+Math.max(r.h-r.l,Math.abs(r.h-last[i].c),Math.abs(r.l-last[i].c)),0)/14;
+  }
+  const atr2h=aggregate(2),atr4h=aggregate(4);
+  return {checkedAt:iso(now),atr2h,atr4h,threshold:atr2h&&atr4h?(atr2h+atr4h)/2:null,basis:'已收盘 2h/4h 真波幅均值（各14根）',profitabilityValidated:false};
+}
+function createRecord(plan, now) {
+  return {policy:POLICY,plan:structuredClone(plan),createdAt:iso(now),status:'WAITING',entry:null,exit:null,lastQuoteAt:null,gaps:0,uncertain:false,events:[{at:iso(now),type:'CREATED'}],review:null};
+}
+function advance(record, quote, now, reviewPassed=false) {
+  if(!['WAITING','OPEN'].includes(record.status))return record;
+  const r=structuredClone(record),p=r.plan,long=p.direction==='LONG',sign=long?1:-1;
+  const emit=(type,extra={})=>{r.events=[...r.events,{at:iso(now),type,...extra}].slice(-80);};
+  const close=(status,reason,price=null)=>{
+    r.status=status;r.closedAt=iso(now);r.review=reason;emit(status,{reason});
+    if(price!==null&&r.entry){const cost=r.entry.price*p.costPct/100;const risk=(r.entry.price-p.stop)*sign+cost;const pnl=(price-r.entry.price)*sign-cost;
+      r.exit={price,at:iso(now),netPerUnit:pnl,netR: risk>0?pnl/risk:null,costPerUnit:cost,costBasis:'冻结往返成本情景；资金费率和实际成交未知',fillBasis:'观测到的欧易对手价，不假定按止损价成交'};
+      if(r.uncertain){r.observedOutcome=status;r.status='UNRESOLVED';r.review='持有期间存在采样空档，触达先后无法证明；排除胜率';}
+    }
+    return r;
+  };
+  if(r.status==='WAITING'&&Date.parse(p.expiresAt)<=now)return close('EXPIRED','未入场，事件到期；不算亏损');
+  if(!quote?.ready||!quote.independent||![quote.bid,quote.ask,quote.last].every(positive)||quote.bid>quote.ask||now-Date.parse(quote.bookAt)>10000||now-Date.parse(quote.tradeAt)>20000||Date.parse(quote.bookAt)>now+2000){
+    if(r.status==='OPEN'&&!r.uncertain){r.uncertain=true;r.gaps++;emit('DATA_GAP');}return r;
+  }
+  const stamp=Date.parse(quote.bookAt);
+  if(r.lastQuoteAt&&stamp<=Date.parse(r.lastQuoteAt))return r;
+  if(r.status==='OPEN'&&r.lastQuoteAt&&stamp-Date.parse(r.lastQuoteAt)>20000){r.uncertain=true;r.gaps++;emit('DATA_GAP');}
+  r.lastQuoteAt=quote.bookAt;
+  const entry=long?quote.ask:quote.bid,exit=long?quote.bid:quote.ask;
+  if(r.status==='WAITING'){
+    if(long?exit<=p.invalidation||quote.last<=p.invalidation:exit>=p.invalidation||quote.last>=p.invalidation)return close('INVALIDATED','入场前结构失效；不算交易亏损');
+    if(long?exit>=p.target:exit<=p.target)return close('MISSED','入场前第一目标已到达');
+    if(entry>=p.low&&entry<=p.high&&reviewPassed){r.status='OPEN';r.entry={price:entry,at:quote.bookAt,modelReviewAt:iso(now),basis:'规则模型模拟入场；新闻/实际成本终审未替代人工'};emit('PAPER_ENTRY',{price:entry});}
+    return r;
+  }
+  if(now-Date.parse(r.entry.at)>14*86400000)return close('TIME_EXIT','模拟持有满14天，按当前对手价退出',exit);
+  // Respect the nearest frozen structural protection; never move it to manufacture reward/risk.
+  if(long?exit<=p.invalidation:exit>=p.invalidation)return close('LOSS','触及冻结保护/止损；检查结构失效、执行成本与环境',exit);
+  if(long?exit>=p.target:exit<=p.target)return close('WIN','触及冻结第一目标',exit);
+  return r;
+}
+function statistics(rows) {
+  const closed=rows.filter(r=>['WIN','LOSS','TIME_EXIT'].includes(r.status)&&finite(r.exit?.netR));
+  const values=closed.map(r=>r.exit.netR),wins=values.filter(x=>x>0),losses=values.filter(x=>x<0);
+  let equity=0,peak=0,maxDrawdownR=0;for(const r of [...closed].sort((a,b)=>Date.parse(a.closedAt)-Date.parse(b.closedAt))){equity+=r.exit.netR;peak=Math.max(peak,equity);maxDrawdownR=Math.max(maxDrawdownR,peak-equity);}
+  return {policy:POLICY,sampleSize:closed.length,wins:wins.length,losses:losses.length,winRate:closed.length?wins.length/closed.length:null,
+    averageNetR:values.length?values.reduce((a,b)=>a+b,0)/values.length:null,profitFactor:losses.length?wins.reduce((a,b)=>a+b,0)/Math.abs(losses.reduce((a,b)=>a+b,0)):null,
+    maxDrawdownR,unresolved:rows.filter(r=>r.status==='UNRESOLVED'||r.uncertain).length,waiting:rows.filter(r=>r.status==='WAITING').length,open:rows.filter(r=>r.status==='OPEN').length,
+    notEntered:rows.filter(r=>['EXPIRED','INVALIDATED','MISSED','SUPERSEDED'].includes(r.status)).length,
+    limitation:'规则模型前向模拟；报价采样不能证明中间未触线，不是实盘胜率；多方案有相关性，不能视为组合收益'};
+}
+function ingestTape(previous, venue, now) {
+  const old=previous||{ids:[],buckets:[],segments:0};
+  if(venue.status!=='ok'||!venue.tradeFresh)return {...old,status:'unavailable',checkedAt:iso(now)};
+  const seen=new Set(old.ids),fresh=venue.trades.filter(t=>!seen.has(String(t.id)));
+  const overlap=venue.trades.some(t=>seen.has(String(t.id)));
+  const gap=old.checkedAt&&(!overlap||now-Date.parse(old.checkedAt)>75000);
+  const buckets=new Map((gap?[]:old.buckets).filter(b=>b.at>=now-4*3600000).map(b=>[b.at,{...b}]));
+  for(const t of fresh){const at=Math.floor(t.ts/60000)*60000;const b=buckets.get(at)||{at,buy:0,sell:0,count:0,first:t.price,last:t.price};b[t.side]+=t.notional;b.count++;b.last=t.price;buckets.set(at,b);}
+  return {status:'sampled',checkedAt:iso(now),lastTradeAt:iso(venue.trades.at(-1).ts),ids:venue.trades.map(t=>String(t.id)),buckets:[...buckets.values()].sort((a,b)=>a.at-b.at).slice(-241),
+    segments:old.segments+(gap?1:0),overlap:!!overlap,continuousCoverageVerified:false,limitation:'后台 REST 去重采样；不是全量逐笔。缺口重启累计区间'};
+}
+
+return {POLICY,observable,volatility,createRecord,advance,statistics,ingestTape};
+})();
+
 const AlphaDeskBridge = (() => {
 const {deskNetRR,deskQuote,deskPricingCurrent,executableDeskSpread}=AlphaDeskDecision;
 const DESK_SITE_PUBLIC_KEY = {"kty":"EC","x":"MoGuRJAV-711i0iNq0tYXEWq1c9Bwqy1dt3s9LcTi0I","y":"B1m6miGiGW_qgoLwhYFelYtKVQrNml2yIG-s6yhoARM","crv":"P-256"};
@@ -7799,6 +7893,7 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     const storage = owner.ctx.storage;
     if (!input.nonce || !await consumeNonce(storage, input.nonce, Date.now())) return problem(409, "DUPLICATE_SIGNED_REQUEST");
     const id = input.value;
+    if (id?.action) return deskControl(owner,input);
     if (!requestId(id)) return problem(400, "INVALID_PLAN_KEY");
     if (input.method === "DELETE") {
       await storage.transaction(async txn => {
@@ -7813,7 +7908,7 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     if (!canMonitor(owner)) return problem(503, "SCANNER_OR_BARK_NOT_CONFIGURED");
     const analysis = await analyse(owner);
     const plan = analysis.assets?.[id.asset]?.plans.find(row => row.id === id.id && row.revision === id.revision);
-    if (!plan?.monitorable || !deskPricingCurrent(plan.liquidity,Date.now()) || Date.parse(plan.expiresAt) <= Date.now())
+    if (!AlphaDeskAutonomy.observable(plan,analysis.assets?.[id.asset],Date.now()))
       return problem(409, "PLAN_REFRESH_OR_LIQUIDITY_REVIEW_REQUIRED");
     const scheduled = await ensureMonitor(owner);
     if (!scheduled?.scheduled) return problem(503, "ALARM_NOT_SCHEDULED");
@@ -7839,6 +7934,7 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     const signed = await signedPayload(request, path);
     if (!signed) return problem(401, "DESK_SIGNATURE_REQUIRED");
     if (path === "/desk/v1/analysis" && request.method === "GET") return reply(await stateCall({ op: "deskAnalysis" }));
+    if (path === "/desk/v1/operations" && request.method === "GET") return reply(await stateCall({op:"deskOperations"}));
     if (path !== "/desk/v1/monitors") return problem(404, "UNKNOWN_DESK_ROUTE");
     if (request.method === "GET") return reply(await stateCall({ op: "deskStatus" }));
     let value;
@@ -7873,7 +7969,13 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     if (first.stopped) return end("INVALIDATED", "触及结构失效或止损");
     if (first.targetPassed) return end("INVALIDATED", "第一目标已穿越");
     if (watch.delivery === "ACCEPTED") return keep("已发到区提醒，等待人工终审",true);
-    if (!first.inside) return keep("等待欧易对手价进入净盈亏比合格区",true);
+    if (!first.inside) {
+      const baseline=(owner.deskVolatility||await storage.get("desk:v2:volatility"))?.[plan.asset];
+      const distance=Math.min(Math.abs(first.price-plan.low),Math.abs(first.price-plan.high));
+      if(baseline?.threshold>0&&now-Date.parse(baseline.checkedAt)<300000&&distance<=baseline.threshold*.1)
+        await deskAlert(owner,"NEAR:"+plan.id+":"+plan.revision,plan.asset+"｜接近候选入场区", "距离候选区约 "+distance.toFixed(2)+"，接近阈值为2小时/4小时波动基线的10%。入场区 "+plan.low+"–"+plan.high+"，保护 "+plan.invalidation+"，止损 "+plan.stop+"，目标 "+plan.target+"。到位后仍须复核，非开仓许可。");
+      return keep("等待欧易对手价进入净盈亏比合格区",true);
+    }
     if (watch.pending?.nextAt > now || watch.lease?.until > now) return null;
     await new Promise(resolve => setTimeout(resolve, 500));
     const secondTicker = await quote(owner, plan.asset);
@@ -7901,6 +8003,7 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
       return update(storage,plan,row=>row.lease?.id===lease ? {...row,state:"ACTIVE",lease:null,delivery:null,
         arrivedAt:null,reason:"跨所复核已过有效期，等待重新到区"} : null);
     }
+    await deskPaperTick(owner,updated,lastTicker);
     try {
       const verified = await notify(owner, {
         title: plan.asset + (plan.direction === "LONG" ? " 做多" : " 做空") + "｜已到区待终审",
@@ -7940,7 +8043,17 @@ function createDeskBridge({ build, analyse, quote, ensureMonitor, canMonitor, no
     try { await owner.deskWatchWork; } finally { owner.deskWatchWork = null; }
   }
 
-  return { status, change, handleRequest, check };
+  async function discover(owner,plan) {
+    const storage=owner.ctx.storage;
+    await storage.transaction(async tx=>{
+      let old=recentWatches(await tx.get(WATCH_KEY));
+      if(old.some(w=>matches(w,plan)))return;
+      old=old.map(w=>w.plan.id===plan.id&&LIVE.has(w.state)?{...w,state:"CANCELLED",reason:"新修订替换未完成观察",updatedAt:iso()}:w);
+      if(old.filter(w=>LIVE.has(w.state)).length>=MAX_ACTIVE)return;
+      await tx.put(WATCH_KEY,[{plan,state:"ACTIVE",updatedAt:iso(),lastCheckAt:null,arrivedAt:null,reason:"自动发现：等待入场区，非开仓许可",delivery:null},...old.filter(w=>LIVE.has(w.state)),...old.filter(w=>!LIVE.has(w.state)).slice(0,MAX_HISTORY-MAX_ACTIVE)]);
+    });
+  }
+  return { status, change, handleRequest, check, discover };
 }
 
 return {createDeskBridge,confirmDeskArrival};
@@ -8015,10 +8128,138 @@ function buildDeskOpportunityScan(asset,btc) {
   return {...audit,models:audit.models.map(model=>model.submodel===range.submodel?reviewed:model)};
 }
 
+const DESK_AUTOMATION_KEY='desk:v2:automation';
+const DESK_ACTIVE_KEY='desk:v2:active';
+const DESK_ALERT_KEY='desk:v2:alerts';
+const DESK_JOURNAL_PREFIX='desk:v2:journal:';
+function deskSerial(owner,fn){const work=(owner.deskLifecycleWork||Promise.resolve()).catch(()=>{}).then(fn);owner.deskLifecycleWork=work;return work.finally(()=>{if(owner.deskLifecycleWork===work)owner.deskLifecycleWork=null;});}
+async function deskSettings(owner){return await owner.ctx.storage.get(DESK_AUTOMATION_KEY)||{enabled:true,policy:AlphaDeskAutonomy.POLICY,enabledBy:'OWNER_REQUEST',createdAt:new Date().toISOString()};}
+async function deskAlert(owner,id,title,body){
+ const storage=owner.ctx.storage;
+ await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];if(rows.some(r=>r.id===id))return;
+  // Keep pending retries; compact accepted history only.
+  const pending=rows.filter(r=>r.status!=='ACCEPTED');if(pending.length>=100)return;
+  await tx.put(DESK_ALERT_KEY,[{id,title,body,status:'PENDING',createdAt:new Date().toISOString(),attempts:0,nextAt:0},...pending,...rows.filter(r=>r.status==='ACCEPTED').slice(0,99)]);
+ });
+}
+async function deskFlushAlerts(owner){
+ if(owner.deskAlertWork)return owner.deskAlertWork;
+ owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;const rows=await storage.get(DESK_ALERT_KEY)||[];
+  for(const row of rows.filter(r=>r.status!=='ACCEPTED'&&r.nextAt<=Date.now()).slice(0,2)){
+   let sent;try{sent=await sendBark(fastLocalEnvironment(owner),{title:row.title,body:row.body,level:'timeSensitive',url:'https://market-desk-cn.darkboard1.chatgpt.site/#overview'},{kind:'CONTROL',eventId:'DESK:'+row.id,stage:'AUTONOMOUS_NOTICE'});}catch{}
+   await storage.transaction(async tx=>{const current=await tx.get(DESK_ALERT_KEY)||[];await tx.put(DESK_ALERT_KEY,current.map(r=>r.id!==row.id?r:{...r,status:sent?.sent?'ACCEPTED':'FAILED',attempts:r.attempts+1,nextAt:Date.now()+Math.min(900000,10000*2**Math.min(r.attempts,6)),providerAcceptedAt:sent?.providerAcceptedAt||null,deviceReceiptVerified:r.deviceReceiptVerified===true}));});
+  }
+ })();try{return await owner.deskAlertWork;}finally{owner.deskAlertWork=null;}
+}
+async function deskJournal(owner,before=null){
+ const storage=owner.ctx.storage;const entries=await storage.list({prefix:DESK_JOURNAL_PREFIX,reverse:true,limit:101,...(before?{end:before}:{})});
+ const pairs=[...entries.entries()],page=pairs.slice(0,100),records=page.map(([,r])=>r);
+ return {records,statistics:AlphaDeskAutonomy.statistics(records),scope:'本页最多100条；非全历史汇总',nextBefore:pairs.length>100?page.at(-1)[0]:null};
+}
+async function deskOperations(owner){
+ const storage=owner.ctx.storage;const [settings,journal,alerts,tapes,health]=await Promise.all([deskSettings(owner),deskJournal(owner),storage.get(DESK_ALERT_KEY),storage.list({prefix:'desk:v2:tape:'}),storage.get('desk:v2:health')]);
+ return {capability:'desk-autonomy-v1',build:BUILD,settings,journal,alerts:(alerts||[]).slice(0,30),health:health||null,
+  tapes:[...tapes.entries()].map(([key,value])=>{const {ids,...safe}=value;return {asset:key.split(':')[3],venue:key.split(':')[4],...safe};}),
+  analysisMode:'DETERMINISTIC_RULES',customGptInvoked:false,llmConfigured:false,liquidationMap:{available:false,reason:'需要授权的模型热图接口；深度挂单不是清算地图'}};
+}
+async function deskControl(owner,input){
+ // Only the existing signed private Site bridge reaches this function.
+ const storage=owner.ctx.storage,value=input.value;
+ if(!value||!['enable','pause','test-notification','confirm-receipt','history'].includes(value.action))return {status:400,body:{error:'UNKNOWN_DESK_ACTION'}};
+ if(value.action==='history'){
+  if(value.before&&(!String(value.before).startsWith(DESK_JOURNAL_PREFIX)||String(value.before).length>200))return {status:400,body:{error:'INVALID_HISTORY_CURSOR'}};
+  return {status:200,body:await deskJournal(owner,value.before)};
+ }
+ if(value.action==='confirm-receipt'){
+  await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];await tx.put(DESK_ALERT_KEY,rows.map(r=>r.id===value.id&&r.id.startsWith('TEST:')&&r.status==='ACCEPTED'?{...r,deviceReceiptVerified:true,deviceConfirmedAt:new Date().toISOString()}:r));});
+ }else if(value.action==='test-notification'){
+  if(!fastMonitorConfigured(owner.env))return {status:503,body:{error:'SCANNER_OR_BARK_NOT_CONFIGURED'}};
+  const prior=(await storage.get(DESK_ALERT_KEY)||[]).find(r=>r.id.startsWith('TEST:'));
+  if(prior&&Date.now()-Date.parse(prior.createdAt)<60000)return {status:429,body:{error:'TEST_COOLDOWN_60_SECONDS'}};
+  await deskAlert(owner,'TEST:'+crypto.randomUUID(),'聚流｜通知链路测试','这是通知测试，不是交易信号。收到后请在工作台点击“已收到此测试”，闭站投递状态才会标记为实收已确认。');
+  await deskFlushAlerts(owner);
+ }else{
+  const enabled=value.action==='enable';await storage.put(DESK_AUTOMATION_KEY,{...await deskSettings(owner),enabled,changedAt:new Date().toISOString()});
+  if(enabled)await ensureFastMonitor(owner);
+ }
+ return {status:200,body:await deskOperations(owner)};
+}
+async function refreshDeskVolatility(owner){
+ const now=Date.now();
+ if(owner.deskVolatility&&Object.values(owner.deskVolatility).every(v=>now-Date.parse(v.checkedAt)<60000))return owner.deskVolatility;
+ const volatility={};
+ for(const symbol of ['BTC','ETH']){
+  const envelope=await owner.ctx.storage?.get(structureRecordKey(symbol+'USDT','1h'));
+  const record=envelope?.value;
+  const candles=record&&structureRecordUsable(record,'1h',now)?record.candles.map(c=>({ts:c.ts,o:c.open,h:c.high,l:c.low,c:c.close,confirmed:c.confirmed})):[];
+  volatility[symbol]=AlphaDeskAutonomy.volatility({timeframes:{'1h':{candles}}},now);
+ }
+ owner.deskVolatility=volatility;
+ if(owner.ctx.storage?.put)await owner.ctx.storage.put('desk:v2:volatility',volatility);
+ return volatility;
+}
+async function captureDeskPlans(owner,result,snapshot){
+ const now=Date.now(),volatility=await refreshDeskVolatility(owner);
+ result.analysisReceipt={id:crypto.randomUUID(),startedAt:owner.deskScanStartedAt||result.capturedAt,completedAt:result.capturedAt,mode:'DETERMINISTIC_RULES',customGptInvoked:false,
+  rules:'V27 八模型 / BTC+ETH / 净RR≥2 / 波段优先',stages:['独立成交与盘口','三周期已收盘结构','八模型逐一核验','跨所流动性及成本情景','新闻来源状态'],
+  limitations:['未调用自定义GPT或语言模型','订单流/CVD为辅助采样，缺失不得视为零','消息和实际成本仍待人工终审'],
+  assets:Object.fromEntries(['BTC','ETH'].map(a=>[a,{volatility:volatility[a],orderflowStatus:snapshot.assets[a+'USDT'].publicOrderflow?.status||'unavailable'}]))};
+ owner.deskVolatility=Object.fromEntries(Object.entries(result.analysisReceipt.assets).map(([a,v])=>[a,v.volatility]));
+ if(!owner.ctx.storage?.transaction)return;
+ await owner.ctx.storage.put("desk:v2:volatility",owner.deskVolatility);
+ await deskSerial(owner,async()=>{
+  const storage=owner.ctx.storage,settings=await deskSettings(owner);await storage.put(DESK_AUTOMATION_KEY,settings);
+  for(const asset of Object.values(result.assets))for(const plan of asset.plans){
+   if(!AlphaDeskAutonomy.observable(plan,asset,now))continue;
+   const keepWatching=await storage.transaction(async tx=>{
+    const pointer='desk:v2:pointer:'+plan.id+':'+plan.revision;
+    const existing=await tx.get(pointer);
+    if(existing)return (await tx.get(existing))?.status==='WAITING';
+    const eventPointer='desk:v2:event:'+plan.id;
+    const priorKey=await tx.get(eventPointer),prior=priorKey?await tx.get(priorKey):null;
+    if(prior&&prior.status!=='WAITING')return false;
+    let active=await tx.get(DESK_ACTIVE_KEY)||[];
+    if(active.length>=128&&!prior)return false;
+    if(prior){prior.status='SUPERSEDED';prior.closedAt=new Date(now).toISOString();prior.review='尚未入场时模型修订，保留原版';await tx.put(priorKey,prior);active=active.filter(k=>k!==priorKey);}
+    const key=DESK_JOURNAL_PREFIX+new Date(now).toISOString()+':'+plan.id+':'+plan.revision;
+    await tx.put(key,AlphaDeskAutonomy.createRecord(plan,now));await tx.put(pointer,key);await tx.put(eventPointer,key);active.push(key);await tx.put(DESK_ACTIVE_KEY,active);
+    return true;
+   });
+   if(settings.enabled&&keepWatching)await DeskBridge.discover(owner,plan);
+  }
+  const previous=await storage.get('desk:v2:health');const missing=Object.values(result.assets).filter(a=>!a.ready).map(a=>a.asset);
+  const volatilityMissing=['BTC','ETH'].filter(a=>!(volatility[a]?.threshold>0));
+  const health={checkedAt:result.capturedAt,missing,volatilityMissing,receiptId:result.analysisReceipt.id,quoteMode:'OKX_REAL_BOOK',autoDiscovery:settings.enabled};await storage.put('desk:v2:health',health);
+  if(settings.enabled&&missing.length&&JSON.stringify(previous?.missing)!==JSON.stringify(missing))await deskAlert(owner,'DATA:'+Math.floor(now/900000)+':'+missing.join(','),'聚流｜行情数据异常',missing.join('、')+' 执行行情或结构未通过，暂停新模拟入场；已登记计划继续核对失效与价格。此提醒不是平仓指令。');
+  if(settings.enabled&&volatilityMissing.length&&JSON.stringify(previous?.volatilityMissing)!==JSON.stringify(volatilityMissing))await deskAlert(owner,'VOLATILITY:'+Math.floor(now/900000)+':'+volatilityMissing.join(','),'聚流｜波动提醒基线缺失',volatilityMissing.join('、')+' 的已收盘2小时/4小时数据不足，波动阈值提醒暂不可用；到区和结构失效仍独立检查。');
+  if(settings.enabled&&!missing.length&&previous?.missing?.length)await deskAlert(owner,'RECOVER:'+Math.floor(now/900000),'聚流｜数据恢复','BTC/ETH 执行行情与结构恢复核验。计划仍须重新复核。');
+ });
+}
+async function deskPaperTick(owner,entryPlan=null,ticker=null){
+ return deskSerial(owner,async()=>{
+  const storage=owner.ctx.storage,active=await storage.get(DESK_ACTIVE_KEY)||[];if(!active.length)return;
+  const quotes={};for(const symbol of ['BTC','ETH']){try{quotes[symbol]=AlphaDeskDecision.deskQuote(entryPlan?.asset===symbol?ticker:await deskDirectQuote(owner,symbol));}catch{quotes[symbol]=null;}}
+  const next=[];
+  for(const key of active){const old=await storage.get(key);if(!old)continue;
+   const reviewed=entryPlan?.id===old.plan.id&&entryPlan?.revision===old.plan.revision;
+   const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);await storage.put(key,updated);
+   if(['WAITING','OPEN'].includes(updated.status))next.push(key);
+   if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED'].includes(updated.status))await deskAlert(owner,'OUTCOME:'+old.plan.id+':'+old.plan.revision,'聚流｜'+old.plan.asset+' 计划状态更新',old.plan.model+' · '+updated.status+' · '+updated.review+'。这是模型模拟记录，不是账户成交。');
+   if(updated.uncertain&&!old.uncertain)await deskAlert(owner,'GAP:'+old.plan.id+':'+old.plan.revision,'聚流｜计划跟踪出现数据空档',old.plan.asset+' '+old.plan.model+' 的价格证据不连续，成绩暂不纳入胜率；请核对现有人工持仓。');
+  }
+  await storage.put(DESK_ACTIVE_KEY,next);
+ });
+}
+async function recordDeskTape(owner,asset,venues){
+ if(!owner.ctx.storage?.transaction)return;
+ for(const venue of venues){const key='desk:v2:tape:'+asset+':'+venue.venue;await owner.ctx.storage.transaction(async tx=>{await tx.put(key,AlphaDeskAutonomy.ingestTape(await tx.get(key),venue,Date.now()));});}
+}
+
 async function sharedDeskAnalysis(owner, force = false) {
   if(!force&&owner.deskAnalysisCache&&Date.now()-Date.parse(owner.deskAnalysisCache.capturedAt)<=4000)return owner.deskAnalysisCache;
   if(owner.deskAnalysisWork)return owner.deskAnalysisWork;
   owner.deskAnalysisWork=(async()=>{
+    owner.deskScanStartedAt=new Date().toISOString();
     const env=fastLocalEnvironment(owner);
     const snapshot=await buildSnapshot({env,scannerMode:true,coinalyzeApiKey:env.COINALYZE_API_KEY});
     const btc=snapshot.assets.BTCUSDT,eth=snapshot.assets.ETHUSDT;
@@ -8036,6 +8277,7 @@ async function sharedDeskAnalysis(owner, force = false) {
     btc.opportunityEngine=buildDeskOpportunityScan(btc,null);
     eth.opportunityEngine=buildDeskOpportunityScan(eth,btc);
     const result=AlphaDeskDecision.deskAnalysis(snapshot,{origin:"shared-worker",monitor:fastMonitorConfigured(owner.env)});
+    await captureDeskPlans(owner,result,snapshot);
     owner.deskAnalysisCache=result;
     return result;
   })();
@@ -8068,7 +8310,7 @@ export class ScannerState {
   }
 
   async alarm() {
-    await Promise.all([runFastMonitorAlarm(this), DeskBridge.check(this).catch(error => {
+    await Promise.all([runFastMonitorAlarm(this), deskPaperTick(this).catch(()=>{}), deskFlushAlerts(this).catch(()=>{}), DeskBridge.check(this).catch(error => {
       console.error("desk alarm failed", String(error?.message || error).slice(0, 120));
     })]);
   }
@@ -8080,7 +8322,7 @@ export class ScannerState {
     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
     if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
     if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
-    if(["deskAnalysis","deskStatus","deskChange"].includes(input?.op))return Response.json(await localScannerOperation(this,input));
+    if(["deskAnalysis","deskStatus","deskChange","deskOperations"].includes(input?.op))return Response.json(await localScannerOperation(this,input));
     if(input?.op==="officialBlsRelayMaintenance")return Response.json(await maintainOfficialBlsRelay(this));
     if(input?.op==="pushAuditAppend")return Response.json(await appendPushAuditStorage(this.ctx.storage,input.attempt,input.patch));
     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}
