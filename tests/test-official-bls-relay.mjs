@@ -50,3 +50,6 @@ const invalid=[
 for(const payload of invalid){const r=await acceptOfficialBlsRelay(req(payload),env);assert(r.error,JSON.stringify(r));}
 assert.equal(kv.get('news:bls-official-relay:v1').records.BLS_CPI.sha256,sha256,'invalid relay cannot alter persisted official feed');
 console.log('PASS official BLS authenticated relay integrity, origin, TTL, no fake signals and fail-closed invalid payloads');
+
+assert.equal(reviewedRelayTarget('crypto-alpha-worker-v27.6.3-desk-dual-r4',nextDesk),true);
+assert.equal(reviewedRelayTarget('crypto-alpha-worker-v27.6.3-desk-dual-r4',reviewedDesk),false);

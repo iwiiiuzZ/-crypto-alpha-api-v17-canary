@@ -14,6 +14,7 @@ const DESK_RELAY_BUILDS = [
  "crypto-alpha-worker-v27.6.3-desk-dual-r1",
  "crypto-alpha-worker-v27.6.3-desk-dual-r2",
  "crypto-alpha-worker-v27.6.3-desk-dual-r3",
+ "crypto-alpha-worker-v27.6.3-desk-dual-r4",
 ];
 export function reviewedRelayTarget(expected, actual) {
  if (/^crypto-alpha-worker-v27\.6\.3-macro-r5[a-z]?$/.test(expected||'')) return actual===expected;

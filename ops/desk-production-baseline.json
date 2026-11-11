@@ -1,14 +1,14 @@
 {
   "status": "PRODUCTION_WINDOW_VERIFIED_AWAITING_FINAL_ACCEPTANCE",
-  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r2",
+  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r3",
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
-  "sourceGitBlobSha": "7208f36a5e15978d9f5607a3aaaea0454a952380",
-  "reviewedCommit": "ab75c7ce07bdfe021036c3960a65a0eb1fef7236",
-  "deploymentId": "81a31370-2e75-4e3d-a3fb-b17e3405b832",
-  "versionId": "c75c1210-9a82-401f-b991-b08ffc7d3b90",
+  "sourceGitBlobSha": "b208a9e83337dc2058dab9b170ac1e3e23161b0b",
+  "reviewedCommit": "646cf08d6108268bb86536d239902638e745d9dd",
+  "deploymentId": "d8f6502e-ed41-414c-870d-ae6975a87586",
+  "versionId": "55c59b79-8902-4885-b422-a701d0bc6b2a",
   "namespaceFingerprint": "aedfbcd14cd1",
   "autonomousWindowPassed": true,
   "requiredNewsCoveragePassed": false,
-  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42471724951"
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42474332984"
 }

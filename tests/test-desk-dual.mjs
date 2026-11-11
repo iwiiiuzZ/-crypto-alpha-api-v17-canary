@@ -152,14 +152,14 @@ d1Asset.ticker = quote(now, { last: 2242.01, bid: 2242, ask: 2242.01 });
 d1.liquidityPricing = undefined;
 const absentLiquidity = d1Scan().waiting;
 assert.equal(absentLiquidity.state, "WAIT_LIQUIDITY");
-assert.equal(absentLiquidity.monitorable, false);
+assert.equal(absentLiquidity.monitorable, true, "research observation does not grant execution");
 d1.liquidityPricing = pricing(d1Target, d1Zone, { entryReviewPassed: false, temporaryObstacleReviewRequired: true,
   reasons: ["TEMPORARY_OBSTACLE_RECHECK_REQUIRED"] });
 const temporaryObstacle = d1Scan().waiting;
 assert.equal(temporaryObstacle.state, "WAIT_LIQUIDITY");
-assert.equal(temporaryObstacle.monitorable, false);
+assert.equal(temporaryObstacle.monitorable, true);
 d1.liquidityPricing = pricing(d1Target, d1Zone, { checkedAt: iso(now - 15000), validUntil: iso(now - 5000) });
-assert.equal(d1Scan().waiting.monitorable, false);
+assert.equal(d1Scan().waiting.monitorable, true);
 d1.liquidityPricing = pricing(d1Target, d1Zone);
 assert.equal(d1Scan().best.state, "REVIEW");
 d1Asset.ticker = quote(now, { last: 2247.35, bid: 2247.33, ask: 2247.35 });
