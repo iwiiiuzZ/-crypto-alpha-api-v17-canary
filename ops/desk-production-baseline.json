@@ -1,14 +1,19 @@
 {
   "status": "PRODUCTION_WINDOW_VERIFIED_AWAITING_FINAL_ACCEPTANCE",
-  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r3",
+  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r4",
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
-  "sourceGitBlobSha": "b208a9e83337dc2058dab9b170ac1e3e23161b0b",
-  "reviewedCommit": "646cf08d6108268bb86536d239902638e745d9dd",
-  "deploymentId": "d8f6502e-ed41-414c-870d-ae6975a87586",
-  "versionId": "55c59b79-8902-4885-b422-a701d0bc6b2a",
+  "sourceGitBlobSha": "4c175dfc27b6cebb0ebc57e95ceb9979e1bfc230",
+  "reviewedCommit": "e6750ece7ce21286ec7e96d40e61630e2f69df2f",
+  "deploymentId": "e32e261e-7d47-43e4-8344-06f8ce60bd18",
+  "versionId": "d017b340-8136-4fd0-93ea-8c018b3d6106",
   "namespaceFingerprint": "aedfbcd14cd1",
   "autonomousWindowPassed": true,
-  "requiredNewsCoveragePassed": false,
-  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/42474332984"
+  "requiredNewsCoveragePassed": true,
+  "blsFourSourceConsumptionVerified": true,
+  "verifiedAt": "2026-11-12T02:02:21.299Z",
+  "finalDeliveryAccepted": false,
+  "deviceReceiptVerified": false,
+  "scope": "SAMPLED_WINDOW_NOT_LONG_TERM_STABILITY",
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/43121336429/attempts/2"
 }
