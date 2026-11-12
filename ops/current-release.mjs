@@ -23,7 +23,7 @@ export function assessCurrentRelease({manifest,sourceGitBlobSha,baseline,cloudfl
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
  const manifest=JSON.parse(fs.readFileSync(new URL('./release-manifest.json',import.meta.url),'utf8'));
- const baseline=JSON.parse(fs.readFileSync(new URL('./production-baseline.json',import.meta.url),'utf8'));
+ const baseline=JSON.parse(fs.readFileSync(new URL(manifest.build.includes('-desk-dual-')?'./desk-production-baseline.json':'./production-baseline.json',import.meta.url),'utf8'));
  const bytes=fs.readFileSync(new URL('../main-v188.js',import.meta.url));
  const sourceGitBlobSha=createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex');
  const token=process.env.CLOUDFLARE_API_TOKEN;

@@ -37,7 +37,7 @@ for(const file of ['bls-dispatch-egress.yml','maintenance.yml','r5-controlled-re
 }
 assert.ok(['CANDIDATE_NOT_DEPLOYED','DEPLOYED_AWAITING_FINAL_ACCEPTANCE'].includes(manifest.status));
 if(manifest.status==='DEPLOYED_AWAITING_FINAL_ACCEPTANCE'){
- const baseline=JSON.parse(fs.readFileSync(new URL('../ops/production-baseline.json',import.meta.url),'utf8'));
+ const baseline=JSON.parse(fs.readFileSync(new URL(build.includes('-desk-dual-')?'../ops/desk-production-baseline.json':'../ops/production-baseline.json',import.meta.url),'utf8'));
  assert.equal(baseline.build,build);assert.equal(baseline.sourceGitBlobSha,gitBlob);
  assert.equal(baseline.autonomousWindowPassed,true);assert.equal(baseline.blsFourSourceConsumptionVerified,true);
  assert.equal(baseline.finalDeliveryAccepted,false,'pending GPT acceptance is not stable final acceptance');
