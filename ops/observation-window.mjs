@@ -26,8 +26,8 @@ export async function collectObservationWindow({fetcher, origin, scanner, now=Da
     attempts.push({attempt:index+1,startedAt,completedAt:evidence.readAt,complete,endpoints,
       // These are sanitized summaries, never raw payloads or HTTP headers.
       partialEvidence:complete?null:evidence,
-      newsCoverage:results[1].status==='fulfilled'?assessNewsReceiptCoverage(evidence):{
-        passed:false,assessed:false,reason:'SCANNER_STATUS_UNAVAILABLE',rows:[]
+      newsCoverage:results[1].status==='fulfilled'&&evidence.scanner.stateReadSucceeded?assessNewsReceiptCoverage(evidence):{
+        passed:false,assessed:false,reason:results[1].status==='fulfilled'?'SCANNER_STATE_UNAVAILABLE':'SCANNER_STATUS_UNAVAILABLE',rows:[]
       }});
     if(complete) samples.push(evidence);
     // Anchor later reads to the first attempt, even if that attempt failed.

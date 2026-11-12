@@ -15,6 +15,7 @@ async function run(failures={}) {
       assert.equal(options.cache,'no-store');
       if(endpoint==='scanner')assert.equal(options.headers.authorization,'Bearer PRIVATE_TEST_TOKEN');
       if(failures[attempt]?.includes(endpoint))return new Response(JSON.stringify({error:'SECRET_PAYLOAD'}),{status:503});
+      if(endpoint==='scanner'&&failures[attempt]?.includes('state'))return Response.json({status:'unavailable',diagnostics:{stateReadSucceeded:false}});
       const time=new Date(clock).toISOString();
       return Response.json(endpoint==='fast'?{build:'r4',fastMonitor:{lastSuccessAt:time,quoteHealthy:true,private:'SECRET_PAYLOAD'}}:
         {build:'r4',diagnostics:{stateReadSucceeded:true,newsConsumption:{consumedAt:time},newsSourceReceipts:{JIN10:{status:'ok',fetchedAt:time}}},private:'SECRET_PAYLOAD'});
@@ -50,6 +51,9 @@ assert.equal(bothDown.samples.length,0);
 const lastStatusDown=await run({3:['scanner']});
 assert.equal(lastStatusDown.samples.length,2);
 assert.equal(lastStatusDown.attempts.at(-1).newsCoverage.assessed,false,'old success cannot stand in for final unavailable status');
+const unreadableState=await run({3:['state']});
+assert.equal(unreadableState.attempts.at(-1).newsCoverage.reason,'SCANNER_STATE_UNAVAILABLE','HTTP 200 is not proof of readable scanner state');
+assert.equal(assessSamples(unreadableState.samples,{}).operationalPassed,false);
 const script=readFileSync(new URL('../ops/maintenance.mjs',import.meta.url),'utf8');
 assert.match(script,/const ok=!failures.length/,'all request failures still fail the audit');
 assert.match(script,/report\.sampleAttempts\?\.at\(-1\)\?\.newsCoverage/);
