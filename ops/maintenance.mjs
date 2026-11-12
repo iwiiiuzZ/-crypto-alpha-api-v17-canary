@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import {setTimeout as delay} from 'node:timers/promises';
+import {collectObservationWindow} from './observation-window.mjs';
 import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url),'utf8'));
@@ -16,17 +16,12 @@ if(!scanner)failures.push({stage:'scanner',code:'MISSING_SCANNER_TOKEN'});
 // Deliberately never call scanner/run, scanner/test, plan, cancel, or force-refresh.
 // The autonomous observation window uses only these two GETs.
 if(token&&scanner){
-  let began=Date.now();
-  for(const offset of [0,25000,85000]){
-    await delay(Math.max(0,began+offset-Date.now()));
-    try{
-      const [fast,status]=await Promise.all([requestJson(fetch,config.origin+'/?view=fast'),requestJson(fetch,config.origin+'/scanner/status',{authorization:'Bearer '+scanner})]);
-      samples.push(summarizeSample(fast,status));
-      if(samples.length===1)began=Date.parse(samples[0].readAt);
-    }catch(e){failures.push({stage:'sample',code:code(e)});break;}
-  }
+  const window=await collectObservationWindow({fetcher:fetch,origin:config.origin,scanner});
+  report.sampleAttempts=window.attempts;
+  samples.push(...window.samples);
+  failures.push(...window.errors);
 }
-if(token&&scanner&&!failures.length){
+if(token&&scanner){
   try{
     report.cloudflareAfter=await cloudflareSnapshot(fetch,config,token);
     if(report.cloudflareAfter.deploymentId!==report.cloudflare?.deploymentId)failures.push({stage:'cloudflare',code:'DEPLOYMENT_CHANGED_DURING_OBSERVATION'});
@@ -34,8 +29,8 @@ if(token&&scanner&&!failures.length){
 }
 report.samples=samples;
 report.assessment=assessSamples(samples,{...config,build});
-report.requiredNewsCoverage=assessNewsReceiptCoverage(samples.at(-1));
-if(!report.requiredNewsCoverage.passed)failures.push({stage:'news-source-consumption',code:'REQUIRED_SOURCE_UNAVAILABLE_OR_STALE'});
+report.requiredNewsCoverage=report.sampleAttempts?.at(-1)?.newsCoverage||{passed:false,assessed:false,reason:'NO_STATUS_SAMPLE',rows:[]};
+if(report.requiredNewsCoverage.assessed!==false&&!report.requiredNewsCoverage.passed)failures.push({stage:'news-source-consumption',code:'REQUIRED_SOURCE_UNAVAILABLE_OR_STALE'});
 // Maintenance-branch audit only: foreground market/news context is read AFTER
 // the autonomous window and never counted as its successful background work.
 if(process.env.INCLUDE_READ_CONTEXT==='1'&&samples.length===3){
@@ -59,8 +54,9 @@ const ok=!failures.length&&report.cloudflare?.bindingMatches&&report.cloudflare?
 report.result=ok?'OPERATIONAL_WINDOW_PASSED_WITH_LIMITS':failures.some(e=>e.code.startsWith('MISSING_'))?'AUTHORIZATION_REQUIRED':'DEGRADED';
 const output=safeOutput(report,[token,scanner]);
 fs.writeFileSync('ops-report.json',output);
-const summary=['## 运行复核报告','',`结果：${report.result}`,'',...Object.entries(report.assessment.gates).map(([k,v])=>`- ${k}: ${v?'PASS':'FAIL'}`),'',...failures.map(e=>`- ${e.stage}: ${e.code}`),'','以上仅为观察窗口证据；不证明手机实收、长期稳定或存在交易机会。','报告只保留版本、时间、健康标志及聚合计数。'].join('\n');
+const summary=['## 运行复核报告','',`结果：${report.result}`,'',...Object.entries(report.assessment.gates).map(([k,v])=>`- ${k}: ${v?'PASS':'FAIL'}`),'',...failures.map(e=>`- ${e.stage}${e.endpoint?' / '+e.endpoint:''}${e.attempt?' / 第'+e.attempt+'次':''}: ${e.code}`),...(report.requiredNewsCoverage.assessed===false?['- 新闻消费：未评估，未取得对应监控接口样本；不能据此判断新闻源故障。']:[]),'','以上仅为观察窗口证据；不证明手机实收、长期稳定或存在交易机会。','报告只保留版本、时间、健康标志及聚合计数。'].join('\n');
 fs.writeFileSync('ops-report.md',summary);
 if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,summary+'\n');
 console.log(output);
 if(!ok)process.exitCode=1;
+
