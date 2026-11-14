@@ -1,0 +1,193 @@
+--- a/main-v188.js
++++ b/main-v188.js
+@@ -1,4 +1,71 @@
+-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r4";
++// Signed Site callers only. This module is embedded in the Worker at release.
++function createDeskAiBridge() {
++  const PREFIX = 'desk:ai:v1:';
++  const reply = (status, body) => ({status, body});
++  const error = (status, code) => reply(status, {error:code});
++  const config = env => ({configured:Boolean(env.OPENAI_API_KEY?.trim() && env.CRYPTO_ALPHA_AI_MODEL?.trim()),
++    model:env.CRYPTO_ALPHA_AI_MODEL?.trim() || null, transport:'cloudflare-worker', dailyLimit:6,
++    missing:[!env.OPENAI_API_KEY?.trim() && 'OPENAI_API_KEY',!env.CRYPTO_ALPHA_AI_MODEL?.trim() && 'CRYPTO_ALPHA_AI_MODEL'].filter(Boolean)});
++  async function provider(env, suffix, body) {
++    let r;
++    try { r=await fetch('https://api.openai.com/v1/responses'+suffix,{method:body?'POST':'GET',redirect:'error',
++      headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},
++      body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(body?20000:10000)}); }
++    catch {throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}
++    if(!r.ok)throw Error(r.status===401||r.status===403?'MODEL_AUTH':r.status===429?'MODEL_RATE_LIMIT':body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');
++    const reader=r.body.getReader();let size=0,parts=[];
++    for(;;){const p=await reader.read();if(p.done)break;size+=p.value.length;if(size>1200000){await reader.cancel();throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}parts.push(p.value);}
++    const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}
++    try{return JSON.parse(new TextDecoder().decode(bytes));}catch{throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}
++  }
++  async function handle(owner,input) {
++    const {env,ctx:{storage}}=owner;
++    if(input.action==='config')return reply(200,config(env));
++    const value=input.value;
++    if(!value||!/^\w[\w-]{0,127}$/.test(value.owner)||!/^[a-f0-9-]{36}$/.test(value.id))return error(400,'INVALID_AI_REQUEST');
++    const key=PREFIX+value.owner+':'+value.id;
++    let row=await storage.get(key);
++    if(input.action==='poll'){
++      if(!row)return error(404,'AI_REQUEST_NOT_FOUND');
++      if(row.error)return error(409,row.error);
++      if(!row.responseId)return reply(202,{status:'submitting'});
++      try { return reply(200,await provider(env,'/'+encodeURIComponent(row.responseId))); }
++      catch(e){return error(503,e.message);}
++    }
++    if(input.action!=='submit')return error(400,'INVALID_AI_ACTION');
++    // The provider response id is bound to an authenticated Site owner and UUID.
++    // Never accept a caller-supplied provider URL, id or model.
++    if(row)return row.error?error(409,row.error):reply(202,{id:row.responseId,status:row.responseId?'queued':'submitting'});
++    if(!config(env).configured)return error(503,'NOT_CONFIGURED');
++    const body=value.request;
++    if(!body||typeof body.instructions!=='string'||body.instructions.length>150000||typeof body.input!=='string'||body.input.length>660000
++      ||body.background!==true||body.store!==true||body.max_output_tokens!==14000||body.text?.format?.type!=='json_schema'||body.text.format.strict!==true
++      ||JSON.stringify(body.text).length>30000)return error(400,'INVALID_AI_PAYLOAD');
++    const now=Date.now(),day=Math.floor((now+28800000)/86400000);
++    const reserved=await storage.transaction(async txn=>{
++      if(await txn.get(key))return false;
++      const limit=await txn.get(PREFIX+'budget')||{};
++      if(now-(limit.last??0)<300000||(limit.day===day&&limit.count>=6))return false;
++      await txn.put(PREFIX+'budget',{day,last:now,count:limit.day===day?limit.count+1:1});
++      await txn.put(key,{created:now,responseId:null,error:null});return true;
++    });
++    if(!reserved){row=await storage.get(key);return row?reply(202,{id:row.responseId,status:row.responseId?'queued':'submitting'}):error(429,'REVIEW_RATE_LIMIT');}
++    try {
++      const response=await provider(env,'',{model:env.CRYPTO_ALPHA_AI_MODEL.trim(),instructions:body.instructions,input:body.input,
++        background:true,store:true,max_output_tokens:14000,text:body.text});
++      if(typeof response.id!=='string'||!/^resp_[A-Za-z0-9_-]+$/.test(response.id))throw Error('MODEL_REQUEST_UNKNOWN');
++      await storage.put(key,{created:now,responseId:response.id,error:null});
++      return reply(200,response);
++    }catch(e){
++      const code=['MODEL_AUTH','MODEL_RATE_LIMIT'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
++      await storage.put(key,{created:now,responseId:null,error:code});return error(503,code);
++    }
++  }
++  return {handle,config};
++}
++
++const DeskAiBridge=createDeskAiBridge();
++const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r5";
+ const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
+ const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
+ const API_VERSION = "7.6.0";
+@@ -703,6 +770,7 @@
+  if(input.op==='deskStatus')return DeskBridge.status(owner);
+  if(input.op==='deskChange')return DeskBridge.change(owner,input);
+  if(input.op==='deskOperations')return deskOperations(owner);
++ if(input.op==='deskAi')return DeskAiBridge.handle(owner,input);
+  if(input.op==='scannerCycle'){
+   if(input.ensureMonitor)await ensureFastMonitor(owner);
+   try {
+@@ -5645,7 +5713,7 @@
+   const localOwner=env?.[LOCAL_SCANNER_OWNER];
+   if(localOwner)return localScannerOperation(localOwner,payload);
+   if(!scannerStateStub(env)?.fetch)return null;
+-  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="scannerCycle"?50000:payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck","deskAnalysis","deskChange"].includes(payload.op)?28000:4000;
++  const attempts=payload.op==="get"?2:1, timeoutMs=payload.op==="deskAi"?25000:payload.op==="scannerCycle"?50000:payload.op==="pushAuditAppend"?1000:["publicMarket","directQuote","newsContext","liquidityRecheck","deskAnalysis","deskChange"].includes(payload.op)?28000:4000;
+   for(let attempt=0;attempt<attempts;attempt++){
+     let timer;
+     try {
+@@ -7818,8 +7886,14 @@
+   const sig = request.headers.get("X-Desk-Signature") ?? "";
+   if (!/^\d{13}$/.test(time) || Math.abs(Date.now() - Number(time)) > 30000
+       || !/^[a-f0-9-]{36}$/.test(nonce) || !/^[a-zA-Z0-9_-]{86}$/.test(sig)) return null;
+-  const body = request.method === "GET" ? "" : await request.text();
+-  if (body.length > 1024) return null;
++  const maxBody = path === "/desk/v1/ai" ? 3000000 : 1024;
++  let body = "";
++  if (request.method !== "GET" && request.body) {
++    const reader=request.body.getReader(), decoder=new TextDecoder();let bytes=0;
++    for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.length;
++      if(bytes>maxBody){await reader.cancel();return null;}body+=decoder.decode(part.value,{stream:true});}
++    body+=decoder.decode();
++  }
+   try {
+     const signature = Uint8Array.from(atob(sig.replaceAll("-", "+").replaceAll("_", "/") + "=="), char => char.charCodeAt(0));
+     const publicKey = await crypto.subtle.importKey(
+@@ -7933,6 +8007,12 @@
+     if (!["GET", "POST", "DELETE"].includes(request.method)) return problem(405, "METHOD_NOT_ALLOWED");
+     const signed = await signedPayload(request, path);
+     if (!signed) return problem(401, "DESK_SIGNATURE_REQUIRED");
++    if (path === "/desk/v1/ai") {
++      if(request.method === "GET")return await stateCall({op:"deskAi",action:"config"});
++      if(request.method !== "POST")return problem(405,"METHOD_NOT_ALLOWED");
++      let value;try{value=JSON.parse(signed.body);}catch{return problem(400,"INVALID_JSON");}
++      return await stateCall({op:"deskAi",action:value.action,value});
++    }
+     if (path === "/desk/v1/analysis" && request.method === "GET") return reply(await stateCall({ op: "deskAnalysis" }));
+     if (path === "/desk/v1/operations" && request.method === "GET") return reply(await stateCall({op:"deskOperations"}));
+     if (path !== "/desk/v1/monitors") return problem(404, "UNKNOWN_DESK_ROUTE");
+@@ -7981,7 +8061,7 @@
+     const secondTicker = await quote(owner, plan.asset);
+     if (!confirmDeskArrival(plan, [firstTicker, secondTicker])) return keep("等待第二份独立盘口",true);
+     const current = await analyse(owner, true);
+-    const updated = current.assets?.[plan.asset]?.plans.find(row => row.id === plan.id && row.revision === plan.revision);
++    const updated = current.assets?.[plan.asset]?.plans.find(row => row.id === plan.id);
+     if (!updated) return keep("当前模型或首个障碍已变化，等待复核",true);
+     if (updated.state !== "REVIEW" || !updated.monitorable || !updated.liquidity?.entryReviewPassed
+         || !deskPricingCurrent(updated.liquidity,Date.now())) return keep("到区后等待跨所流动性和当前模型复核",true);
+@@ -7990,7 +8070,7 @@
+     await new Promise(resolve => setTimeout(resolve, 500));
+     const lastTicker = await quote(owner, plan.asset);
+     const arrival = confirmDeskArrival(plan, [resample, lastTicker]);
+-    if (!arrival) return keep("终审前报价变化，等待重新到区",true);
++    if (!arrival || !confirmDeskArrival(updated, [resample, lastTicker])) return keep("冻结计划与最新模型需同时通过到区复核",true);
+     if (!deskPricingCurrent(updated.liquidity,Date.now())) return keep("跨所复核已过有效期，等待重新到区",true);
+     const lease = crypto.randomUUID();
+     const locked = await update(storage, plan, existing => {
+@@ -8003,7 +8083,7 @@
+       return update(storage,plan,row=>row.lease?.id===lease ? {...row,state:"ACTIVE",lease:null,delivery:null,
+         arrivedAt:null,reason:"跨所复核已过有效期，等待重新到区"} : null);
+     }
+-    await deskPaperTick(owner,updated,lastTicker);
++    await deskPaperTick(owner,plan,lastTicker);
+     try {
+       const verified = await notify(owner, {
+         title: plan.asset + (plan.direction === "LONG" ? " 做多" : " 做空") + "｜已到区待终审",
+@@ -8214,25 +8294,27 @@
+    const keepWatching=await storage.transaction(async tx=>{
+     const pointer='desk:v2:pointer:'+plan.id+':'+plan.revision;
+     const existing=await tx.get(pointer);
+-    if(existing)return (await tx.get(existing))?.status==='WAITING';
++    if(existing){const saved=await tx.get(existing);return saved?.status==='WAITING'?saved.plan:null;}
+     const eventPointer='desk:v2:event:'+plan.id;
+     const priorKey=await tx.get(eventPointer),prior=priorKey?await tx.get(priorKey):null;
+-    if(prior&&prior.status!=='WAITING')return false;
++    if(prior)return prior.status==='WAITING'?prior.plan:null;
+     let active=await tx.get(DESK_ACTIVE_KEY)||[];
+     if(active.length>=128&&!prior)return false;
+     if(prior){prior.status='SUPERSEDED';prior.closedAt=new Date(now).toISOString();prior.review='尚未入场时模型修订，保留原版';await tx.put(priorKey,prior);active=active.filter(k=>k!==priorKey);}
+     const key=DESK_JOURNAL_PREFIX+new Date(now).toISOString()+':'+plan.id+':'+plan.revision;
+     await tx.put(key,AlphaDeskAutonomy.createRecord(plan,now));await tx.put(pointer,key);await tx.put(eventPointer,key);active.push(key);await tx.put(DESK_ACTIVE_KEY,active);
+-    return true;
++    return plan;
+    });
+-   if(settings.enabled&&keepWatching)await DeskBridge.discover(owner,plan);
++   if(settings.enabled&&keepWatching)await DeskBridge.discover(owner,keepWatching);
+   }
+   const previous=await storage.get('desk:v2:health');const missing=Object.values(result.assets).filter(a=>!a.ready).map(a=>a.asset);
+   const volatilityMissing=['BTC','ETH'].filter(a=>!(volatility[a]?.threshold>0));
+-  const health={checkedAt:result.capturedAt,missing,volatilityMissing,receiptId:result.analysisReceipt.id,quoteMode:'OKX_REAL_BOOK',autoDiscovery:settings.enabled};await storage.put('desk:v2:health',health);
+-  if(settings.enabled&&missing.length&&JSON.stringify(previous?.missing)!==JSON.stringify(missing))await deskAlert(owner,'DATA:'+Math.floor(now/900000)+':'+missing.join(','),'聚流｜行情数据异常',missing.join('、')+' 执行行情或结构未通过，暂停新模拟入场；已登记计划继续核对失效与价格。此提醒不是平仓指令。');
++  const healthySince=missing.length?null:(previous?.healthySince||now);
++  const incidentOpen=missing.length?true:Boolean(previous?.incidentOpen&&now-healthySince<60000);
++  const health={healthySince,incidentOpen,checkedAt:result.capturedAt,missing,volatilityMissing,receiptId:result.analysisReceipt.id,quoteMode:'OKX_REAL_BOOK',autoDiscovery:settings.enabled};await storage.put('desk:v2:health',health);
++  if(settings.enabled&&missing.length&&!previous?.incidentOpen)await deskAlert(owner,'DATA:'+Math.floor(now/900000)+':'+missing.join(','),'聚流｜行情数据异常',missing.join('、')+' 执行行情或结构未通过，暂停新模拟入场；已登记计划继续核对失效与价格。此提醒不是平仓指令。');
+   if(settings.enabled&&volatilityMissing.length&&JSON.stringify(previous?.volatilityMissing)!==JSON.stringify(volatilityMissing))await deskAlert(owner,'VOLATILITY:'+Math.floor(now/900000)+':'+volatilityMissing.join(','),'聚流｜波动提醒基线缺失',volatilityMissing.join('、')+' 的已收盘2小时/4小时数据不足，波动阈值提醒暂不可用；到区和结构失效仍独立检查。');
+-  if(settings.enabled&&!missing.length&&previous?.missing?.length)await deskAlert(owner,'RECOVER:'+Math.floor(now/900000),'聚流｜数据恢复','BTC/ETH 执行行情与结构恢复核验。计划仍须重新复核。');
++  if(settings.enabled&&!missing.length&&previous?.incidentOpen&&!incidentOpen)await deskAlert(owner,'RECOVER:'+Math.floor(now/900000),'聚流｜数据恢复','BTC/ETH 执行行情与结构连续恢复核验至少60秒。计划仍须重新复核。');
+  });
+ }
+ async function deskPaperTick(owner,entryPlan=null,ticker=null){
+@@ -8322,7 +8404,7 @@
+     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
+     if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
+     if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
+-    if(["deskAnalysis","deskStatus","deskChange","deskOperations"].includes(input?.op))return Response.json(await localScannerOperation(this,input));
++    if(["deskAnalysis","deskStatus","deskChange","deskOperations","deskAi"].includes(input?.op))return Response.json(await localScannerOperation(this,input));
+     if(input?.op==="officialBlsRelayMaintenance")return Response.json(await maintainOfficialBlsRelay(this));
+     if(input?.op==="pushAuditAppend")return Response.json(await appendPushAuditStorage(this.ctx.storage,input.attempt,input.patch));
+     if(input?.op==="liquidityRecheck"){try{return Response.json(await coordinatedLiquidityRecheck(this));}catch{return Response.json({crossVenueLiquidity:{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}}},{status:503});}}

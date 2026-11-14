@@ -18,6 +18,12 @@ const snapshot={assets:{ETHUSDT:{timeframes:{}},BTCUSDT:{timeframes:{}}}};
 await api.capture(owner,scan,snapshot);await api.capture(owner,scan,snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'scan is idempotent');
 assert.equal(state.get('desk:v1:watches').length,1,'automatic discovery needs no button');
+// The same market event must keep its first published paper ticket even when
+// recalculated ATR/cost creates a new revision every minute.
+await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[{...plan,revision:'drift',low:99.01,stop:94.99}]}}},snapshot);
+assert.equal((await api.read(owner)).journal.records.length,1,'same event does not create a stream of drafts');
+assert.equal((await api.read(owner)).journal.records[0].plan.revision,'v1','published prices remain frozen');
+assert.equal(state.get('desk:v1:watches')[0].plan.revision,'v1','watch and ledger use the same frozen ticket');
 const restarted={ctx:{storage},env:{}};
 assert.equal((await api.read(restarted)).journal.records.length,1,'journal survives isolate restart');
 await api.tick(owner);assert.equal((await api.read(owner)).journal.records[0].status,'WAITING');
@@ -34,3 +40,17 @@ const receipt=test.body.alerts.find(a=>a.id.startsWith('TEST:'));assert.equal(re
 await api.control(owner,{value:{action:'confirm-receipt',id:receipt.id}});assert.equal((await api.read(owner)).alerts.find(a=>a.id===receipt.id).deviceReceiptVerified,true);
 assert.equal((await api.control(owner,{value:{action:'test-notification'}})).status,429);
 console.log('PASS durable auto-discovery, restart, idempotency, frozen open plan, paper lifecycle, retry, receipt confirmation and rate limit');
+
+await api.control(owner,{value:{action:'enable'}});
+const badScan={...scan,assets:{...scan.assets,ETH:{...asset,asset:'ETH',ready:false}}};
+await api.capture(owner,badScan,snapshot);
+let health=state.get('desk:v2:health');assert.equal(health.incidentOpen,true);
+const failures=()=>state.get('desk:v2:alerts').filter(r=>r.title==='聚流｜行情数据异常').length;
+const failuresAtStart=failures();
+f.advance(10000);await api.capture(owner,scan,snapshot);
+assert.equal(state.get('desk:v2:health').incidentOpen,true,'one healthy scan must not announce recovery');
+f.advance(10000);await api.capture(owner,badScan,snapshot);assert.equal(failures(),failuresAtStart,'flapping stays in the same incident');
+f.advance(10000);await api.capture(owner,scan,snapshot);
+f.advance(61000);await api.capture(owner,scan,snapshot);
+assert.equal(state.get('desk:v2:health').incidentOpen,false,'sustained healthy scans close the incident');
+console.log('PASS immediate fault and sustained-recovery notification hysteresis');
