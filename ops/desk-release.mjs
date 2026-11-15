@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import {revalidateDeskVersion} from "./desk-version-equivalence.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { cloudflareSnapshot, requestJson } from "./diagnostics.mjs";
 import { assessCurrentRelease } from "./current-release.mjs";
@@ -18,7 +19,18 @@ export async function deskPreflight(config, baseline, env = process.env) {
     requestJson(fetch, config.origin + "/?view=fast"),
     requestJson(fetch, config.origin + "/scanner/status", { authorization: "Bearer " + env.SCANNER_TOKEN }),
   ]);
-  const reviewed = assessCurrentRelease({ manifest: baseline, sourceGitBlobSha: baseline.sourceGitBlobSha, baseline, cloudflare, fast });
+  let reviewed = assessCurrentRelease({ manifest: baseline, sourceGitBlobSha: baseline.sourceGitBlobSha, baseline, cloudflare, fast });
+  // A secret/config update creates new physical IDs. Only explicit deploy may
+  // accept those IDs after comparing provider-hashed code, runtime and bindings.
+  if(!reviewed.alreadyDeployed && isAuthorizedDeskDispatch(env) && reviewed.failedGates.length &&
+      reviewed.failedGates.every(g=>['exactDeployment','exactVersion'].includes(g))){
+    const effective=await revalidateDeskVersion(config,baseline,cloudflare,env.CLOUDFLARE_API_TOKEN);
+    const again=await cloudflareSnapshot(fetch,config,env.CLOUDFLARE_API_TOKEN);
+    if(again.deploymentId!==cloudflare.deploymentId||again.versions?.[0]?.id!==cloudflare.versions?.[0]?.id)throw Error('DESK_DEPLOYMENT_CHANGED_DURING_REVALIDATION');
+    reviewed=assessCurrentRelease({manifest:baseline,sourceGitBlobSha:baseline.sourceGitBlobSha,baseline:effective,cloudflare:again,fast});
+    console.log(JSON.stringify({stage:'desk-config-version-revalidated',codeEquivalent:true,runtimeAndBindingsEquivalent:true,baselineUnmodified:true}));
+  }
+  console.log(JSON.stringify({stage:'desk-preflight-gates',gates:reviewed.gates,scannerAuthenticated:scanner.status==='ok',scannerBuildMatches:scanner.build===baseline.build,scannerIdentityMatches:scanner.backendIdentity?.matched===true,stateReadSucceeded:scanner.diagnostics?.stateReadSucceeded===true}));
   if (!reviewed.alreadyDeployed || scanner.status !== "ok" || scanner.build !== baseline.build
       || scanner.backendIdentity?.matched !== true || scanner.diagnostics?.stateReadSucceeded !== true) {
     throw new Error("DESK_PRIOR_DEPLOYMENT_STATE_OR_AUTH_MISMATCH");
