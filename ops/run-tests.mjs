@@ -12,7 +12,7 @@ unit.push('test-bls-renewal-observer.mjs');
 unit.push('test-collector-pin.mjs');
 unit.push('test-macro-reference.mjs','test-macro-reference-cache.mjs','test-macro-worker-integration.mjs');
 unit.push('test-desk-dual.mjs','test-desk-autonomy.mjs','test-desk-runtime.mjs');
-unit.push('test-observation-window.mjs');
+unit.push('test-observation-window.mjs','test-desk-ai-bridge.mjs');
 const native=['verify-workerd-full-system.mjs','verify-workerd-fast-monitor.mjs','verify-workerd-owner-local.mjs','verify-workerd-news-runtime.mjs','verify-workerd-monitor-contention.mjs','verify-workerd-owner-identity.mjs','verify-workerd-response-isolation.mjs'];
 native.push('verify-workerd-bls-dispatch.mjs');
 mkdirSync(new URL('test-results/',root),{recursive:true});
