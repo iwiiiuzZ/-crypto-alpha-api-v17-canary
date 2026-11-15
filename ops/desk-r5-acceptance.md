@@ -26,3 +26,8 @@ ZEC research sources (retrieved 2026-11-14):
 - https://jesse.trade/strategies/zecsttrend6538-31 — community historical backtest advertises 100% on only 3 trades. The page's date filter and equity dates differ. This is NOT proof of a high-win-rate system and is not adopted as a performance claim.
 
 Candidate research families, not approved strategies: trend/pullback, breakout/retest with volume/OI confirmation, and range sweep/reclaim with flow confirmation. Compare untouched chronological holdouts including fees, funding and slippage; track sample count, net expectancy, win rate, drawdown and uncertainty. No guaranteed win rate.
+
+## 2026-11-15 continuation
+- Site signed Worker AI adapter implemented and tested with mocked provider: full original rules, immutable snapshot, owner-bound submit/poll, lost receipt recovery without a second paid POST. Production model call remains unverified.
+- Ledger statistics now traverse history independently of visible pagination (up to 10,000 records with explicit incomplete flag beyond that bound). Restart and 146-result multi-page regression passed. Old superseded rows remain audit-only in the updated Site UI; no historical fills invented.
+- Backend 68-suite regression passed after history aggregation changes. ZEC live integration, complete tape/gap repair and automatic AI reevaluation remain outstanding.

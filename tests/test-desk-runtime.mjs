@@ -54,3 +54,11 @@ f.advance(10000);await api.capture(owner,scan,snapshot);
 f.advance(61000);await api.capture(owner,scan,snapshot);
 assert.equal(state.get('desk:v2:health').incidentOpen,false,'sustained healthy scans close the incident');
 console.log('PASS immediate fault and sustained-recovery notification hysteresis');
+// Statistics must include older pages and remain identical when paging the list.
+for(let i=0;i<145;i++)state.set('desk:v2:journal:2020-'+String(i).padStart(4,'0'),{status:i%2?'WIN':'LOSS',closedAt:at(now+i),exit:{netR:i%2?2:-1},plan:{id:'old-'+i,revision:'one'}});
+owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
+const all=await api.read(owner);assert.equal(all.journal.records.length,100);assert.equal(all.journal.statistics.sampleSize,146);assert.equal(all.journal.statistics.complete,true);
+const earlier=await api.control(owner,{value:{action:'history',before:all.journal.nextBefore}});
+assert.equal(earlier.body.statistics.sampleSize,146,'changing pages must not change the system win rate');
+assert.equal((await api.read({ctx:{storage},env:{}})).journal.statistics.sampleSize,146,'all-history statistics survive restart');
+console.log('PASS full-history statistics over multiple pages and restart');

@@ -147,7 +147,37 @@
      try {
        const verified = await notify(owner, {
          title: plan.asset + (plan.direction === "LONG" ? " 做多" : " 做空") + "｜已到区待终审",
-@@ -8214,25 +8294,27 @@
+@@ -8151,10 +8231,27 @@
+   }
+  })();try{return await owner.deskAlertWork;}finally{owner.deskAlertWork=null;}
+ }
++async function deskLedgerStatistics(owner){
++ const generation=owner.deskLedgerGeneration||0;
++ if(owner.deskLedgerSummary?.generation===generation&&Date.now()-owner.deskLedgerSummary.at<15000)return owner.deskLedgerSummary.value;
++ const compact=[];let cursor=null,complete=false;
++ // Traverse immutable history independently of the visible page. Bound each
++ // storage read and expose incomplete scans rather than presenting partial totals.
++ for(let page=0;page<100;page++){
++  const batch=await owner.ctx.storage.list({prefix:DESK_JOURNAL_PREFIX,reverse:true,limit:100,...(cursor?{end:cursor}:{})});
++  const entries=[...batch.entries()];
++  for(const [,r] of entries)compact.push({status:r.status,uncertain:r.uncertain,closedAt:r.closedAt,exit:r.exit?{netR:r.exit.netR}:null});
++  if(entries.length<100){complete=true;break;}cursor=entries.at(-1)[0];
++ }
++ const value={...AlphaDeskAutonomy.statistics(compact),complete,recordCount:compact.length,asOf:new Date().toISOString(),
++  superseded:compact.filter(r=>r.status==='SUPERSEDED').length};
++ if((owner.deskLedgerGeneration||0)===generation)owner.deskLedgerSummary={generation,at:Date.now(),value};
++ return value;
++}
+ async function deskJournal(owner,before=null){
+  const storage=owner.ctx.storage;const entries=await storage.list({prefix:DESK_JOURNAL_PREFIX,reverse:true,limit:101,...(before?{end:before}:{})});
+- const pairs=[...entries.entries()],page=pairs.slice(0,100),records=page.map(([,r])=>r);
+- return {records,statistics:AlphaDeskAutonomy.statistics(records),scope:'本页最多100条；非全历史汇总',nextBefore:pairs.length>100?page.at(-1)[0]:null};
++ const pairs=[...entries.entries()],page=pairs.slice(0,100),records=page.map(([,r])=>r),statistics=await deskLedgerStatistics(owner);
++ return {records,statistics,scope:statistics.complete?'成绩覆盖全部历史；列表每页100条，旧版修订仅供审计':'历史超过本轮汇总上限，成绩尚不完整，不作为系统胜率',nextBefore:pairs.length>100?page.at(-1)[0]:null};
+ }
+ async function deskOperations(owner){
+  const storage=owner.ctx.storage;const [settings,journal,alerts,tapes,health]=await Promise.all([deskSettings(owner),deskJournal(owner),storage.get(DESK_ALERT_KEY),storage.list({prefix:'desk:v2:tape:'}),storage.get('desk:v2:health')]);
+@@ -8214,25 +8311,27 @@
     const keepWatching=await storage.transaction(async tx=>{
      const pointer='desk:v2:pointer:'+plan.id+':'+plan.revision;
      const existing=await tx.get(pointer);
@@ -159,8 +189,9 @@
 +    if(prior)return prior.status==='WAITING'?prior.plan:null;
      let active=await tx.get(DESK_ACTIVE_KEY)||[];
      if(active.length>=128&&!prior)return false;
-     if(prior){prior.status='SUPERSEDED';prior.closedAt=new Date(now).toISOString();prior.review='尚未入场时模型修订，保留原版';await tx.put(priorKey,prior);active=active.filter(k=>k!==priorKey);}
+-    if(prior){prior.status='SUPERSEDED';prior.closedAt=new Date(now).toISOString();prior.review='尚未入场时模型修订，保留原版';await tx.put(priorKey,prior);active=active.filter(k=>k!==priorKey);}
      const key=DESK_JOURNAL_PREFIX+new Date(now).toISOString()+':'+plan.id+':'+plan.revision;
++    owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
      await tx.put(key,AlphaDeskAutonomy.createRecord(plan,now));await tx.put(pointer,key);await tx.put(eventPointer,key);active.push(key);await tx.put(DESK_ACTIVE_KEY,active);
 -    return true;
 +    return plan;
@@ -182,7 +213,15 @@
   });
  }
  async function deskPaperTick(owner,entryPlan=null,ticker=null){
-@@ -8322,7 +8404,7 @@
+@@ -8243,6 +8342,7 @@
+   for(const key of active){const old=await storage.get(key);if(!old)continue;
+    const reviewed=entryPlan?.id===old.plan.id&&entryPlan?.revision===old.plan.revision;
+    const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);await storage.put(key,updated);
++   if(updated.status!==old.status||updated.uncertain!==old.uncertain)owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
+    if(['WAITING','OPEN'].includes(updated.status))next.push(key);
+    if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED'].includes(updated.status))await deskAlert(owner,'OUTCOME:'+old.plan.id+':'+old.plan.revision,'聚流｜'+old.plan.asset+' 计划状态更新',old.plan.model+' · '+updated.status+' · '+updated.review+'。这是模型模拟记录，不是账户成交。');
+    if(updated.uncertain&&!old.uncertain)await deskAlert(owner,'GAP:'+old.plan.id+':'+old.plan.revision,'聚流｜计划跟踪出现数据空档',old.plan.asset+' '+old.plan.model+' 的价格证据不连续，成绩暂不纳入胜率；请核对现有人工持仓。');
+@@ -8322,7 +8422,7 @@
      if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
      if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
      if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
