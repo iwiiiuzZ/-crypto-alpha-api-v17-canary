@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {revalidateDeskVersion} from './desk-version-equivalence.mjs';
 import {collectObservationWindow} from './observation-window.mjs';
 import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
@@ -12,6 +13,19 @@ const token=process.env.CLOUDFLARE_API_TOKEN,scanner=process.env.SCANNER_TOKEN;
 const failures=[],samples=[],report={generatedAt:new Date().toISOString(),sourceBuild,expectedBuild:build,sourceIsDeploymentCandidate:sourceBuild!==build,mode:'READ_ONLY',errors:failures};
 const code=e=>e instanceof OpsError?e.code:'INTERNAL_DIAGNOSTIC_ERROR';
 try{report.cloudflare=await cloudflareSnapshot(fetch,config,token);}catch(e){failures.push({stage:'cloudflare',code:code(e)});}
+// Read-only evidence for a pending release. This never updates the baseline,
+// permits deployment, or turns an old production build into a passing new one.
+if(sourceBuild.includes('-desk-dual-')&&report.cloudflare){
+  try{
+    const baseline=JSON.parse(fs.readFileSync(new URL('./desk-production-baseline.json',import.meta.url),'utf8'));
+    if(report.cloudflare.deploymentId!==baseline.deploymentId){
+      await revalidateDeskVersion(config,baseline,report.cloudflare,token);
+      report.priorVersionEquivalence={verified:true,scope:'CODE_RUNTIME_BINDINGS_ONLY',baselineUnmodified:true,deploymentAuthorized:false};
+    }
+  }catch(e){
+    report.priorVersionEquivalence={verified:false,code:['DESK_MULTIVERSION_REJECTED','DESK_VERSION_CODE_OR_BINDINGS_CHANGED'].includes(e.message)?e.message:'VERSION_EVIDENCE_UNAVAILABLE',deploymentAuthorized:false};
+  }
+}
 if(!scanner)failures.push({stage:'scanner',code:'MISSING_SCANNER_TOKEN'});
 // Deliberately never call scanner/run, scanner/test, plan, cancel, or force-refresh.
 // The autonomous observation window uses only these two GETs.
