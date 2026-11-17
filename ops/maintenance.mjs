@@ -24,6 +24,7 @@ if(sourceBuild.includes('-desk-dual-')&&report.cloudflare){
     }
   }catch(e){
     report.priorVersionEquivalence={verified:false,code:['DESK_MULTIVERSION_REJECTED','DESK_VERSION_CODE_OR_BINDINGS_CHANGED'].includes(e.message)?e.message:'VERSION_EVIDENCE_UNAVAILABLE',deploymentAuthorized:false};
+    if(e.evidence)report.priorVersionEquivalence.gates=e.evidence;
   }
 }
 if(!scanner)failures.push({stage:'scanner',code:'MISSING_SCANNER_TOKEN'});

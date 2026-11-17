@@ -9,8 +9,14 @@ function resources(v){
  return {bindings,runtime:r.script_runtime};
 }
 export function equivalentVersion(old,current){
- const a=resources(old),b=resources(current),etag=old?.resources?.script?.etag;
- return Boolean(a&&b&&typeof etag==='string'&&etag.length>=16&&etag===current?.resources?.script?.etag&&canonical(a)===canonical(b));
+ return Object.values(versionEvidence(old,current)).every(Boolean);
+}
+export function versionEvidence(old,current){
+ const a=resources(old),b=resources(current),etag=old?.resources?.script?.etag,next=current?.resources?.script?.etag;
+ return {baselineResourcesPresent:!!a,currentResourcesPresent:!!b,
+  baselineHashPresent:typeof etag==='string'&&etag.length>=16,currentHashPresent:typeof next==='string'&&next.length>=16,
+  codeMatches:!!etag&&etag===next,runtimeMatches:!!a&&!!b&&canonical(a.runtime)===canonical(b.runtime),
+  bindingsMatch:!!a&&!!b&&canonical(a.bindings)===canonical(b.bindings)};
 }
 export async function revalidateDeskVersion(config,baseline,snapshot,token,fetcher=fetch){
  if(!snapshot.singleVersion||snapshot.versions?.length!==1||snapshot.versions[0].percentage!==100)throw Error('DESK_MULTIVERSION_REJECTED');
@@ -18,6 +24,10 @@ export async function revalidateDeskVersion(config,baseline,snapshot,token,fetch
  const base='https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(config.accountId)+'/workers/scripts/'+encodeURIComponent(config.worker)+'/versions/';
  const headers={authorization:'Bearer '+token};
  const [a,b]=await Promise.all([requestJson(fetcher,base+encodeURIComponent(baseline.versionId),headers),requestJson(fetcher,base+encodeURIComponent(current),headers)]);
- if(a.success!==true||b.success!==true||a.result?.id!==baseline.versionId||b.result?.id!==current||!equivalentVersion(a.result,b.result))throw Error('DESK_VERSION_CODE_OR_BINDINGS_CHANGED');
+ if(a.success!==true||b.success!==true||a.result?.id!==baseline.versionId||b.result?.id!==current||!equivalentVersion(a.result,b.result)){
+  const error=Error('DESK_VERSION_CODE_OR_BINDINGS_CHANGED');
+  error.evidence={providerVersionsMatched:a.success===true&&b.success===true&&a.result?.id===baseline.versionId&&b.result?.id===current,...versionEvidence(a.result,b.result)};
+  throw error;
+ }
  return {...baseline,deploymentId:snapshot.deploymentId,versionId:current};
 }
