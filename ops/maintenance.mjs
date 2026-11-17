@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import {revalidateDeskVersion} from './desk-version-equivalence.mjs';
+import {auditDeskContent} from './desk-content-audit.mjs';
 import {collectObservationWindow} from './observation-window.mjs';
 import {requestJson,summarizeSample,summarizeReadContext,compareNewsBatches,observeNewsConsumption,assessSamples,assessNewsReceiptCoverage,cloudflareSnapshot,cloudflareBuildSnapshot,safeOutput,OpsError} from './diagnostics.mjs';
 
@@ -25,6 +26,10 @@ if(sourceBuild.includes('-desk-dual-')&&report.cloudflare){
   }catch(e){
     report.priorVersionEquivalence={verified:false,code:['DESK_MULTIVERSION_REJECTED','DESK_VERSION_CODE_OR_BINDINGS_CHANGED'].includes(e.message)?e.message:'VERSION_EVIDENCE_UNAVAILABLE',deploymentAuthorized:false};
     if(e.evidence)report.priorVersionEquivalence.gates=e.evidence;
+    if(e.evidence?.codeMatches===false){
+      try{report.priorContentAudit=await auditDeskContent(config,token);}
+      catch{report.priorContentAudit={verified:false,reason:'CONTENT_EVIDENCE_UNAVAILABLE',deploymentAuthorized:false};}
+    }
   }
 }
 if(!scanner)failures.push({stage:'scanner',code:'MISSING_SCANNER_TOKEN'});
