@@ -1,3 +1,4 @@
+import {auditDeskContent} from './desk-content-audit.mjs';
 import {requestJson} from './diagnostics.mjs';
 const canonical=v=>JSON.stringify(sort(v));
 function sort(v){return Array.isArray(v)?v.map(sort):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])])):v;}
@@ -24,10 +25,14 @@ export async function revalidateDeskVersion(config,baseline,snapshot,token,fetch
  const base='https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(config.accountId)+'/workers/scripts/'+encodeURIComponent(config.worker)+'/versions/';
  const headers={authorization:'Bearer '+token};
  const [a,b]=await Promise.all([requestJson(fetcher,base+encodeURIComponent(baseline.versionId),headers),requestJson(fetcher,base+encodeURIComponent(current),headers)]);
- if(a.success!==true||b.success!==true||a.result?.id!==baseline.versionId||b.result?.id!==current||!equivalentVersion(a.result,b.result)){
-  const error=Error('DESK_VERSION_CODE_OR_BINDINGS_CHANGED');
-  error.evidence={providerVersionsMatched:a.success===true&&b.success===true&&a.result?.id===baseline.versionId&&b.result?.id===current,...versionEvidence(a.result,b.result)};
-  throw error;
+ const evidence={providerVersionsMatched:a.success===true&&b.success===true&&a.result?.id===baseline.versionId&&b.result?.id===current,...versionEvidence(a.result,b.result)};
+ // Cloudflare's script etag can change on a configuration-only version.
+ // Compare every executable module's exact bytes, pinned to BOTH version IDs.
+ if(evidence.providerVersionsMatched&&evidence.baselineHashPresent&&evidence.currentHashPresent&&evidence.runtimeMatches&&evidence.bindingsMatch&&!evidence.codeMatches){
+  try{const audit=await auditDeskContent(config,token,baseline.versionId,current,fetcher);evidence.codeMatches=audit.verified;evidence.exactVersionModulesCompared=true;}catch{evidence.exactVersionModulesCompared=false;}
+ }
+ if(!Object.values(evidence).every(Boolean)){
+  const error=Error('DESK_VERSION_CODE_OR_BINDINGS_CHANGED');error.evidence=evidence;throw error;
  }
  return {...baseline,deploymentId:snapshot.deploymentId,versionId:current};
 }

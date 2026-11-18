@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import {isAuthorizedOwnerRelease} from "./desk-owner-release.mjs";
 import {revalidateDeskVersion} from "./desk-version-equivalence.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { cloudflareSnapshot, requestJson } from "./diagnostics.mjs";
@@ -7,6 +8,7 @@ import { assessCurrentRelease } from "./current-release.mjs";
 export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r5";
 
 export function isAuthorizedDeskDispatch(env = process.env) {
+  if(isAuthorizedOwnerRelease(env))return true;
   if (env.GITHUB_EVENT_NAME !== "workflow_dispatch" || env.GITHUB_REF !== "refs/heads/main" || !env.GITHUB_EVENT_PATH) return false;
   try { return JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, "utf8"))?.inputs?.operation === "deploy"; }
   catch { return false; }

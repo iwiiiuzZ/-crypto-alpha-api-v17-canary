@@ -10,3 +10,14 @@ const r=await revalidateDeskVersion({accountId:'fixture',worker:'fixture'},basel
 assert.equal(r.versionId,'current');assert.equal(baseline.versionId,'old');assert.equal(seen.length,2);
 await assert.rejects(()=>revalidateDeskVersion({},baseline,{singleVersion:false},'',fetcher),/MULTIVERSION/);
 console.log('PASS same-code AI configuration revision; reject code/runtime/storage changes, missing evidence and split deployment; baseline immutable');
+const oldId='11111111-1111-4111-8111-111111111111',newId='22222222-2222-4222-8222-222222222222';
+for(const scenario of ['equal','different','wrong-id','missing-module']){
+ const fetcher=async url=>{
+  const version=url.includes(oldId)?oldId:newId;
+  if(url.includes('include=modules'))return Response.json({success:true,result:{id:scenario==='wrong-id'?'other':version,modules:scenario==='missing-module'?[]:[{name:'main.js',content_type:'application/javascript+module',content_base64:Buffer.from(scenario==='different'&&version===newId?'changed source':'same source').toString('base64')}]}});
+  const result=structuredClone(version===oldId?old:current);result.id=version;result.resources.script.etag=version;return Response.json({success:true,result});
+ };
+ const task=()=>revalidateDeskVersion({accountId:'fixture',worker:'fixture'},{...baseline,versionId:oldId},{singleVersion:true,versions:[{id:newId,percentage:100}],deploymentId:'changed'},'fixture',fetcher);
+ if(scenario==='equal')assert.equal((await task()).versionId,newId);else await assert.rejects(task,/CODE_OR_BINDINGS_CHANGED/);
+}
+console.log('PASS changed etag accepted only with exact version-pinned module equality; changed code/missing or misidentified modules rejected');

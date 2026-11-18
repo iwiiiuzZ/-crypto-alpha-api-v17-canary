@@ -147,7 +147,114 @@
      try {
        const verified = await notify(owner, {
          title: plan.asset + (plan.direction === "LONG" ? " 做多" : " 做空") + "｜已到区待终审",
-@@ -8151,10 +8231,27 @@
+@@ -8128,37 +8208,130 @@
+   return {...audit,models:audit.models.map(model=>model.submodel===range.submodel?reviewed:model)};
+ }
+ 
++const AlphaDeskMarket = (() => {
++// Closed-bar market events. These are observations, not trade permission.
++const SCANNER_POLICY='closed-market-events-v1';
++const TF={'15m':900000,'1h':3600000,'4h':14400000};
++const mean=a=>a.reduce((s,v)=>s+v,0)/a.length;
++function scanMarketFrame(asset,timeframe,frame,now){
++ const ms=TF[timeframe],blocked=reason=>({asset,timeframe,reason,events:[]});
++ if(!ms||frame?.status!=='ok'||frame.quality?.passed!==true||frame.dataFreshness?.state==='stale-on-error')return blocked('FRAME_NOT_VERIFIED');
++ const rows=(frame.recentCandles||[]).filter(c=>c.confirmed===true&&Date.parse(c.ts)+ms<=now).slice(-80);
++ if(rows.length<35)return blocked('INSUFFICIENT_CLOSED_BARS');
++ if(rows.some((r,i)=>![r.o,r.h,r.l,r.c,r.volume].every(Number.isFinite)||r.l<=0||r.volume<0||r.h<Math.max(r.o,r.c)||r.l>Math.min(r.o,r.c)||(i&&Date.parse(r.ts)-Date.parse(rows[i-1].ts)!==ms)))return blocked('INVALID_OR_GAPPED_BARS');
++ const last=rows.at(-1),expected=Math.floor(now/ms)*ms-ms;
++ if(Date.parse(last.ts)!==expected)return blocked('LATEST_CLOSED_BAR_MISSING');
++ const prior=rows.slice(-21,-1),atr=mean(rows.slice(-15,-1).map((r,i)=>Math.max(r.h-r.l,Math.abs(r.h-rows[rows.length-16+i].c),Math.abs(r.l-rows[rows.length-16+i].c))));
++ if(!(atr>0))return blocked('ATR_UNAVAILABLE');
++ const avgVolume=mean(prior.map(r=>r.volume)),volumeRatio=avgVolume>0?last.volume/avgVolume:null;
++ const resistance=Math.max(...prior.map(r=>r.h)),support=Math.min(...prior.map(r=>r.l)),previous=rows.at(-2),events=[];
++ const add=(kind,direction,evidence)=>events.push({id:[SCANNER_POLICY,asset,timeframe,kind,last.ts].join(':'),asset,timeframe,kind,direction,barAt:last.ts,confirmedAt:new Date(Date.parse(last.ts)+ms).toISOString(),observedAt:new Date(now).toISOString(),price:last.c,evidence,scope:'MARKET_OBSERVATION',executionPermission:false});
++ for(const [direction,boundary,hit] of [['UP',resistance,last.c>resistance+.1*atr&&previous.c<=resistance],['DOWN',support,last.c<support-.1*atr&&previous.c>=support]])if(hit)add(volumeRatio>=2?'VOLUME_BREAKOUT':'STRUCTURE_BREAKOUT',direction,{boundary,atr,volumeRatio,lookbackBars:20});
++ const range=last.h-last.l,body=Math.abs(last.c-last.o),upper=last.h-Math.max(last.o,last.c),lower=Math.min(last.o,last.c)-last.l;
++ if(range>=atr&&upper>=Math.max(body*2,range*.6))add('UPPER_WICK','DOWN',{wick:upper,range,atr,volumeRatio});
++ if(range>=atr&&lower>=Math.max(body*2,range*.6))add('LOWER_WICK','UP',{wick:lower,range,atr,volumeRatio});
++ if(range>=2.5*atr&&volumeRatio>=2&&!events.some(e=>e.kind.includes('BREAKOUT')))add('RANGE_VOLUME_SHOCK',last.c>=last.o?'UP':'DOWN',{range,atr,volumeRatio});
++ // Wilder RSI calculated from the same closed candles. Pivot becomes observable
++ // only after two right-hand bars close; no lookahead or intrabar repainting.
++ const rsi=Array(rows.length).fill(null);let gain=0,loss=0;
++ for(let i=1;i<rows.length;i++){const d=rows[i].c-rows[i-1].c;if(i<=14){gain+=Math.max(d,0)/14;loss+=Math.max(-d,0)/14;}else{gain=(gain*13+Math.max(d,0))/14;loss=(loss*13+Math.max(-d,0))/14;}if(i>=14)rsi[i]=loss===0?(gain===0?50:100):100-100/(1+gain/loss);}
++ for(const high of [true,false]){
++  const pivots=[];for(let i=16;i<rows.length-2;i++){const v=high?rows[i].h:rows[i].l;if([-2,-1,1,2].every(k=>high?v>rows[i+k].h:v<rows[i+k].l))pivots.push(i);}
++  const b=pivots.at(-1),a=pivots.at(-2);
++  if(b!==rows.length-3||a===undefined||b-a<3)continue;
++  const priceDelta=(high?rows[b].h-rows[a].h:rows[a].l-rows[b].l),rsiDelta=high?rsi[a]-rsi[b]:rsi[b]-rsi[a];
++  if(priceDelta>=.1*atr&&rsiDelta>=5)add(high?'BEARISH_DIVERGENCE':'BULLISH_DIVERGENCE',high?'DOWN':'UP',{indicator:'RSI14',firstPivotAt:rows[a].ts,secondPivotAt:rows[b].ts,firstRsi:rsi[a],secondRsi:rsi[b],priceDelta,atr,confirmationBars:2});
++ }
++ return {asset,timeframe,reason:null,barAt:last.ts,atr,volumeRatio,events};
++}
++function scanMarket(snapshot,now){
++ const frames=[];for(const [symbol,asset] of Object.entries(snapshot.assets||{}))for(const timeframe of Object.keys(TF))frames.push(scanMarketFrame(symbol.replace(/USDT$/,''),timeframe,asset.timeframes?.[timeframe],now));
++ return {policy:SCANNER_POLICY,checkedAt:new Date(now).toISOString(),cadenceSeconds:60,continuous:true,frames,events:frames.flatMap(f=>f.events)};
++}
++const EVENT_LABELS={STRUCTURE_BREAKOUT:'结构突破',VOLUME_BREAKOUT:'放量突破',UPPER_WICK:'长上影线',LOWER_WICK:'长下影线',RANGE_VOLUME_SHOCK:'放量大幅波动',BEARISH_DIVERGENCE:'顶背离（RSI）',BULLISH_DIVERGENCE:'底背离（RSI）'};
++
++return {scanMarket,scanMarketFrame,EVENT_LABELS,SCANNER_POLICY};
++})();
++
+ const DESK_AUTOMATION_KEY='desk:v2:automation';
+ const DESK_ACTIVE_KEY='desk:v2:active';
+ const DESK_ALERT_KEY='desk:v2:alerts';
+ const DESK_JOURNAL_PREFIX='desk:v2:journal:';
+ function deskSerial(owner,fn){const work=(owner.deskLifecycleWork||Promise.resolve()).catch(()=>{}).then(fn);owner.deskLifecycleWork=work;return work.finally(()=>{if(owner.deskLifecycleWork===work)owner.deskLifecycleWork=null;});}
+ async function deskSettings(owner){return await owner.ctx.storage.get(DESK_AUTOMATION_KEY)||{enabled:true,policy:AlphaDeskAutonomy.POLICY,enabledBy:'OWNER_REQUEST',createdAt:new Date().toISOString()};}
+-async function deskAlert(owner,id,title,body){
+- const storage=owner.ctx.storage;
+- await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];if(rows.some(r=>r.id===id))return;
+-  // Keep pending retries; compact accepted history only.
+-  const pending=rows.filter(r=>r.status!=='ACCEPTED');if(pending.length>=100)return;
+-  await tx.put(DESK_ALERT_KEY,[{id,title,body,status:'PENDING',createdAt:new Date().toISOString(),attempts:0,nextAt:0},...pending,...rows.filter(r=>r.status==='ACCEPTED').slice(0,99)]);
++function deskTechnicalAlert(row){return /^(DATA|RECOVER|VOLATILITY|GAP):/.test(row.id)||['聚流｜行情数据异常','聚流｜数据恢复','聚流｜波动提醒基线缺失','聚流｜计划跟踪出现数据空档'].includes(row.title);}
++async function deskQueueAlert(tx,id,title,body){
++ const rows=await tx.get(DESK_ALERT_KEY)||[];if(rows.some(r=>r.id===id))return;
++ const row={id,title,body,status:'PENDING',createdAt:new Date().toISOString(),attempts:0,nextAt:0};
++ if(deskTechnicalAlert(row))return;
++ const pending=rows.filter(r=>!['ACCEPTED','SUPPRESSED'].includes(r.status));
++ if(pending.length>=100)throw Error('DESK_ALERT_QUEUE_FULL');
++ await tx.put(DESK_ALERT_KEY,[row,...pending,...rows.filter(r=>r.status==='ACCEPTED').slice(0,99)]);
++}
++async function deskAlert(owner,id,title,body){await owner.ctx.storage.transaction(tx=>deskQueueAlert(tx,id,title,body));}
++async function recordDeskMarketScan(owner,snapshot){
++ if(!owner.ctx.storage?.transaction)return;
++ const now=Date.now(),storage=owner.ctx.storage,settings=await deskSettings(owner);
++ // Public snapshots intentionally contain only 24 bars. Read the already
++ // collected durable history for RSI/pivots, without increasing API payloads.
++ const assets={};
++ await Promise.all(Object.entries(snapshot.assets||{}).map(async([symbol,asset])=>{
++  const timeframes={...asset.timeframes};
++  await Promise.all(['15m','1h','4h'].map(async tf=>{
++   const envelope=await storage.get(structureRecordKey(symbol,tf)),record=envelope?.value;
++   if(record&&structureRecordUsable(record,tf,now))timeframes[tf]={...timeframes[tf],recentCandles:record.candles.slice(-80).map(c=>({ts:c.ts,o:c.open,h:c.high,l:c.low,c:c.close,volume:finite(c.volumeBase,c.volumeContracts),confirmed:c.confirmed}))};
++  }));assets[symbol]={timeframes};
++ }));
++ const report=AlphaDeskMarket.scanMarket({assets},now);
++ await storage.transaction(async tx=>{
++  const previous=await tx.get('desk:v2:market-scanner')||{cursors:{},events:[]};const cursors={...previous.cursors},fresh=[];
++  for(const frame of report.frames){
++   if(frame.reason)continue;const key=frame.asset+':'+frame.timeframe;
++   if(cursors[key]&&Date.parse(cursors[key])>=Date.parse(frame.barAt))continue;
++   cursors[key]=frame.barAt;fresh.push(...frame.events);
++   const events=frame.events.filter(e=>now-Date.parse(e.confirmedAt)<=300000);
++   if(settings.enabled&&events.length)await deskQueueAlert(tx,'MARKET:'+key+':'+frame.barAt,
++    '聚流｜'+frame.asset+' '+frame.timeframe+' '+events.map(e=>AlphaDeskMarket.EVENT_LABELS[e.kind]).join(' / '),
++    '收盘确认价 '+events[0].price+'；'+events.map(e=>AlphaDeskMarket.EVENT_LABELS[e.kind]).join('、')+'。依据同源已收盘K线；这是市场观察，不是开仓指令。');
++  }
++  await tx.put('desk:v2:market-scanner',{...report,enabled:settings.enabled,cursors,events:[...fresh.reverse(),...previous.events].slice(0,120)});
+  });
+ }
+ async function deskFlushAlerts(owner){
+  if(owner.deskAlertWork)return owner.deskAlertWork;
+- owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;const rows=await storage.get(DESK_ALERT_KEY)||[];
+-  for(const row of rows.filter(r=>r.status!=='ACCEPTED'&&r.nextAt<=Date.now()).slice(0,2)){
++ owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];await tx.put(DESK_ALERT_KEY,rows.map(r=>deskTechnicalAlert(r)&&r.status!=='ACCEPTED'?{...r,status:'SUPPRESSED',reason:'OWNER_DISABLED_TECHNICAL_PHONE_ALERTS'}:r));});
++  const rows=await storage.get(DESK_ALERT_KEY)||[];
++  for(const row of rows.filter(r=>!['ACCEPTED','SUPPRESSED'].includes(r.status)&&r.nextAt<=Date.now()).slice(0,2)){
+    let sent;try{sent=await sendBark(fastLocalEnvironment(owner),{title:row.title,body:row.body,level:'timeSensitive',url:'https://market-desk-cn.darkboard1.chatgpt.site/#overview'},{kind:'CONTROL',eventId:'DESK:'+row.id,stage:'AUTONOMOUS_NOTICE'});}catch{}
+    await storage.transaction(async tx=>{const current=await tx.get(DESK_ALERT_KEY)||[];await tx.put(DESK_ALERT_KEY,current.map(r=>r.id!==row.id?r:{...r,status:sent?.sent?'ACCEPTED':'FAILED',attempts:r.attempts+1,nextAt:Date.now()+Math.min(900000,10000*2**Math.min(r.attempts,6)),providerAcceptedAt:sent?.providerAcceptedAt||null,deviceReceiptVerified:r.deviceReceiptVerified===true}));});
    }
   })();try{return await owner.deskAlertWork;}finally{owner.deskAlertWork=null;}
  }
@@ -176,8 +283,14 @@
 + return {records,statistics,scope:statistics.complete?'成绩覆盖全部历史；列表每页100条，旧版修订仅供审计':'历史超过本轮汇总上限，成绩尚不完整，不作为系统胜率',nextBefore:pairs.length>100?page.at(-1)[0]:null};
  }
  async function deskOperations(owner){
-  const storage=owner.ctx.storage;const [settings,journal,alerts,tapes,health]=await Promise.all([deskSettings(owner),deskJournal(owner),storage.get(DESK_ALERT_KEY),storage.list({prefix:'desk:v2:tape:'}),storage.get('desk:v2:health')]);
-@@ -8214,25 +8311,27 @@
+- const storage=owner.ctx.storage;const [settings,journal,alerts,tapes,health]=await Promise.all([deskSettings(owner),deskJournal(owner),storage.get(DESK_ALERT_KEY),storage.list({prefix:'desk:v2:tape:'}),storage.get('desk:v2:health')]);
+- return {capability:'desk-autonomy-v1',build:BUILD,settings,journal,alerts:(alerts||[]).slice(0,30),health:health||null,
++ const storage=owner.ctx.storage;const [settings,journal,alerts,tapes,health,marketScanner]=await Promise.all([deskSettings(owner),deskJournal(owner),storage.get(DESK_ALERT_KEY),storage.list({prefix:'desk:v2:tape:'}),storage.get('desk:v2:health'),storage.get('desk:v2:market-scanner')]);
++ return {capability:'desk-autonomy-v1',build:BUILD,settings,journal,alerts:(alerts||[]).slice(0,30),health:health||null,marketScanner:marketScanner||null,notificationPolicy:{technicalPhoneAlerts:false,marketSignals:true,paperEntryAndExit:true},
+   tapes:[...tapes.entries()].map(([key,value])=>{const {ids,...safe}=value;return {asset:key.split(':')[3],venue:key.split(':')[4],...safe};}),
+   analysisMode:'DETERMINISTIC_RULES',customGptInvoked:false,llmConfigured:false,liquidationMap:{available:false,reason:'需要授权的模型热图接口；深度挂单不是清算地图'}};
+ }
+@@ -8214,25 +8387,24 @@
     const keepWatching=await storage.transaction(async tx=>{
      const pointer='desk:v2:pointer:'+plan.id+':'+plan.revision;
      const existing=await tx.get(pointer);
@@ -203,25 +316,48 @@
    const volatilityMissing=['BTC','ETH'].filter(a=>!(volatility[a]?.threshold>0));
 -  const health={checkedAt:result.capturedAt,missing,volatilityMissing,receiptId:result.analysisReceipt.id,quoteMode:'OKX_REAL_BOOK',autoDiscovery:settings.enabled};await storage.put('desk:v2:health',health);
 -  if(settings.enabled&&missing.length&&JSON.stringify(previous?.missing)!==JSON.stringify(missing))await deskAlert(owner,'DATA:'+Math.floor(now/900000)+':'+missing.join(','),'聚流｜行情数据异常',missing.join('、')+' 执行行情或结构未通过，暂停新模拟入场；已登记计划继续核对失效与价格。此提醒不是平仓指令。');
+-  if(settings.enabled&&volatilityMissing.length&&JSON.stringify(previous?.volatilityMissing)!==JSON.stringify(volatilityMissing))await deskAlert(owner,'VOLATILITY:'+Math.floor(now/900000)+':'+volatilityMissing.join(','),'聚流｜波动提醒基线缺失',volatilityMissing.join('、')+' 的已收盘2小时/4小时数据不足，波动阈值提醒暂不可用；到区和结构失效仍独立检查。');
+-  if(settings.enabled&&!missing.length&&previous?.missing?.length)await deskAlert(owner,'RECOVER:'+Math.floor(now/900000),'聚流｜数据恢复','BTC/ETH 执行行情与结构恢复核验。计划仍须重新复核。');
 +  const healthySince=missing.length?null:(previous?.healthySince||now);
 +  const incidentOpen=missing.length?true:Boolean(previous?.incidentOpen&&now-healthySince<60000);
 +  const health={healthySince,incidentOpen,checkedAt:result.capturedAt,missing,volatilityMissing,receiptId:result.analysisReceipt.id,quoteMode:'OKX_REAL_BOOK',autoDiscovery:settings.enabled};await storage.put('desk:v2:health',health);
-+  if(settings.enabled&&missing.length&&!previous?.incidentOpen)await deskAlert(owner,'DATA:'+Math.floor(now/900000)+':'+missing.join(','),'聚流｜行情数据异常',missing.join('、')+' 执行行情或结构未通过，暂停新模拟入场；已登记计划继续核对失效与价格。此提醒不是平仓指令。');
-   if(settings.enabled&&volatilityMissing.length&&JSON.stringify(previous?.volatilityMissing)!==JSON.stringify(volatilityMissing))await deskAlert(owner,'VOLATILITY:'+Math.floor(now/900000)+':'+volatilityMissing.join(','),'聚流｜波动提醒基线缺失',volatilityMissing.join('、')+' 的已收盘2小时/4小时数据不足，波动阈值提醒暂不可用；到区和结构失效仍独立检查。');
--  if(settings.enabled&&!missing.length&&previous?.missing?.length)await deskAlert(owner,'RECOVER:'+Math.floor(now/900000),'聚流｜数据恢复','BTC/ETH 执行行情与结构恢复核验。计划仍须重新复核。');
-+  if(settings.enabled&&!missing.length&&previous?.incidentOpen&&!incidentOpen)await deskAlert(owner,'RECOVER:'+Math.floor(now/900000),'聚流｜数据恢复','BTC/ETH 执行行情与结构连续恢复核验至少60秒。计划仍须重新复核。');
   });
  }
  async function deskPaperTick(owner,entryPlan=null,ticker=null){
-@@ -8243,6 +8342,7 @@
+@@ -8242,10 +8414,21 @@
+   const next=[];
    for(const key of active){const old=await storage.get(key);if(!old)continue;
     const reviewed=entryPlan?.id===old.plan.id&&entryPlan?.revision===old.plan.revision;
-    const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);await storage.put(key,updated);
+-   const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);await storage.put(key,updated);
++   const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);
++   // Persist the lifecycle transition and its notification in the same transaction.
++   await storage.transaction(async tx=>{
++    await tx.put(key,updated);
++    if(old.status!==updated.status&&updated.status==='OPEN')await deskQueueAlert(tx,'ENTRY:'+old.plan.id+':'+old.plan.revision,
++     '聚流｜'+old.plan.asset+' 模拟入场',old.plan.model+' '+(old.plan.direction==='LONG'?'做多':'做空')+'；模拟成交 '+updated.entry.price+'；保护 '+old.plan.invalidation+'；止损 '+old.plan.stop+'；第一目标 '+old.plan.target+'。已登记正式模拟单。');
++    if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED','EXPIRED','MISSED'].includes(updated.status)){
++     const label={LOSS:'模拟亏损退出',WIN:'模拟止盈',TIME_EXIT:'模拟到期退出',UNRESOLVED:'模拟结果待核验',INVALIDATED:'计划失效',EXPIRED:'未入场过期',MISSED:'未入场已到目标'}[updated.status];
++     const result=updated.exit?'；退出 '+updated.exit.price+'；净R '+Number(updated.exit.netR).toFixed(2):'';
++     // Non-entry terminal states stay in the ledger; entry/exit/invalidations notify.
++     if(!['EXPIRED','MISSED'].includes(updated.status))await deskQueueAlert(tx,'OUTCOME:'+old.plan.id+':'+old.plan.revision,'聚流｜'+old.plan.asset+' '+label,old.plan.model+' · '+updated.review+result+'。这是模拟账本，不是账户成交。');
++    }
++   });
 +   if(updated.status!==old.status||updated.uncertain!==old.uncertain)owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
     if(['WAITING','OPEN'].includes(updated.status))next.push(key);
-    if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED'].includes(updated.status))await deskAlert(owner,'OUTCOME:'+old.plan.id+':'+old.plan.revision,'聚流｜'+old.plan.asset+' 计划状态更新',old.plan.model+' · '+updated.status+' · '+updated.review+'。这是模型模拟记录，不是账户成交。');
-    if(updated.uncertain&&!old.uncertain)await deskAlert(owner,'GAP:'+old.plan.id+':'+old.plan.revision,'聚流｜计划跟踪出现数据空档',old.plan.asset+' '+old.plan.model+' 的价格证据不连续，成绩暂不纳入胜率；请核对现有人工持仓。');
-@@ -8322,7 +8422,7 @@
+-   if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED'].includes(updated.status))await deskAlert(owner,'OUTCOME:'+old.plan.id+':'+old.plan.revision,'聚流｜'+old.plan.asset+' 计划状态更新',old.plan.model+' · '+updated.status+' · '+updated.review+'。这是模型模拟记录，不是账户成交。');
+-   if(updated.uncertain&&!old.uncertain)await deskAlert(owner,'GAP:'+old.plan.id+':'+old.plan.revision,'聚流｜计划跟踪出现数据空档',old.plan.asset+' '+old.plan.model+' 的价格证据不连续，成绩暂不纳入胜率；请核对现有人工持仓。');
+   }
+   await storage.put(DESK_ACTIVE_KEY,next);
+  });
+@@ -8278,6 +8461,7 @@
+     eth.opportunityEngine=buildDeskOpportunityScan(eth,btc);
+     const result=AlphaDeskDecision.deskAnalysis(snapshot,{origin:"shared-worker",monitor:fastMonitorConfigured(owner.env)});
+     await captureDeskPlans(owner,result,snapshot);
++    await recordDeskMarketScan(owner,snapshot);
+     owner.deskAnalysisCache=result;
+     return result;
+   })();
+@@ -8322,7 +8506,7 @@
      if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
      if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
      if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));

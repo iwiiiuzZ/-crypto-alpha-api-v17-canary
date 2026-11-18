@@ -1,0 +1,29 @@
+name: Reviewed desk repair release
+on:
+  push:
+    branches: [main]
+    paths: ['ops/desk-owner-release.json']
+permissions:
+  contents: read
+concurrency:
+  group: crypto-alpha-production-maintenance
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.repository == 'iwiiiuzZ/-crypto-alpha-api-v17-canary' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Verify exact reviewed source and owner release intent
+        run: node --input-type=module -e "import {isAuthorizedOwnerRelease} from './ops/desk-owner-release.mjs'; if(!isAuthorizedOwnerRelease())process.exit(1)"
+      - name: Test, preserve state, publish and verify runtime
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SCANNER_TOKEN: ${{ secrets.SCANNER_TOKEN }}
+        run: npm run deploy:checked

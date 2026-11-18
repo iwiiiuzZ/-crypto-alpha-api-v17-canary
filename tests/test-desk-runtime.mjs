@@ -10,7 +10,7 @@ const quote=(price=100)=>({status:'ok',source:'OKX_USDT_PERPETUAL',priceType:'LA
 let price=100,pushes=0,fail=true;
 f.c.runtimeQuote=async()=>quote(price);
 f.c.runtimePush=async()=>{pushes++;return {sent:!fail,providerAcceptedAt:!fail?at(f.now()):null};};
-const api=runInContext(`deskDirectQuote=runtimeQuote;sendBark=runtimePush;fastMonitorConfigured=()=>true;ensureFastMonitor=async()=>({scheduled:true});({capture:captureDeskPlans,tick:deskPaperTick,read:deskOperations,control:deskControl,flush:deskFlushAlerts,alert:deskAlert})`,f.c);
+const api=runInContext(`deskDirectQuote=runtimeQuote;sendBark=runtimePush;fastMonitorConfigured=()=>true;ensureFastMonitor=async()=>({scheduled:true});({capture:captureDeskPlans,tick:deskPaperTick,read:deskOperations,control:deskControl,flush:deskFlushAlerts,alert:deskAlert,market:recordDeskMarketScan})`,f.c);
 const plan={id:'ETH-B1-LONG-INTRADAY-a',revision:'v1',asset:'ETH',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:at(now),expiresAt:at(now+900000)};
 const asset={ready:true,quote:{ready:true,independent:true},plans:[plan]};
 const scan={capturedAt:at(now),assets:{ETH:asset,BTC:{...asset,plans:[]}}};
@@ -28,6 +28,7 @@ const restarted={ctx:{storage},env:{}};
 assert.equal((await api.read(restarted)).journal.records.length,1,'journal survives isolate restart');
 await api.tick(owner);assert.equal((await api.read(owner)).journal.records[0].status,'WAITING');
 f.advance(1000);await api.tick(owner,plan,quote());assert.equal((await api.read(owner)).journal.records[0].status,'OPEN');
+assert.equal((await api.read(owner)).alerts.filter(a=>a.id.startsWith('ENTRY:')).length,1,'paper entry has its own durable notification');
 const amended={...plan,revision:'v2',target:118,capturedAt:at(f.now())};await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[amended]}}},snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'open position cannot be rewritten by a new target');
 f.advance(1000);price=117;await api.tick(owner);assert.equal((await api.read(owner)).journal.statistics.sampleSize,1);
@@ -53,7 +54,8 @@ f.advance(10000);await api.capture(owner,badScan,snapshot);assert.equal(failures
 f.advance(10000);await api.capture(owner,scan,snapshot);
 f.advance(61000);await api.capture(owner,scan,snapshot);
 assert.equal(state.get('desk:v2:health').incidentOpen,false,'sustained healthy scans close the incident');
-console.log('PASS immediate fault and sustained-recovery notification hysteresis');
+assert.equal(failures(),0,'technical faults never enter phone queue');
+console.log('PASS technical health stays internal');
 // Statistics must include older pages and remain identical when paging the list.
 for(let i=0;i<145;i++)state.set('desk:v2:journal:2020-'+String(i).padStart(4,'0'),{status:i%2?'WIN':'LOSS',closedAt:at(now+i),exit:{netR:i%2?2:-1},plan:{id:'old-'+i,revision:'one'}});
 owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
@@ -62,3 +64,20 @@ const earlier=await api.control(owner,{value:{action:'history',before:all.journa
 assert.equal(earlier.body.statistics.sampleSize,146,'changing pages must not change the system win rate');
 assert.equal((await api.read({ctx:{storage},env:{}})).journal.statistics.sampleSize,146,'all-history statistics survive restart');
 console.log('PASS full-history statistics over multiple pages and restart');
+
+// Suppress legacy technical retries, including ones already queued before upgrade.
+state.set('desk:v2:alerts',[{id:'DATA:legacy',title:'聚流｜行情数据异常',status:'FAILED',attempts:1,nextAt:0}]);
+const beforeTechnicalPush=pushes;await api.flush(owner);assert.equal(pushes,beforeTechnicalPush);assert.equal(state.get('desk:v2:alerts')[0].status,'SUPPRESSED');
+await api.alert(owner,'RECOVER:new','聚流｜数据恢复','ignored');assert.equal(state.get('desk:v2:alerts').length,1);
+// Background scanner and durable dedup do not depend on an open Site tab.
+const ms=900000,end=Math.floor(f.now()/ms)*ms;
+const frame={status:'ok',quality:{passed:true},recentCandles:Array.from({length:60},(_,i)=>({ts:at(end-(60-i)*ms),o:100,c:100,h:101,l:99,volume:100,confirmed:true}))};
+Object.assign(frame.recentCandles.at(-1),{c:103,h:104,volume:300});
+// Set the clock within the freshness window of this close.
+f.advance(end+60000-f.now());
+const market={assets:{BTCUSDT:{timeframes:{'15m':frame}}}};
+await api.market(owner,market);await api.market(owner,market);await api.market({ctx:{storage},env:{}},market);
+assert.equal(state.get('desk:v2:market-scanner').events.length,1,'same candle remains one event across restarts');
+assert.equal(state.get('desk:v2:alerts').filter(a=>a.id.startsWith('MARKET:')).length,1);
+assert.equal((await api.read(owner)).notificationPolicy.technicalPhoneAlerts,false);
+console.log('PASS queued technical notices suppressed; 24-hour scanner persists and deduplicates over restart');
