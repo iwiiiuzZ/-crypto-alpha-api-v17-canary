@@ -27,7 +27,7 @@ if(sourceBuild.includes('-desk-dual-')&&report.cloudflare){
     report.priorVersionEquivalence={verified:false,code:['DESK_MULTIVERSION_REJECTED','DESK_VERSION_CODE_OR_BINDINGS_CHANGED'].includes(e.message)?e.message:'VERSION_EVIDENCE_UNAVAILABLE',deploymentAuthorized:false};
     if(e.evidence)report.priorVersionEquivalence.gates=e.evidence;
     if(e.evidence?.codeMatches===false){
-      try{report.priorContentAudit=await auditDeskContent(config,token);}
+      try{report.priorContentAudit=await auditDeskContent(config,token,JSON.parse(fs.readFileSync(new URL('./desk-production-baseline.json',import.meta.url),'utf8')).versionId,report.cloudflare.versions[0].id);}
       catch{report.priorContentAudit={verified:false,reason:'CONTENT_EVIDENCE_UNAVAILABLE',deploymentAuthorized:false};}
     }
   }
