@@ -24,14 +24,13 @@ const counts={};let tail=null,ws=null;
 try{
  const settings=await cf('/settings');
  console.log(JSON.stringify({stage:'configuration',bindings:(settings.bindings||[]).map(b=>({name:b.name,type:b.type,...(b.name==='CRYPTO_ALPHA_AI_MODEL'&&b.type==='plain_text'?{model:b.text}:{})}))}));
+ const {cloudflareSnapshot}=await import('./diagnostics.mjs');
+ const snap=await cloudflareSnapshot(fetch,config,token);console.log(JSON.stringify({stage:'deployment',deploymentId:snap.deploymentId,versions:snap.versions,namespaceFingerprint:snap.binding?.namespaceFingerprint}));
  const ns=settings.bindings?.find(b=>b.name==='SCANNER_STATE')?.namespace_id;
  const gql=async query=>{const r=await fetch('https://api.cloudflare.com/client/v4/graphql',{method:'POST',headers,body:JSON.stringify({query}),signal:AbortSignal.timeout(20000)});return r.json();};
  try{
-  const schema=await gql('{ __schema { types { name fields { name } inputFields { name } } } }');
-  const types=(schema.data?.__schema?.types||[]).filter(t=>/durableObjects(Invocations|Storage|Periodic)/i.test(t.name));
-  console.log(JSON.stringify({stage:'usage-schema',types,errors:schema.errors?.map(e=>({message:String(e.message).replace(/[a-f0-9]{32}/g,'[ID]').slice(0,200)}))}));
   const since=new Date(Date.now()-86400000).toISOString().slice(0,10);
-  const q=`{viewer{accounts(filter:{accountTag:"${config.accountId}"}){durableObjectsInvocationsAdaptiveGroups(limit:100,filter:{date_geq:"${since}"}){sum{requests} dimensions{date status}} durableObjectsStorageGroups(limit:100,filter:{date_geq:"${since}"}){max{storedBytes}}}}}`;
+  const q=`{viewer{accounts(filter:{accountTag:"${config.accountId}"}){durableObjectsInvocationsAdaptiveGroups(limit:100,filter:{date_geq:"${since}"}){sum{requests} dimensions{date status}} durableObjectsPeriodicGroups(limit:100,filter:{date_geq:"${since}",namespaceId:"${ns}"}){dimensions{date} sum{rowsRead rowsWritten storageWriteUnits storageReadUnits duration activeTime exceededCpuErrors exceededMemoryErrors fatalInternalErrors}}}}}`;
   const usage=await gql(q);console.log(JSON.stringify({stage:'usage',data:usage.data,errors:usage.errors?.map(e=>({message:String(e.message).replace(/[a-f0-9]{32}/g,'[ID]').slice(0,200)}))}));
  }catch{console.log(JSON.stringify({stage:'usage',status:'UNAVAILABLE'}));}
  tail=await cf('/tails','POST',{});
