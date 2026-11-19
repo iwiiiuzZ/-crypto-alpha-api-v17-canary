@@ -1,5 +1,6 @@
 // Read-only production diagnosis. Never print requests, headers, keys or records.
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 const config=JSON.parse(fs.readFileSync(new URL('./config.json',import.meta.url)));
 const base='https://api.cloudflare.com/client/v4/accounts/'+config.accountId+'/workers/scripts/'+config.worker;
 const token=process.env.CLOUDFLARE_API_TOKEN;
@@ -23,10 +24,20 @@ const counts={};let tail=null,ws=null;
 try{
  const settings=await cf('/settings');
  console.log(JSON.stringify({stage:'configuration',bindings:(settings.bindings||[]).map(b=>({name:b.name,type:b.type,...(b.name==='CRYPTO_ALPHA_AI_MODEL'&&b.type==='plain_text'?{model:b.text}:{})}))}));
+ const ns=settings.bindings?.find(b=>b.name==='SCANNER_STATE')?.namespace_id;
+ const gql=async query=>{const r=await fetch('https://api.cloudflare.com/client/v4/graphql',{method:'POST',headers,body:JSON.stringify({query}),signal:AbortSignal.timeout(20000)});return r.json();};
+ try{
+  const schema=await gql('{ __schema { types { name fields { name } inputFields { name } } } }');
+  const types=(schema.data?.__schema?.types||[]).filter(t=>/durableObjects(Invocations|Storage|Periodic)/i.test(t.name));
+  console.log(JSON.stringify({stage:'usage-schema',types,errors:schema.errors?.map(e=>({message:String(e.message).replace(/[a-f0-9]{32}/g,'[ID]').slice(0,200)}))}));
+  const since=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const q=`{viewer{accounts(filter:{accountTag:"${config.accountId}"}){durableObjectsInvocationsAdaptiveGroups(limit:100,filter:{date_geq:"${since}"}){sum{requests} dimensions{date status}} durableObjectsStorageGroups(limit:100,filter:{date_geq:"${since}"}){max{storedBytes}}}}}`;
+  const usage=await gql(q);console.log(JSON.stringify({stage:'usage',data:usage.data,errors:usage.errors?.map(e=>({message:String(e.message).replace(/[a-f0-9]{32}/g,'[ID]').slice(0,200)}))}));
+ }catch{console.log(JSON.stringify({stage:'usage',status:'UNAVAILABLE'}));}
  tail=await cf('/tails','POST',{});
  ws=new WebSocket(tail.url,'trace-v1');
- ws.addEventListener('message',event=>{
-  try{const x=JSON.parse(String(event.data));const outcome=x.outcome||'unknown';counts[outcome]=(counts[outcome]||0)+1;
+ ws.addEventListener('message',async event=>{
+  try{const raw=typeof event.data==='string'?event.data:event.data?.text?await event.data.text():Buffer.from(event.data).toString();const x=JSON.parse(raw);const outcome=x.outcome||'unknown';counts[outcome]=(counts[outcome]||0)+1;
    for(const e of x.exceptions||[]){const k='exception:'+classify(e.message);counts[k]=(counts[k]||0)+1;}
    for(const l of x.logs||[]){if(l.level==='error'){const k='log:'+classify(JSON.stringify(l.message));counts[k]=(counts[k]||0)+1;}}
   }catch{}
@@ -40,4 +51,4 @@ try{
  await new Promise(resolve=>setTimeout(resolve,45000));
  console.log(JSON.stringify({stage:'tail-summary',counts}));
 }catch(e){console.log(JSON.stringify({stage:'probe-error',code:/^[A-Z_0-9]+$/.test(e.message)?e.message:classify(e.message)}));process.exitCode=1;}
-finally{ws?.close();if(tail)try{await cf('/tails/'+tail.id,'DELETE');}catch{console.log('{"stage":"tail-cleanup","status":"EXPIRES_AUTOMATICALLY"}');}}
+finally{ws?.close();setTimeout(()=>process.exit(process.exitCode||0),2000).unref();if(tail)try{await cf('/tails/'+tail.id,'DELETE');}catch{console.log('{"stage":"tail-cleanup","status":"EXPIRES_AUTOMATICALLY"}');}}
