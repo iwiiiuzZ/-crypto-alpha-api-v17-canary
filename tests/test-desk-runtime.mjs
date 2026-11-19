@@ -81,3 +81,12 @@ assert.equal(state.get('desk:v2:market-scanner').events.length,1,'same candle re
 assert.equal(state.get('desk:v2:alerts').filter(a=>a.id.startsWith('MARKET:')).length,1);
 assert.equal((await api.read(owner)).notificationPolicy.technicalPhoneAlerts,false);
 console.log('PASS queued technical notices suppressed; 24-hour scanner persists and deduplicates over restart');
+
+// Empty/already-final queues must not consume storage writes on every fast alarm.
+const beforePut=storage.put;let noopWrites=0;storage.put=async(...args)=>{noopWrites++;return beforePut(...args);};
+state.set('desk:v2:alerts',[]);
+await api.flush(owner);assert.equal(noopWrites,0,'empty notification queue is read-only');
+state.set('desk:v2:alerts',[{id:'HEALTH:old',status:'SUPPRESSED',reason:'OWNER_DISABLED_TECHNICAL_PHONE_ALERTS'}]);
+await api.flush(owner);assert.equal(noopWrites,0,'suppressed notification stays read-only');
+storage.put=beforePut;
+console.log('PASS idle and suppressed queues perform zero writes');

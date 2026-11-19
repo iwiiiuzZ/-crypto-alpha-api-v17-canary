@@ -8299,7 +8299,7 @@ async function recordDeskMarketScan(owner,snapshot){
 }
 async function deskFlushAlerts(owner){
  if(owner.deskAlertWork)return owner.deskAlertWork;
- owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];await tx.put(DESK_ALERT_KEY,rows.map(r=>deskTechnicalAlert(r)&&r.status!=='ACCEPTED'?{...r,status:'SUPPRESSED',reason:'OWNER_DISABLED_TECHNICAL_PHONE_ALERTS'}:r));});
+ owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];let changed=false;const next=rows.map(r=>{if(!deskTechnicalAlert(r)||['ACCEPTED','SUPPRESSED'].includes(r.status))return r;changed=true;return {...r,status:'SUPPRESSED',reason:'OWNER_DISABLED_TECHNICAL_PHONE_ALERTS'};});if(changed)await tx.put(DESK_ALERT_KEY,next);});
   const rows=await storage.get(DESK_ALERT_KEY)||[];
   for(const row of rows.filter(r=>!['ACCEPTED','SUPPRESSED'].includes(r.status)&&r.nextAt<=Date.now()).slice(0,2)){
    let sent;try{sent=await sendBark(fastLocalEnvironment(owner),{title:row.title,body:row.body,level:'timeSensitive',url:'https://market-desk-cn.darkboard1.chatgpt.site/#overview'},{kind:'CONTROL',eventId:'DESK:'+row.id,stage:'AUTONOMOUS_NOTICE'});}catch{}
@@ -8381,7 +8381,7 @@ async function captureDeskPlans(owner,result,snapshot){
  if(!owner.ctx.storage?.transaction)return;
  await owner.ctx.storage.put("desk:v2:volatility",owner.deskVolatility);
  await deskSerial(owner,async()=>{
-  const storage=owner.ctx.storage,settings=await deskSettings(owner);await storage.put(DESK_AUTOMATION_KEY,settings);
+  const storage=owner.ctx.storage,settings=await deskSettings(owner);
   for(const asset of Object.values(result.assets))for(const plan of asset.plans){
    if(!AlphaDeskAutonomy.observable(plan,asset,now))continue;
    const keepWatching=await storage.transaction(async tx=>{
@@ -8417,7 +8417,7 @@ async function deskPaperTick(owner,entryPlan=null,ticker=null){
    const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);
    // Persist the lifecycle transition and its notification in the same transaction.
    await storage.transaction(async tx=>{
-    await tx.put(key,updated);
+    if(JSON.stringify(old)!==JSON.stringify(updated))await tx.put(key,updated);
     if(old.status!==updated.status&&updated.status==='OPEN')await deskQueueAlert(tx,'ENTRY:'+old.plan.id+':'+old.plan.revision,
      '聚流｜'+old.plan.asset+' 模拟入场',old.plan.model+' '+(old.plan.direction==='LONG'?'做多':'做空')+'；模拟成交 '+updated.entry.price+'；保护 '+old.plan.invalidation+'；止损 '+old.plan.stop+'；第一目标 '+old.plan.target+'。已登记正式模拟单。');
     if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED','EXPIRED','MISSED'].includes(updated.status)){
@@ -8430,7 +8430,7 @@ async function deskPaperTick(owner,entryPlan=null,ticker=null){
    if(updated.status!==old.status||updated.uncertain!==old.uncertain)owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
    if(['WAITING','OPEN'].includes(updated.status))next.push(key);
   }
-  await storage.put(DESK_ACTIVE_KEY,next);
+  if(JSON.stringify(active)!==JSON.stringify(next))await storage.put(DESK_ACTIVE_KEY,next);
  });
 }
 async function recordDeskTape(owner,asset,venues){
