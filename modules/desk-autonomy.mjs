@@ -44,11 +44,12 @@ export function advance(record, quote, now, reviewPassed=false) {
     return r;
   };
   if(r.status==='WAITING'&&Date.parse(p.expiresAt)<=now)return close('EXPIRED','未入场，事件到期；不算亏损');
-  if(!quote?.ready||!quote.independent||![quote.bid,quote.ask,quote.last].every(positive)||quote.bid>quote.ask||now-Date.parse(quote.bookAt)>10000||now-Date.parse(quote.tradeAt)>20000||Date.parse(quote.bookAt)>now+2000){
+  if(!quote?.ready||!quote.independent||![quote.bid,quote.ask,quote.last].every(positive)||quote.bid>quote.ask||![quote.bookAt,quote.tradeAt].every(at=>Number.isFinite(Date.parse(at))&&Date.parse(at)<=now+2000)||now-Date.parse(quote.bookAt)>10000||now-Date.parse(quote.tradeAt)>20000){
     if(r.status==='OPEN'&&!r.uncertain){r.uncertain=true;r.gaps++;emit('DATA_GAP');}return r;
   }
   const stamp=Date.parse(quote.bookAt);
-  if(r.lastQuoteAt&&stamp<=Date.parse(r.lastQuoteAt))return r;
+  const lastStamp=Date.parse(r.lastQuoteAt);
+  if(stamp<lastStamp || (stamp===lastStamp && !(reviewPassed && r.status==='WAITING')))return r;
   if(r.status==='OPEN'&&r.lastQuoteAt&&stamp-Date.parse(r.lastQuoteAt)>20000){r.uncertain=true;r.gaps++;emit('DATA_GAP');}
   r.lastQuoteAt=quote.bookAt;
   const entry=long?quote.ask:quote.bid,exit=long?quote.bid:quote.ask;

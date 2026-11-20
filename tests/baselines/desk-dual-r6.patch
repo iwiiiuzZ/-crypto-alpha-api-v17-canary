@@ -1,0 +1,214 @@
+--- a/main-v188.js
++++ b/main-v188.js
+@@ -65,7 +65,7 @@
+ }
+ 
+ const DeskAiBridge=createDeskAiBridge();
+-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r5";
++const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r6";
+ const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
+ const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
+ const API_VERSION = "7.6.0";
+@@ -161,6 +161,8 @@
+     const saved = await owner.ctx.storage.get(PUBLIC_MARKET_STATE_KEY);
+     owner.publicRecords = {entries:saved?.entries&&typeof saved.entries==="object"?saved.entries:{},cooldowns:saved?.cooldowns&&typeof saved.cooldowns==="object"?saved.cooldowns:{},cooldownDiagnostics:saved?.cooldownDiagnostics||{}};
+     owner.publicPersistedJson=saved?JSON.stringify(publicMarketPersistable(owner.publicRecords)):null;
++    owner.publicStoredCircuits=JSON.stringify(owner.publicRecords.cooldowns);
++    owner.publicCheckpointAt=saved?Date.now():0;
+     owner.publicInflight = new Map();
+   })();
+   try {await owner.publicReady;} catch(error) {owner.publicReady=null;throw error;}
+@@ -243,10 +245,15 @@
+ async function persistPublicMarketIfChanged(owner) {
+   const previous=owner.publicPersistWork||Promise.resolve();
+   const work=previous.catch(()=>{}).then(async()=>{
+-    const payload=publicMarketPersistable(owner.publicRecords),serialized=JSON.stringify(payload);
++    const now=Date.now(),circuits=JSON.stringify(owner.publicRecords.cooldowns);
++    if(owner.publicCheckpointAt && now-owner.publicCheckpointAt<600000 && circuits===owner.publicStoredCircuits)return false;
++    const serialized=JSON.stringify(publicMarketPersistable(owner.publicRecords));
+     if(serialized===owner.publicPersistedJson)return false;
+-    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,payload);
+-    owner.publicPersistedJson=serialized;return true;
++    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,JSON.parse(serialized));
++    owner.publicPersistedJson=serialized;
++    owner.publicStoredCircuits=circuits;
++    owner.publicCheckpointAt=now;
++    return true;
+   });
+   owner.publicPersistWork=work;
+   try{return await work;}finally{if(owner.publicPersistWork===work)owner.publicPersistWork=null;}
+@@ -307,7 +314,7 @@
+     } catch(error) {
+       orderflow={report:{status:"unavailable",reason:"ORDERFLOW_STATE_OR_ANALYSIS_FAILED",error:String(error?.message||error),standaloneEntryPermission:false}};
+     }
+-    await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
++    await persistPublicMarketIfChanged(owner);
+     let crossVenueLiquidity;
+     try{const saved=await owner.ctx.storage.get(LIQUIDITY_STATE_KEY);crossVenueLiquidity=saved?.report||{status:"unavailable",reason:"EXPLICIT_LIQUIDITY_RECHECK_REQUIRED",arrivalRecheck:{passed:false}};}catch(e){crossVenueLiquidity={status:"unavailable",reason:"LIQUIDITY_CACHE_READ_FAILED",arrivalRecheck:{passed:false}};}
+     return {crossVenueLiquidity,orderflow:orderflow.report,modules,coordinator:"DURABLE_OBJECT_PUBLIC_MARKET",fetchedAt:new Date().toISOString()};
+@@ -319,7 +326,7 @@
+   const a=ASSETS[symbol];if(!a)throw new Error("Unsupported quote symbol");
+   const row=await recoverOkxTicker(owner,a.instrumentId,null,true);
+   const mark=await coordinatedPublicEndpoint(owner,"/api/v5/public/mark-price?instType=SWAP",CACHE_POLICY.markPrice);
+-  await owner.ctx.storage.put(PUBLIC_MARKET_STATE_KEY,publicMarketPersistable(owner.publicRecords));
++  await persistPublicMarketIfChanged(owner);
+   if(!row)throw new Error("OKX_GENUINE_QUOTE_ALL_PATHS_UNAVAILABLE");
+   return {ticker:row,marks:mark.rows||[]};
+ }
+@@ -751,7 +758,7 @@
+  if(!event.eligible||inCooldown)return;
+  const pending=state.pendingAlert||{eventId:[event.direction,event.firstObservedAt].join(':'),direction:event.direction,createdAt:new Date(now).toISOString(),attempts:0,nextAttemptAt:0};
+  if(pending.nextAttemptAt>now)return;
+- state.pendingAlert=pending;await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
++ state.pendingAlert=pending;await writeFastCheckpoint(owner,state);
+  let result;try{result=await sendBark(fastLocalEnvironment(owner),{title:'ETH（以太坊）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
+   body:'采样窗口价格变化 '+formatPrice(event.moveUsd)+' 美元（'+round(event.movePct,2)+'%），本次门槛 '+formatPrice(event.thresholdUsd)+' 美元。主动'+(event.direction==='BUY'?'买入':'卖出')+'占比 '+round(state.window.dominantShare*100,1)+'%。\n行情时间 '+chinaTime(event.lastObservedAt)+'；检测时间 '+chinaTime(now)+'。这是机会进展提醒，完整模型正在复核，尚非开仓许可。采样不等于全市场逐笔覆盖。',level:'timeSensitive'},{kind:'FAST_FLOW',eventId:pending.eventId,stage:'MATERIAL_EXECUTED_FLOW'});}catch(e){result={sent:false,reason:String(e?.message||e)};}
+  pending.attempts++;
+@@ -788,7 +795,7 @@
+  if(input.op==='officialBlsRelayMaintenance')return maintainOfficialBlsRelay(owner);
+  if(input.op==='liquidityRecheck')return coordinatedLiquidityRecheck(owner);
+  if(input.op==='fastMonitorEnsure')return ensureFastMonitor(owner);
+- if(input.op==='fastMonitorStatus')return compactFastMonitor(await storage.get(FAST_MONITOR_KEY),await syncFastModelReview(owner));
++ if(input.op==='fastMonitorStatus')return compactFastMonitor(await readFastMonitor(owner),await syncFastModelReview(owner));
+  if(input.op==='pushAuditAppend')return appendPushAuditStorage(storage,input.attempt,input.patch);
+  if(input.op==='get'&&Array.isArray(input.keys)){
+   const values={};
+@@ -927,13 +934,25 @@
+  const mid=(q.bid+q.ask)/2;if((q.ask-q.bid)/mid*10000>20||Math.abs(q.last/mid-1)*10000>25)return false;
+  state.executionQuote=q;state.quoteLastSuccessAt=new Date().toISOString();return true;
+ }
++async function readFastMonitor(owner){
++ if(owner.fastLiveState)return owner.fastLiveState;
++ return await owner.ctx.storage.get(FAST_MONITOR_KEY);
++}
++async function writeFastCheckpoint(owner,state){
++ // The trade tape is sampled again after a restart. Keep the exchange watermark,
++ // health, review state and alert decisions durable; never stitch across a restart.
++ const {trades,buckets,...checkpoint}=state;
++ await owner.ctx.storage.put(FAST_MONITOR_KEY,checkpoint);
++ owner.fastCheckpointAt=Date.now();
++}
+ async function runFastMonitorAlarm(owner){
+  if(owner.fastTickWork)return owner.fastTickWork;
+  const work=(async()=>{
+   if(!fastMonitorConfigured(owner.env))return {status:'DISABLED_OR_CONFIGURATION_REQUIRED'};
+-  const now=Date.now(),state=await owner.ctx.storage.get(FAST_MONITOR_KEY)||{trades:[]};
++  const now=Date.now(),prior=await readFastMonitor(owner)||{};
++  const state={...prior,trades:owner.fastLiveState?.trades||[],buckets:owner.fastLiveState?.buckets||[]};
+   // Alarm delivery is at least once; repeated delivery cannot replay the same tick/push.
+-  if(state.lastTickAt&&now-state.lastTickAt<FAST_MIN_INTERVAL_MS){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);await owner.ctx.storage.put(FAST_MONITOR_KEY,state);return compactFastMonitor(state);}
++  if(state.lastTickAt&&now-state.lastTickAt<FAST_MIN_INTERVAL_MS){const next=nextFastAlarmAt(state,now);state.nextAlarmAt=new Date(next).toISOString();if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);return compactFastMonitor(state);}
+   const scheduledAt=Date.parse(state.nextAlarmAt);
+   state.actualAlarmLatenessSeconds=Number.isFinite(scheduledAt)?round(Math.max(0,now-scheduledAt)/1000,3):null;
+   state.actualLastGapSeconds=state.lastTickAt?round((now-state.lastTickAt)/1000,3):null;state.lastTickAt=now;state.lastAttemptAt=new Date(now).toISOString();
+@@ -957,7 +976,7 @@
+    await fastSendPending(owner,state,event);
+    // An accepted or changed alert must be visible before shared model review.
+    // Ordinary ticks publish atomically in finally, without a duplicate row write.
+-   if(noticeBefore!==JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]))await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
++   if(noticeBefore!==JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]))await writeFastCheckpoint(owner,state);
+   }catch(e){state.status='degraded';state.failureCount=(state.failureCount||0)+1;if(e?.message!=='FLOW_RETRY_SCHEDULED')state.lastError=String(e?.message||e).slice(0,180);
+    const feedDeadline=Math.max(0,...(state.feedDiagnostics||[]).map(r=>Date.parse(r.retryAt)||0));
+    if(e?.message!=='FLOW_RETRY_SCHEDULED')state.nextFlowAttemptAt=feedDeadline>Date.now()?feedDeadline:state.failureCount>=3?Date.now()+30000:0;
+@@ -969,7 +988,9 @@
+    state.lastTickDurationSeconds=round((Date.now()-now)/1000,3);
+    const next=nextFastAlarmAt(state);state.nextAlarmAt=new Date(next).toISOString();
+    if(owner.ctx.storage.setAlarm)await owner.ctx.storage.setAlarm(next);
+-   await owner.ctx.storage.put(FAST_MONITOR_KEY,state);
++   if(!owner.fastCheckpointAt||now-owner.fastCheckpointAt>=60000||prior.status!==state.status||prior.nextFlowAttemptAt!==state.nextFlowAttemptAt)
++     await writeFastCheckpoint(owner,state);
++   owner.fastLiveState=state;
+    if(owner.publicRecords)await persistPublicMarketIfChanged(owner);
+   }
+   return compactFastMonitor(state,await owner.ctx.storage.get(FAST_REVIEW_KEY));
+@@ -7815,11 +7836,12 @@
+     return r;
+   };
+   if(r.status==='WAITING'&&Date.parse(p.expiresAt)<=now)return close('EXPIRED','未入场，事件到期；不算亏损');
+-  if(!quote?.ready||!quote.independent||![quote.bid,quote.ask,quote.last].every(positive)||quote.bid>quote.ask||now-Date.parse(quote.bookAt)>10000||now-Date.parse(quote.tradeAt)>20000||Date.parse(quote.bookAt)>now+2000){
++  if(!quote?.ready||!quote.independent||![quote.bid,quote.ask,quote.last].every(positive)||quote.bid>quote.ask||![quote.bookAt,quote.tradeAt].every(at=>Number.isFinite(Date.parse(at))&&Date.parse(at)<=now+2000)||now-Date.parse(quote.bookAt)>10000||now-Date.parse(quote.tradeAt)>20000){
+     if(r.status==='OPEN'&&!r.uncertain){r.uncertain=true;r.gaps++;emit('DATA_GAP');}return r;
+   }
+   const stamp=Date.parse(quote.bookAt);
+-  if(r.lastQuoteAt&&stamp<=Date.parse(r.lastQuoteAt))return r;
++  const lastStamp=Date.parse(r.lastQuoteAt);
++  if(stamp<lastStamp || (stamp===lastStamp && !(reviewPassed && r.status==='WAITING')))return r;
+   if(r.status==='OPEN'&&r.lastQuoteAt&&stamp-Date.parse(r.lastQuoteAt)>20000){r.uncertain=true;r.gaps++;emit('DATA_GAP');}
+   r.lastQuoteAt=quote.bookAt;
+   const entry=long?quote.ask:quote.bid,exit=long?quote.bid:quote.ask;
+@@ -8041,8 +8063,11 @@
+     const end = (state, reason) => update(storage, plan, current => ({
+       ...current, state, pending: null, lease: null, updatedAt: iso(now), lastCheckAt: iso(now), reason,
+     }));
+-    const keep = (reason, verified = false) => update(storage, plan, current => ({ ...current, lastCheckAt: iso(now),
+-      ...(verified ? {lastQuoteVerifiedAt:iso(now)} : {}), reason }));
++    const keep = (reason, verified = false) => update(storage, plan, current => {
++      const verifiedPreviously=current.lastQuoteVerifiedAt && current.lastCheckAt===current.lastQuoteVerifiedAt;
++      if(current.reason===reason && Boolean(verifiedPreviously)===verified && now-Date.parse(current.lastCheckAt)<30000)return null;
++      return {...current,lastCheckAt:iso(now),...(verified?{lastQuoteVerifiedAt:iso(now)}:{}),reason};
++    });
+     if (Date.parse(plan.expiresAt) <= now) return end("EXPIRED", "入场事件到期");
+     const first = planQuote(plan, firstTicker, now);
+     if (!first) return keep("真实成交与盘口待复核");
+@@ -8299,7 +8324,7 @@
+ }
+ async function deskFlushAlerts(owner){
+  if(owner.deskAlertWork)return owner.deskAlertWork;
+- owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];await tx.put(DESK_ALERT_KEY,rows.map(r=>deskTechnicalAlert(r)&&r.status!=='ACCEPTED'?{...r,status:'SUPPRESSED',reason:'OWNER_DISABLED_TECHNICAL_PHONE_ALERTS'}:r));});
++ owner.deskAlertWork=(async()=>{const storage=owner.ctx.storage;await storage.transaction(async tx=>{const rows=await tx.get(DESK_ALERT_KEY)||[];let changed=false;const next=rows.map(r=>{if(!deskTechnicalAlert(r)||['ACCEPTED','SUPPRESSED'].includes(r.status))return r;changed=true;return {...r,status:'SUPPRESSED',reason:'OWNER_DISABLED_TECHNICAL_PHONE_ALERTS'};});if(changed)await tx.put(DESK_ALERT_KEY,next);});
+   const rows=await storage.get(DESK_ALERT_KEY)||[];
+   for(const row of rows.filter(r=>!['ACCEPTED','SUPPRESSED'].includes(r.status)&&r.nextAt<=Date.now()).slice(0,2)){
+    let sent;try{sent=await sendBark(fastLocalEnvironment(owner),{title:row.title,body:row.body,level:'timeSensitive',url:'https://market-desk-cn.darkboard1.chatgpt.site/#overview'},{kind:'CONTROL',eventId:'DESK:'+row.id,stage:'AUTONOMOUS_NOTICE'});}catch{}
+@@ -8379,9 +8404,8 @@
+   assets:Object.fromEntries(['BTC','ETH'].map(a=>[a,{volatility:volatility[a],orderflowStatus:snapshot.assets[a+'USDT'].publicOrderflow?.status||'unavailable'}]))};
+  owner.deskVolatility=Object.fromEntries(Object.entries(result.analysisReceipt.assets).map(([a,v])=>[a,v.volatility]));
+  if(!owner.ctx.storage?.transaction)return;
+- await owner.ctx.storage.put("desk:v2:volatility",owner.deskVolatility);
+  await deskSerial(owner,async()=>{
+-  const storage=owner.ctx.storage,settings=await deskSettings(owner);await storage.put(DESK_AUTOMATION_KEY,settings);
++  const storage=owner.ctx.storage,settings=await deskSettings(owner);
+   for(const asset of Object.values(result.assets))for(const plan of asset.plans){
+    if(!AlphaDeskAutonomy.observable(plan,asset,now))continue;
+    const keepWatching=await storage.transaction(async tx=>{
+@@ -8412,12 +8436,18 @@
+   const storage=owner.ctx.storage,active=await storage.get(DESK_ACTIVE_KEY)||[];if(!active.length)return;
+   const quotes={};for(const symbol of ['BTC','ETH']){try{quotes[symbol]=AlphaDeskDecision.deskQuote(entryPlan?.asset===symbol?ticker:await deskDirectQuote(owner,symbol));}catch{quotes[symbol]=null;}}
+   const next=[];
+-  for(const key of active){const old=await storage.get(key);if(!old)continue;
++  owner.deskLastQuote ||= new Map();
++  for(const key of active){
++   const saved=await storage.get(key);if(!saved){owner.deskLastQuote.delete(key);continue;}
++   const previousQuote=owner.deskLastQuote.get(key);
++   const old=previousQuote && Date.parse(previousQuote)>(Date.parse(saved.lastQuoteAt)||0)?{...saved,lastQuoteAt:previousQuote}:saved;
+    const reviewed=entryPlan?.id===old.plan.id&&entryPlan?.revision===old.plan.revision;
+    const updated=AlphaDeskAutonomy.advance(old,quotes[old.plan.asset],Date.now(),reviewed);
+    // Persist the lifecycle transition and its notification in the same transaction.
+    await storage.transaction(async tx=>{
+-    await tx.put(key,updated);
++    const material=updated.status!==old.status || updated.gaps!==old.gaps || updated.uncertain!==old.uncertain;
++    const elapsed=Date.parse(updated.lastQuoteAt)-Date.parse(saved.lastQuoteAt);
++    if(material || (updated.lastQuoteAt!==saved.lastQuoteAt && (!saved.lastQuoteAt || elapsed>=(old.status==='OPEN'?10000:60000))))await tx.put(key,updated);
+     if(old.status!==updated.status&&updated.status==='OPEN')await deskQueueAlert(tx,'ENTRY:'+old.plan.id+':'+old.plan.revision,
+      '聚流｜'+old.plan.asset+' 模拟入场',old.plan.model+' '+(old.plan.direction==='LONG'?'做多':'做空')+'；模拟成交 '+updated.entry.price+'；保护 '+old.plan.invalidation+'；止损 '+old.plan.stop+'；第一目标 '+old.plan.target+'。已登记正式模拟单。');
+     if(updated.status!==old.status&&['LOSS','WIN','TIME_EXIT','UNRESOLVED','INVALIDATED','EXPIRED','MISSED'].includes(updated.status)){
+@@ -8428,9 +8458,9 @@
+     }
+    });
+    if(updated.status!==old.status||updated.uncertain!==old.uncertain)owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
+-   if(['WAITING','OPEN'].includes(updated.status))next.push(key);
++   if(['WAITING','OPEN'].includes(updated.status)){next.push(key);owner.deskLastQuote.set(key,updated.lastQuoteAt);}else owner.deskLastQuote.delete(key);
+   }
+-  await storage.put(DESK_ACTIVE_KEY,next);
++  if(JSON.stringify(active)!==JSON.stringify(next))await storage.put(DESK_ACTIVE_KEY,next);
+  });
+ }
+ async function recordDeskTape(owner,asset,venues){
+@@ -8504,7 +8534,7 @@
+     let input;
+     try { input = await request.json(); } catch { return Response.json({ error: "INVALID_JSON" }, { status: 400 }); }
+     if(input?.op==="fastMonitorEnsure")return Response.json(await ensureFastMonitor(this));
+-    if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await this.ctx.storage.get(FAST_MONITOR_KEY),review));}
++    if(input?.op==="fastMonitorStatus"){const review=await syncFastModelReview(this);return Response.json(compactFastMonitor(await readFastMonitor(this),review));}
+     if(input?.op==="stateIdentity"||input?.op==="scannerCycle")return Response.json(await localScannerOperation(this,input));
+     if(["deskAnalysis","deskStatus","deskChange","deskOperations","deskAi"].includes(input?.op))return Response.json(await localScannerOperation(this,input));
+     if(input?.op==="officialBlsRelayMaintenance")return Response.json(await maintainOfficialBlsRelay(this));

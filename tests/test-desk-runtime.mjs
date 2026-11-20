@@ -27,7 +27,7 @@ assert.equal(state.get('desk:v1:watches')[0].plan.revision,'v1','watch and ledge
 const restarted={ctx:{storage},env:{}};
 assert.equal((await api.read(restarted)).journal.records.length,1,'journal survives isolate restart');
 await api.tick(owner);assert.equal((await api.read(owner)).journal.records[0].status,'WAITING');
-f.advance(1000);await api.tick(owner,plan,quote());assert.equal((await api.read(owner)).journal.records[0].status,'OPEN');
+await api.tick(owner,plan,quote());assert.equal((await api.read(owner)).journal.records[0].status,'OPEN');
 assert.equal((await api.read(owner)).alerts.filter(a=>a.id.startsWith('ENTRY:')).length,1,'paper entry has its own durable notification');
 const amended={...plan,revision:'v2',target:118,capturedAt:at(f.now())};await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[amended]}}},snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'open position cannot be rewritten by a new target');

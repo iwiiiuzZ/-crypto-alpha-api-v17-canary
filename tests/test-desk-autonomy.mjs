@@ -7,6 +7,14 @@ assert(observable(p,{ready:true,quote:q(now,105)},now),'out-of-zone observations
 assert(!observable({...p,target:101},{ready:true,quote:q(now,100)},now),'reject fake RR');
 assert(!observable({...p,invalidation:100},{ready:true,quote:q(now,100)},now));
 let r=createRecord(p,now);r=advance(r,q(now+1000,100),now+1000,false);assert.equal(r.status,'WAITING','price alone cannot fill');
+const confirmed=advance(r,q(now+1000,100),now+1200,true);
+assert.equal(confirmed.status,'OPEN','a valid independent review may arrive after the quote was already sampled');
+assert.deepEqual(advance(confirmed,q(now+1000,100),now+1300,true),confirmed,'repeat review cannot fill twice');
+assert.equal(advance(r,q(now+900,100),now+1200,true).status,'WAITING','older reviewed quote cannot fill');
+for(const invalid of [{bookAt:'invalid'},{tradeAt:'invalid'},{tradeAt:iso(now+10000)}]){
+ assert.equal(advance(r,{...q(now+1000,100),...invalid},now+1200,true).status,'WAITING');
+}
+assert.equal(advance(r,q(now+1000,100),now+12000,true).status,'WAITING','review cannot revive an expired quote');
 r=advance(r,q(now+2000,100),now+2000,true);assert.equal(r.status,'OPEN');assert.equal(r.entry.price,100);
 let win=advance(r,q(now+12000,117),now+12000);assert.equal(win.status,'WIN');assert(win.exit.netR>3);assert.equal(win.plan.target,116);
 let loss=advance(r,q(now+12000,94),now+12000);assert.equal(loss.status,'LOSS');assert(loss.exit.netR< -1,'gap through stop uses observed counterparty, not invented stop fill');

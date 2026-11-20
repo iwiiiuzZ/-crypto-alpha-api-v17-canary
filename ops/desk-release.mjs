@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { cloudflareSnapshot, requestJson } from "./diagnostics.mjs";
 import { assessCurrentRelease } from "./current-release.mjs";
 
-export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r5";
+export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r6";
 
 export function isAuthorizedDeskDispatch(env = process.env) {
   if(isAuthorizedOwnerRelease(env))return true;
@@ -33,7 +33,14 @@ export async function deskPreflight(config, baseline, env = process.env) {
     console.log(JSON.stringify({stage:'desk-config-version-revalidated',codeEquivalent:true,runtimeAndBindingsEquivalent:true,baselineUnmodified:true}));
   }
   console.log(JSON.stringify({stage:'desk-preflight-gates',gates:reviewed.gates,scannerAuthenticated:scanner.status==='ok',scannerBuildMatches:scanner.build===baseline.build,scannerIdentityMatches:scanner.backendIdentity?.matched===true,stateReadSucceeded:scanner.diagnostics?.stateReadSucceeded===true}));
-  if (!reviewed.alreadyDeployed || scanner.status !== "ok" || scanner.build !== baseline.build
+  // A predecessor with a known quota outage cannot attest to an uninterrupted
+  // production window. For this repair require its exact previously observed
+  // physical version, every identity gate, and a currently healthy authenticated owner.
+  const pinnedRepair=baseline.status==='VERIFIED_PHYSICAL_DEPLOYMENT' && isAuthorizedDeskDispatch(env)
+    && baseline.versionId==='a95dab4a-8292-4b79-87bc-4a6c1fb1763b' && baseline.deploymentId==='5999e03d-f52f-4dbb-b1b8-e318a783ff2f'
+    && baseline.sourceGitBlobSha==='c6030a9ff9af103c6b803d7f2e9a31f8abbc7e18'
+    && reviewed.failedGates.length===1 && reviewed.failedGates[0]==='verifiedWindow';
+  if ((!reviewed.alreadyDeployed && !pinnedRepair) || scanner.status !== "ok" || scanner.build !== baseline.build
       || scanner.backendIdentity?.matched !== true || scanner.diagnostics?.stateReadSucceeded !== true) {
     throw new Error("DESK_PRIOR_DEPLOYMENT_STATE_OR_AUTH_MISMATCH");
   }

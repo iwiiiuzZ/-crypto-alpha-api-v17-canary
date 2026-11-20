@@ -38,7 +38,18 @@ owner.publicRecords.cooldowns.book+=1000;fail=true;
 await assert.rejects(()=>x.persistPublicMarketIfChanged(owner),/ISOLATED_STORAGE_FAILURE/);
 await x.persistPublicMarketIfChanged(owner);
 assert.equal(db.get(x.PUBLIC_MARKET_STATE_KEY).cooldowns.book,owner.publicRecords.cooldowns.book,'failed durable write cannot suppress recovery');
-// Ordinary fast ticks need one state row and one alarm row, not five writes.
+const ordinary='/api/v5/market/ticker?instId=ETH-USDT-SWAP';
+const beforeChurn=writes;
+for(let i=0;i<60;i++){
+ now+=1000;
+ owner.publicRecords.entries[ordinary]={storedAt:now,rows:[{last:String(2400+i)}]};
+ await x.persistPublicMarketIfChanged(owner);
+}
+assert.equal(writes,beforeChurn,'volatile ticker changes do not rewrite the durable market cache');
+now+=600000;
+await x.persistPublicMarketIfChanged(owner);
+assert.equal(db.get(x.PUBLIC_MARKET_STATE_KEY).entries[ordinary].rows[0].last,'2459');
+// Every alarm still samples. Ordinary ticks checkpoint once per minute.
 owner.env={SCANNER_TOKEN:'fixture',BARK_DEVICE_KEY:'fixture',SCANNER_STATE:{getByName(){return {};}}};
 let alarmWrites=0,fastWrites=0;
 owner.ctx.storage.setAlarm=async()=>{alarmWrites++;};
@@ -50,8 +61,13 @@ c.fakeFlow=async(_o,path)=>({state:'live',storedAt:now,rows:path.includes('instr
  [{ts:String(now),bids:[['2399.99','100','0','1']],asks:[['2400.01','100','0','1']]}]});
 vm.runInContext('coordinatedPublicEndpoint=fakeFlow;maintainFastModelReview=async()=>{};',c);
 for(let i=0;i<24;i++){now+=2500;const tick=await x.runFastMonitorAlarm(owner);assert.equal(tick.quoteHealthy,true);}
-assert.equal(fastWrites,24);assert.equal(alarmWrites,24);
-const worstCaseFastRowsPerDay=2*86400000/2500;
-assert.equal(worstCaseFastRowsPerDay,69120);
-assert.ok(worstCaseFastRowsPerDay<100000,'fast baseline must leave headroom within the documented free row-write quota');
+assert.equal(fastWrites,1);assert.equal(alarmWrites,24);
+assert.ok(!('trades' in db.get(x.FAST_MONITOR_KEY)));
+assert.ok(owner.fastLiveState.lastTickAt>db.get(x.FAST_MONITOR_KEY).lastTickAt);
+now+=2500;await x.runFastMonitorAlarm(owner);
+assert.equal(fastWrites,2,'minute checkpoint includes latest tick');
+const cold={ctx:owner.ctx,env:owner.env};
+now+=2500;const restarted=await x.runFastMonitorAlarm(cold);
+assert.equal(restarted.window.sampledRecords,1,'restart begins a fresh tape segment');
+assert.equal(restarted.quoteHealthy,true);
 console.log(JSON.stringify({passed:true,scope:'REPLAY_REAL_R5C_TIMESTAMPS_WITH_SYNTHETIC_ALARM_AND_STORAGE',oldDue:new Date(oldDue).toISOString(),newDue:new Date(next).toISOString(),originalTenSecondExpiryPreserved:true,unchangedFlowWritesCoalesced:true,productionVerified:false}));
