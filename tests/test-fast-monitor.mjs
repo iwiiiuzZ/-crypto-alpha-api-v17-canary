@@ -50,6 +50,7 @@ await test('independent ticker advances during flow cooldown and full feeds resu
  const{f,x}=setup(),a=owner(f);stubFeeds(f,feeds(f));await x.runFastMonitorAlarm(a.o);
  const old=a.db.get(x.FAST_MONITOR_KEY),deadline=f.now()+20259,fullSuccess=old.lastSuccessAt;
  a.db.set(x.FAST_MONITOR_KEY,{...old,nextFlowAttemptAt:deadline});
+ a.o.fastLiveState=null; // simulate owner restart after the durable cooldown was set
  let flowCalls=0,tickerCalls=0;
  f.c.cooldownFeed=async(_o,path)=>{
   if(path.includes('/ticker?')){tickerCalls++;return {rows:[{instId:'ETH-USDT-SWAP',last:'2400',bidPx:'2399.99',askPx:'2400.01',ts:String(f.now())}]};}

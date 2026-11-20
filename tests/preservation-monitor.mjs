@@ -1,6 +1,6 @@
 // Strip only reviewed additive monitoring handlers. Original storage/auth remains byte-for-byte compared.
 export const deskReviewedFunctions = [
-  'fastMaterialEvent',
+  'fastMaterialEvent', 'coordinatedDirectQuote',
   'orderflowPaths', 'coordinatedOrderflowEndpoint', 'publicMarketPersistable',
   'liquidityFeedDefinitions', 'liquidityFeed', 'normalizeLiquidityVenue', 'aggregateVenueLiquidity',
   'collectCrossVenueLiquidity', 'localScannerOperation', 'openApi',
