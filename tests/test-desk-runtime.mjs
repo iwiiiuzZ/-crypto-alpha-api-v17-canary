@@ -33,7 +33,7 @@ const amended={...plan,revision:'v2',target:118,capturedAt:at(f.now())};await ap
 assert.equal((await api.read(owner)).journal.records.length,1,'open position cannot be rewritten by a new target');
 f.advance(1000);price=117;await api.tick(owner);assert.equal((await api.read(owner)).journal.statistics.sampleSize,1);
 await api.flush(owner);assert.equal((await api.read(owner)).alerts[0].status,'FAILED');
-fail=false;f.advance(20000);await api.flush(owner);let alerts=(await api.read(owner)).alerts;assert.equal(alerts[0].status,'ACCEPTED');const sent=pushes;await api.flush(owner);assert.equal(pushes,sent,'provider accepted alert is not resent');
+fail=false;f.advance(20000);await api.flush(owner);let alerts=(await api.read(owner)).alerts;assert.equal(alerts[0].status,'ACCEPTED');await api.flush(owner);alerts=(await api.read(owner)).alerts;assert.equal(alerts.filter(r=>r.id.startsWith('PLAN:')).length,1);assert.ok(alerts.every(r=>r.status==='ACCEPTED'));const sent=pushes;await api.flush(owner);assert.equal(pushes,sent,'provider accepted alert is not resent');
 assert.equal(alerts[0].deviceReceiptVerified,false);
 await api.control(owner,{value:{action:'pause'}});assert.equal((await api.read(owner)).settings.enabled,false);
 const test=await api.control(owner,{value:{action:'test-notification'}});assert.equal(test.status,200);
@@ -90,3 +90,24 @@ state.set('desk:v2:alerts',[{id:'HEALTH:old',status:'SUPPRESSED',reason:'OWNER_D
 await api.flush(owner);assert.equal(noopWrites,0,'suppressed notification stays read-only');
 storage.put=beforePut;
 console.log('PASS idle and suppressed queues perform zero writes');
+
+const hourly=runInContext('deskClosedBars',f.c);
+const period=3600000,last=Math.floor(f.now()/period)*period-period;
+const history=Array.from({length:80},(_,i)=>({ts:at(last-(79-i)*period),open:100,close:101,high:102,low:99,volumeBase:12,confirmed:true}));
+let upstream=0;f.c.hourRead=async()=>{upstream++;return history;};
+runInContext('fetchOkxStructureCandles=hourRead;',f.c);
+const isolated={ctx:{storage},env:{}};
+assert.equal((await hourly(isolated,'BTCUSDT',f.now(),false)).length,0);assert.equal(upstream,0);
+const rows=await hourly(isolated,'BTCUSDT',f.now(),true);assert.equal(rows.length,80);assert.equal(rows[0].source,'OKX_USDT_PERPETUAL');
+assert.equal((await hourly(isolated,'BTCUSDT',f.now(),false)).length,80);assert.equal(upstream,1);
+assert.ok(runInContext('AlphaDeskAutonomy.volatility',f.c)({timeframes:{'1h':{candles:rows}}},f.now()).threshold>0);
+
+const zecOwner={ctx:{storage},env:{}};f.c.hourRead=async(config,tf)=>{
+ assert.equal(config.instrumentId,'ZEC-USDT-SWAP');
+ const ms={'15m':900000,'1h':3600000,'4h':14400000}[tf],end=Math.floor(f.now()/ms)*ms;
+ return history.map((r,i)=>({...r,ts:at(end-(80-i)*ms)}));
+};
+runInContext('fetchOkxStructureCandles=hourRead;',f.c);
+await api.market(zecOwner,{assets:{}});
+const zecFrames=state.get('desk:v2:market-scanner').frames.filter(f=>f.asset==='ZEC');
+assert.equal(zecFrames.length,3);assert.ok(zecFrames.every(f=>!f.reason&&f.source==='OKX_USDT_PERPETUAL'));

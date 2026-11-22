@@ -1,0 +1,137 @@
+--- a/main-v188.js
++++ b/main-v188.js
+@@ -12,7 +12,18 @@
+       headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},
+       body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(body?20000:10000)}); }
+     catch {throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}
+-    if(!r.ok)throw Error(r.status===401||r.status===403?'MODEL_AUTH':r.status===429?'MODEL_RATE_LIMIT':body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');
++    if(!r.ok){
++      // Preserve rejection categories only. Provider messages may echo input.
++      let code='';
++      if(r.status>=400&&r.status<500){try{code=(await r.json()).error?.code||'';}catch{}}
++      if(code==='insufficient_quota'||code==='billing_hard_limit_reached')throw Error('MODEL_QUOTA');
++      if(code==='model_not_found'||(body&&r.status===404))throw Error('MODEL_UNAVAILABLE');
++      if(code==='context_length_exceeded'||r.status===413)throw Error('MODEL_INPUT_LIMIT');
++      if(r.status===401||r.status===403)throw Error('MODEL_AUTH');
++      if(r.status===429)throw Error('MODEL_RATE_LIMIT');
++      if([400,422].includes(r.status))throw Error('MODEL_PAYLOAD_REJECTED');
++      throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');
++    }
+     const reader=r.body.getReader();let size=0,parts=[];
+     for(;;){const p=await reader.read();if(p.done)break;size+=p.value.length;if(size>1200000){await reader.cancel();throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}parts.push(p.value);}
+     const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}
+@@ -51,13 +62,14 @@
+     });
+     if(!reserved){row=await storage.get(key);return row?reply(202,{id:row.responseId,status:row.responseId?'queued':'submitting'}):error(429,'REVIEW_RATE_LIMIT');}
+     try {
+-      const response=await provider(env,'',{model:env.CRYPTO_ALPHA_AI_MODEL.trim(),instructions:body.instructions,input:body.input,
++      const response=await provider(env,'',{model:env.CRYPTO_ALPHA_AI_MODEL.trim(),
++        input:[{role:'developer',content:body.instructions},{role:'user',content:body.input}],
+         background:true,store:true,max_output_tokens:14000,text:body.text});
+       if(typeof response.id!=='string'||!/^resp_[A-Za-z0-9_-]+$/.test(response.id))throw Error('MODEL_REQUEST_UNKNOWN');
+       await storage.put(key,{created:now,responseId:response.id,error:null});
+       return reply(200,response);
+     }catch(e){
+-      const code=['MODEL_AUTH','MODEL_RATE_LIMIT'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
++      const code=['MODEL_AUTH','MODEL_RATE_LIMIT','MODEL_QUOTA','MODEL_UNAVAILABLE','MODEL_INPUT_LIMIT','MODEL_PAYLOAD_REJECTED'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
+       await storage.put(key,{created:now,responseId:null,error:code});return error(503,code);
+     }
+   }
+@@ -65,7 +77,7 @@
+ }
+ 
+ const DeskAiBridge=createDeskAiBridge();
+-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r6";
++const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r7";
+ const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
+ const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
+ const API_VERSION = "7.6.0";
+@@ -8250,7 +8262,7 @@
+  if(!(atr>0))return blocked('ATR_UNAVAILABLE');
+  const avgVolume=mean(prior.map(r=>r.volume)),volumeRatio=avgVolume>0?last.volume/avgVolume:null;
+  const resistance=Math.max(...prior.map(r=>r.h)),support=Math.min(...prior.map(r=>r.l)),previous=rows.at(-2),events=[];
+- const add=(kind,direction,evidence)=>events.push({id:[SCANNER_POLICY,asset,timeframe,kind,last.ts].join(':'),asset,timeframe,kind,direction,barAt:last.ts,confirmedAt:new Date(Date.parse(last.ts)+ms).toISOString(),observedAt:new Date(now).toISOString(),price:last.c,evidence,scope:'MARKET_OBSERVATION',executionPermission:false});
++ const add=(kind,direction,evidence)=>events.push({id:[SCANNER_POLICY,asset,timeframe,kind,last.ts].join(':'),asset,timeframe,kind,direction,source:last.source??frame.source??null,barAt:last.ts,confirmedAt:new Date(Date.parse(last.ts)+ms).toISOString(),observedAt:new Date(now).toISOString(),price:last.c,evidence,scope:'MARKET_OBSERVATION',executionPermission:false});
+  for(const [direction,boundary,hit] of [['UP',resistance,last.c>resistance+.1*atr&&previous.c<=resistance],['DOWN',support,last.c<support-.1*atr&&previous.c>=support]])if(hit)add(volumeRatio>=2?'VOLUME_BREAKOUT':'STRUCTURE_BREAKOUT',direction,{boundary,atr,volumeRatio,lookbackBars:20});
+  const range=last.h-last.l,body=Math.abs(last.c-last.o),upper=last.h-Math.max(last.o,last.c),lower=Math.min(last.o,last.c)-last.l;
+  if(range>=atr&&upper>=Math.max(body*2,range*.6))add('UPPER_WICK','DOWN',{wick:upper,range,atr,volumeRatio});
+@@ -8267,7 +8279,7 @@
+   const priceDelta=(high?rows[b].h-rows[a].h:rows[a].l-rows[b].l),rsiDelta=high?rsi[a]-rsi[b]:rsi[b]-rsi[a];
+   if(priceDelta>=.1*atr&&rsiDelta>=5)add(high?'BEARISH_DIVERGENCE':'BULLISH_DIVERGENCE',high?'DOWN':'UP',{indicator:'RSI14',firstPivotAt:rows[a].ts,secondPivotAt:rows[b].ts,firstRsi:rsi[a],secondRsi:rsi[b],priceDelta,atr,confirmationBars:2});
+  }
+- return {asset,timeframe,reason:null,barAt:last.ts,atr,volumeRatio,events};
++ return {asset,timeframe,reason:null,source:last.source??frame.source??null,barAt:last.ts,atr,volumeRatio,events};
+ }
+ function scanMarket(snapshot,now){
+  const frames=[];for(const [symbol,asset] of Object.entries(snapshot.assets||{}))for(const timeframe of Object.keys(TF))frames.push(scanMarketFrame(symbol.replace(/USDT$/,''),timeframe,asset.timeframes?.[timeframe],now));
+@@ -8294,6 +8306,30 @@
+  await tx.put(DESK_ALERT_KEY,[row,...pending,...rows.filter(r=>r.status==='ACCEPTED').slice(0,99)]);
+ }
+ async function deskAlert(owner,id,title,body){await owner.ctx.storage.transaction(tx=>deskQueueAlert(tx,id,title,body));}
++async function deskClosedBars(owner,symbol,now,recover=false,timeframe='1h'){
++ const ms=TIMEFRAMES[timeframe].intervalMs, key=symbol+':'+timeframe;
++ const instrument=symbol==='ZECUSDT'?{instrumentId:'ZEC-USDT-SWAP',gateSymbol:'ZEC_USDT'}:ASSETS[symbol];
++ const lastStart=Math.floor(now/ms)*ms-ms;
++ const cache=owner.deskHourHistory||(owner.deskHourHistory=new Map());
++ const current=cache.get(key);
++ if(current?.lastStart===lastStart&&(current.rows.length||now-current.checkedAt<60000))return current.rows;
++ const valid=rows=>{
++  const closed=plainCandles(rows).filter(c=>c.confirmed&&Date.parse(c.ts)<=lastStart).slice(-80);
++  if(closed.length<64||Date.parse(closed.at(-1).ts)!==lastStart)return [];
++  return closed.every((c,i)=>c.low>0&&c.high>=Math.max(c.open,c.close)&&c.low<=Math.min(c.open,c.close)
++   &&Number.isFinite(c.volumeBase??c.volumeContracts)&&(c.volumeBase??c.volumeContracts)>=0
++   &&(!i||Date.parse(c.ts)-Date.parse(closed[i-1].ts)===ms))?closed:[];
++ };
++ const record=(await owner.ctx.storage?.get(structureRecordKey(symbol,timeframe)))?.value;
++ let rows=valid(record?.candles);
++ let source=record?.source;
++ for(const [venue,read] of [['OKX_USDT_PERPETUAL',fetchOkxStructureCandles],['GATE_USDT_PERPETUAL',fetchGateStructureCandles]]){
++  if(rows.length||!recover)break;
++  try{rows=valid(await read(instrument,timeframe,82));source=venue;}catch{}
++ }
++ const candles=rows.map(c=>({ts:c.ts,o:c.open,h:c.high,l:c.low,c:c.close,volume:c.volumeBase??c.volumeContracts,confirmed:true,source}));
++ if(candles.length||recover)cache.set(key,{lastStart,checkedAt:now,rows:candles});return candles;
++}
+ async function recordDeskMarketScan(owner,snapshot){
+  if(!owner.ctx.storage?.transaction)return;
+  const now=Date.now(),storage=owner.ctx.storage,settings=await deskSettings(owner);
+@@ -8303,10 +8339,19 @@
+  await Promise.all(Object.entries(snapshot.assets||{}).map(async([symbol,asset])=>{
+   const timeframes={...asset.timeframes};
+   await Promise.all(['15m','1h','4h'].map(async tf=>{
++   if(tf==='1h'){
++    const bars=await deskClosedBars(owner,symbol,now,true);
++    if(bars.length){timeframes[tf]={status:'ok',quality:{passed:true},recentCandles:bars};return;}
++   }
+    const envelope=await storage.get(structureRecordKey(symbol,tf)),record=envelope?.value;
+    if(record&&structureRecordUsable(record,tf,now))timeframes[tf]={...timeframes[tf],recentCandles:record.candles.slice(-80).map(c=>({ts:c.ts,o:c.open,h:c.high,l:c.low,c:c.close,volume:finite(c.volumeBase,c.volumeContracts),confirmed:c.confirmed}))};
+   }));assets[symbol]={timeframes};
+  }));
++ const zecFrames=await Promise.all(Object.keys(TIMEFRAMES).map(async tf=>{
++  const bars=await deskClosedBars(owner,'ZECUSDT',now,true,tf);
++  return [tf,bars.length?{status:'ok',quality:{passed:true},recentCandles:bars}:null];
++ }));
++ assets.ZECUSDT={timeframes:Object.fromEntries(zecFrames)};
+  const report=AlphaDeskMarket.scanMarket({assets},now);
+  await storage.transaction(async tx=>{
+   const previous=await tx.get('desk:v2:market-scanner')||{cursors:{},events:[]};const cursors={...previous.cursors},fresh=[];
+@@ -8387,9 +8432,7 @@
+  if(owner.deskVolatility&&Object.values(owner.deskVolatility).every(v=>now-Date.parse(v.checkedAt)<60000))return owner.deskVolatility;
+  const volatility={};
+  for(const symbol of ['BTC','ETH']){
+-  const envelope=await owner.ctx.storage?.get(structureRecordKey(symbol+'USDT','1h'));
+-  const record=envelope?.value;
+-  const candles=record&&structureRecordUsable(record,'1h',now)?record.candles.map(c=>({ts:c.ts,o:c.open,h:c.high,l:c.low,c:c.close,confirmed:c.confirmed})):[];
++  const candles=await deskClosedBars(owner,symbol+'USDT',now);
+   volatility[symbol]=AlphaDeskAutonomy.volatility({timeframes:{'1h':{candles}}},now);
+  }
+  owner.deskVolatility=volatility;
+@@ -8420,6 +8463,8 @@
+     const key=DESK_JOURNAL_PREFIX+new Date(now).toISOString()+':'+plan.id+':'+plan.revision;
+     owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
+     await tx.put(key,AlphaDeskAutonomy.createRecord(plan,now));await tx.put(pointer,key);await tx.put(eventPointer,key);active.push(key);await tx.put(DESK_ACTIVE_KEY,active);
++    if(settings.enabled)await deskQueueAlert(tx,'PLAN:'+plan.id,'聚流｜'+plan.asset+' 正式模拟计划',
++     plan.model+' '+(plan.direction==='LONG'?'做多':'做空')+'，等待进入 '+plan.low+'–'+plan.high+'。止损 '+plan.stop+'，第一目标 '+plan.target+'。有效至 '+plan.expiresAt+'。');
+     return plan;
+    });
+    if(settings.enabled&&keepWatching)await DeskBridge.discover(owner,keepWatching);

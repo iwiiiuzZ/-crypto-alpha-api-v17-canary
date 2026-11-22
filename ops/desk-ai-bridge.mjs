@@ -12,7 +12,18 @@ export function createDeskAiBridge() {
       headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},
       body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(body?20000:10000)}); }
     catch {throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}
-    if(!r.ok)throw Error(r.status===401||r.status===403?'MODEL_AUTH':r.status===429?'MODEL_RATE_LIMIT':body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');
+    if(!r.ok){
+      // Preserve rejection categories only. Provider messages may echo input.
+      let code='';
+      if(r.status>=400&&r.status<500){try{code=(await r.json()).error?.code||'';}catch{}}
+      if(code==='insufficient_quota'||code==='billing_hard_limit_reached')throw Error('MODEL_QUOTA');
+      if(code==='model_not_found'||(body&&r.status===404))throw Error('MODEL_UNAVAILABLE');
+      if(code==='context_length_exceeded'||r.status===413)throw Error('MODEL_INPUT_LIMIT');
+      if(r.status===401||r.status===403)throw Error('MODEL_AUTH');
+      if(r.status===429)throw Error('MODEL_RATE_LIMIT');
+      if([400,422].includes(r.status))throw Error('MODEL_PAYLOAD_REJECTED');
+      throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');
+    }
     const reader=r.body.getReader();let size=0,parts=[];
     for(;;){const p=await reader.read();if(p.done)break;size+=p.value.length;if(size>1200000){await reader.cancel();throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}parts.push(p.value);}
     const bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}
@@ -51,13 +62,14 @@ export function createDeskAiBridge() {
     });
     if(!reserved){row=await storage.get(key);return row?reply(202,{id:row.responseId,status:row.responseId?'queued':'submitting'}):error(429,'REVIEW_RATE_LIMIT');}
     try {
-      const response=await provider(env,'',{model:env.CRYPTO_ALPHA_AI_MODEL.trim(),instructions:body.instructions,input:body.input,
+      const response=await provider(env,'',{model:env.CRYPTO_ALPHA_AI_MODEL.trim(),
+        input:[{role:'developer',content:body.instructions},{role:'user',content:body.input}],
         background:true,store:true,max_output_tokens:14000,text:body.text});
       if(typeof response.id!=='string'||!/^resp_[A-Za-z0-9_-]+$/.test(response.id))throw Error('MODEL_REQUEST_UNKNOWN');
       await storage.put(key,{created:now,responseId:response.id,error:null});
       return reply(200,response);
     }catch(e){
-      const code=['MODEL_AUTH','MODEL_RATE_LIMIT'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
+      const code=['MODEL_AUTH','MODEL_RATE_LIMIT','MODEL_QUOTA','MODEL_UNAVAILABLE','MODEL_INPUT_LIMIT','MODEL_PAYLOAD_REJECTED'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
       await storage.put(key,{created:now,responseId:null,error:code});return error(503,code);
     }
   }
