@@ -14,7 +14,7 @@ export function scanMarketFrame(asset,timeframe,frame,now){
  if(!(atr>0))return blocked('ATR_UNAVAILABLE');
  const avgVolume=mean(prior.map(r=>r.volume)),volumeRatio=avgVolume>0?last.volume/avgVolume:null;
  const resistance=Math.max(...prior.map(r=>r.h)),support=Math.min(...prior.map(r=>r.l)),previous=rows.at(-2),events=[];
- const add=(kind,direction,evidence)=>events.push({id:[SCANNER_POLICY,asset,timeframe,kind,last.ts].join(':'),asset,timeframe,kind,direction,barAt:last.ts,confirmedAt:new Date(Date.parse(last.ts)+ms).toISOString(),observedAt:new Date(now).toISOString(),price:last.c,evidence,scope:'MARKET_OBSERVATION',executionPermission:false});
+ const add=(kind,direction,evidence)=>events.push({id:[SCANNER_POLICY,asset,timeframe,kind,last.ts].join(':'),asset,timeframe,kind,direction,source:last.source??frame.source??null,barAt:last.ts,confirmedAt:new Date(Date.parse(last.ts)+ms).toISOString(),observedAt:new Date(now).toISOString(),price:last.c,evidence,scope:'MARKET_OBSERVATION',executionPermission:false});
  for(const [direction,boundary,hit] of [['UP',resistance,last.c>resistance+.1*atr&&previous.c<=resistance],['DOWN',support,last.c<support-.1*atr&&previous.c>=support]])if(hit)add(volumeRatio>=2?'VOLUME_BREAKOUT':'STRUCTURE_BREAKOUT',direction,{boundary,atr,volumeRatio,lookbackBars:20});
  const range=last.h-last.l,body=Math.abs(last.c-last.o),upper=last.h-Math.max(last.o,last.c),lower=Math.min(last.o,last.c)-last.l;
  if(range>=atr&&upper>=Math.max(body*2,range*.6))add('UPPER_WICK','DOWN',{wick:upper,range,atr,volumeRatio});
@@ -31,7 +31,7 @@ export function scanMarketFrame(asset,timeframe,frame,now){
   const priceDelta=(high?rows[b].h-rows[a].h:rows[a].l-rows[b].l),rsiDelta=high?rsi[a]-rsi[b]:rsi[b]-rsi[a];
   if(priceDelta>=.1*atr&&rsiDelta>=5)add(high?'BEARISH_DIVERGENCE':'BULLISH_DIVERGENCE',high?'DOWN':'UP',{indicator:'RSI14',firstPivotAt:rows[a].ts,secondPivotAt:rows[b].ts,firstRsi:rsi[a],secondRsi:rsi[b],priceDelta,atr,confirmationBars:2});
  }
- return {asset,timeframe,reason:null,barAt:last.ts,atr,volumeRatio,events};
+ return {asset,timeframe,reason:null,source:last.source??frame.source??null,barAt:last.ts,atr,volumeRatio,events};
 }
 export function scanMarket(snapshot,now){
  const frames=[];for(const [symbol,asset] of Object.entries(snapshot.assets||{}))for(const timeframe of Object.keys(TF))frames.push(scanMarketFrame(symbol.replace(/USDT$/,''),timeframe,asset.timeframes?.[timeframe],now));
