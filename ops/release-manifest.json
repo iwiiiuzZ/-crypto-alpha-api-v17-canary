@@ -8,5 +8,5 @@
   "status": "CANDIDATE_NOT_DEPLOYED",
   "collectorRef": "main",
   "wranglerSha256": "a3af225a010f4729e3657e378a1e363612d36d0f0082f7ede2224440cf44fdae",
-  "collectorSourceCommit": "6035e6534dc92c332c865dc363a400f8f893356d"
+  "collectorSourceCommit": "e6c389b936ee5c6b177a8357a4f2f1d8834a3cf3"
 }
