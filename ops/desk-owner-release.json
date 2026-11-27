@@ -1,8 +1,8 @@
 {
   "operation": "deploy",
-  "releaseId": "owner-repair-2026-11-22",
-  "commitSubject": "Release checked plan alerts and hourly scanner repair",
-  "sourceGitBlobSha": "b258960209596f03cbd5581fc06c1b6ffe58d886",
-  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r7",
-  "priorLiveBuild": "crypto-alpha-worker-v27.6.3-desk-dual-r6"
+  "releaseId": "owner-repair-2026-11-25",
+  "commitSubject": "Repair Worker model dispatch and freeze structural tickets",
+  "sourceGitBlobSha": "047775bd99d2f7eadd589a24e90ca99177428be5",
+  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r8",
+  "priorLiveBuild": "crypto-alpha-worker-v27.6.3-desk-dual-r7"
 }

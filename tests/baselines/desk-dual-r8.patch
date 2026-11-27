@@ -1,0 +1,90 @@
+--- a/main-v188.js
++++ b/main-v188.js
+@@ -8,10 +8,12 @@
+     missing:[!env.OPENAI_API_KEY?.trim() && 'OPENAI_API_KEY',!env.CRYPTO_ALPHA_AI_MODEL?.trim() && 'CRYPTO_ALPHA_AI_MODEL'].filter(Boolean)});
+   async function provider(env, suffix, body) {
+     let r;
+-    try { r=await fetch('https://api.openai.com/v1/responses'+suffix,{method:body?'POST':'GET',redirect:'error',
++    try { r=await fetch('https://api.openai.com/v1/responses'+suffix,{method:body?'POST':'GET',redirect:'manual',
+       headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},
+       body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(body?20000:10000)}); }
+     catch {throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}
++    // workerd supports manual redirects; reject every redirect without forwarding credentials.
++    if(r.status>=300&&r.status<400)throw Error('MODEL_REDIRECT_REJECTED');
+     if(!r.ok){
+       // Preserve rejection categories only. Provider messages may echo input.
+       let code='';
+@@ -69,7 +71,7 @@
+       await storage.put(key,{created:now,responseId:response.id,error:null});
+       return reply(200,response);
+     }catch(e){
+-      const code=['MODEL_AUTH','MODEL_RATE_LIMIT','MODEL_QUOTA','MODEL_UNAVAILABLE','MODEL_INPUT_LIMIT','MODEL_PAYLOAD_REJECTED'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
++      const code=['MODEL_AUTH','MODEL_RATE_LIMIT','MODEL_QUOTA','MODEL_UNAVAILABLE','MODEL_INPUT_LIMIT','MODEL_PAYLOAD_REJECTED','MODEL_REDIRECT_REJECTED'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
+       await storage.put(key,{created:now,responseId:null,error:code});return error(503,code);
+     }
+   }
+@@ -77,7 +79,7 @@
+ }
+ 
+ const DeskAiBridge=createDeskAiBridge();
+-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r7";
++const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r8";
+ const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
+ const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
+ const API_VERSION = "7.6.0";
+@@ -8098,7 +8100,9 @@
+     const secondTicker = await quote(owner, plan.asset);
+     if (!confirmDeskArrival(plan, [firstTicker, secondTicker])) return keep("等待第二份独立盘口",true);
+     const current = await analyse(owner, true);
+-    const updated = current.assets?.[plan.asset]?.plans.find(row => row.id === plan.id);
++    const plans = current.assets?.[plan.asset]?.plans || [];
++    const structure = deskStructureKey(plan);
++    const updated = plans.find(row => row.id === plan.id) || (structure && plans.find(row => deskStructureKey(row) === structure));
+     if (!updated) return keep("当前模型或首个障碍已变化，等待复核",true);
+     if (updated.state !== "REVIEW" || !updated.monitorable || !updated.liquidity?.entryReviewPassed
+         || !deskPricingCurrent(updated.liquidity,Date.now())) return keep("到区后等待跨所流动性和当前模型复核",true);
+@@ -8439,6 +8443,10 @@
+  if(owner.ctx.storage?.put)await owner.ctx.storage.put('desk:v2:volatility',volatility);
+  return volatility;
+ }
++function deskStructureKey(plan){
++ if(!plan?.asset||!plan.model||!plan.direction||!plan.horizon||!Number.isFinite(Date.parse(plan.eventAt)))return null;
++ return [plan.asset,plan.model,plan.direction,plan.horizon,new Date(plan.eventAt).toISOString()].join(':');
++}
+ async function captureDeskPlans(owner,result,snapshot){
+  const now=Date.now(),volatility=await refreshDeskVolatility(owner);
+  result.analysisReceipt={id:crypto.randomUUID(),startedAt:owner.deskScanStartedAt||result.capturedAt,completedAt:result.capturedAt,mode:'DETERMINISTIC_RULES',customGptInvoked:false,
+@@ -8453,16 +8461,26 @@
+    if(!AlphaDeskAutonomy.observable(plan,asset,now))continue;
+    const keepWatching=await storage.transaction(async tx=>{
+     const pointer='desk:v2:pointer:'+plan.id+':'+plan.revision;
+-    const existing=await tx.get(pointer);
+-    if(existing){const saved=await tx.get(existing);return saved?.status==='WAITING'?saved.plan:null;}
++    const structure=deskStructureKey(plan);
++    const setupPointer=structure?'desk:v3:structure:'+structure:null;
+     const eventPointer='desk:v2:event:'+plan.id;
+-    const priorKey=await tx.get(eventPointer),prior=priorKey?await tx.get(priorKey):null;
+-    if(prior)return prior.status==='WAITING'?prior.plan:null;
+-    let active=await tx.get(DESK_ACTIVE_KEY)||[];
+-    if(active.length>=128&&!prior)return false;
++    let priorKey=setupPointer?await tx.get(setupPointer):null;
++    if(priorKey){const prior=await tx.get(priorKey);return prior?.status==='WAITING'?prior.plan:null;}
++    priorKey=await tx.get(pointer)||await tx.get(eventPointer);
++    const active=await tx.get(DESK_ACTIVE_KEY)||[];
++    // Adopt a live ticket created before structural keys existed, preserving its prices and ID.
++    if(!priorKey&&structure)for(const key of active){
++     const record=await tx.get(key);
++     if(deskStructureKey(record?.plan)===structure){priorKey=key;break;}
++    }
++    if(priorKey){
++     if(setupPointer)await tx.put(setupPointer,priorKey);
++     const prior=await tx.get(priorKey);return prior?.status==='WAITING'?prior.plan:null;
++    }
++    if(active.length>=128)return false;
+     const key=DESK_JOURNAL_PREFIX+new Date(now).toISOString()+':'+plan.id+':'+plan.revision;
+     owner.deskLedgerGeneration=(owner.deskLedgerGeneration||0)+1;
+-    await tx.put(key,AlphaDeskAutonomy.createRecord(plan,now));await tx.put(pointer,key);await tx.put(eventPointer,key);active.push(key);await tx.put(DESK_ACTIVE_KEY,active);
++    await tx.put(key,AlphaDeskAutonomy.createRecord(plan,now));await tx.put(pointer,key);await tx.put(eventPointer,key);if(setupPointer)await tx.put(setupPointer,key);active.push(key);await tx.put(DESK_ACTIVE_KEY,active);
+     if(settings.enabled)await deskQueueAlert(tx,'PLAN:'+plan.id,'聚流｜'+plan.asset+' 正式模拟计划',
+      plan.model+' '+(plan.direction==='LONG'?'做多':'做空')+'，等待进入 '+plan.low+'–'+plan.high+'。止损 '+plan.stop+'，第一目标 '+plan.target+'。有效至 '+plan.expiresAt+'。');
+     return plan;

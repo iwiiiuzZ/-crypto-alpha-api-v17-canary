@@ -8,10 +8,12 @@ export function createDeskAiBridge() {
     missing:[!env.OPENAI_API_KEY?.trim() && 'OPENAI_API_KEY',!env.CRYPTO_ALPHA_AI_MODEL?.trim() && 'CRYPTO_ALPHA_AI_MODEL'].filter(Boolean)});
   async function provider(env, suffix, body) {
     let r;
-    try { r=await fetch('https://api.openai.com/v1/responses'+suffix,{method:body?'POST':'GET',redirect:'error',
+    try { r=await fetch('https://api.openai.com/v1/responses'+suffix,{method:body?'POST':'GET',redirect:'manual',
       headers:{Authorization:'Bearer '+env.OPENAI_API_KEY,'Content-Type':'application/json'},
       body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(body?20000:10000)}); }
     catch {throw Error(body?'MODEL_REQUEST_UNKNOWN':'MODEL_POLL_FAILED');}
+    // workerd supports manual redirects; reject every redirect without forwarding credentials.
+    if(r.status>=300&&r.status<400)throw Error('MODEL_REDIRECT_REJECTED');
     if(!r.ok){
       // Preserve rejection categories only. Provider messages may echo input.
       let code='';
@@ -69,7 +71,7 @@ export function createDeskAiBridge() {
       await storage.put(key,{created:now,responseId:response.id,error:null});
       return reply(200,response);
     }catch(e){
-      const code=['MODEL_AUTH','MODEL_RATE_LIMIT','MODEL_QUOTA','MODEL_UNAVAILABLE','MODEL_INPUT_LIMIT','MODEL_PAYLOAD_REJECTED'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
+      const code=['MODEL_AUTH','MODEL_RATE_LIMIT','MODEL_QUOTA','MODEL_UNAVAILABLE','MODEL_INPUT_LIMIT','MODEL_PAYLOAD_REJECTED','MODEL_REDIRECT_REJECTED'].includes(e.message)?e.message:'MODEL_REQUEST_UNKNOWN';
       await storage.put(key,{created:now,responseId:null,error:code});return error(503,code);
     }
   }

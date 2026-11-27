@@ -11,7 +11,7 @@ let price=100,pushes=0,fail=true;
 f.c.runtimeQuote=async()=>quote(price);
 f.c.runtimePush=async()=>{pushes++;return {sent:!fail,providerAcceptedAt:!fail?at(f.now()):null};};
 const api=runInContext(`deskDirectQuote=runtimeQuote;sendBark=runtimePush;fastMonitorConfigured=()=>true;ensureFastMonitor=async()=>({scheduled:true});({capture:captureDeskPlans,tick:deskPaperTick,read:deskOperations,control:deskControl,flush:deskFlushAlerts,alert:deskAlert,market:recordDeskMarketScan})`,f.c);
-const plan={id:'ETH-B1-LONG-INTRADAY-a',revision:'v1',asset:'ETH',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:at(now),expiresAt:at(now+900000)};
+const plan={id:'ETH-B1-LONG-INTRADAY-a',revision:'v1',eventAt:at(now-900000),asset:'ETH',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:at(now),expiresAt:at(now+900000)};
 const asset={ready:true,quote:{ready:true,independent:true},plans:[plan]};
 const scan={capturedAt:at(now),assets:{ETH:asset,BTC:{...asset,plans:[]}}};
 const snapshot={assets:{ETHUSDT:{timeframes:{}},BTCUSDT:{timeframes:{}}}};
@@ -24,6 +24,11 @@ await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[{..
 assert.equal((await api.read(owner)).journal.records.length,1,'same event does not create a stream of drafts');
 assert.equal((await api.read(owner)).journal.records[0].plan.revision,'v1','published prices remain frozen');
 assert.equal(state.get('desk:v1:watches')[0].plan.revision,'v1','watch and ledger use the same frozen ticket');
+// Older plans used the recalculated boundary in their ID: simulate a restart across the upgrade.
+for(const key of state.keys())if(key.startsWith('desk:v3:structure:'))state.delete(key);
+await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[{...plan,id:plan.id+'-moved',revision:'changed',low:99.03}]}}},snapshot);
+assert.equal((await api.read(owner)).journal.records.length,1,'a moving boundary on the same candle retains the legacy ticket');
+assert.equal(state.get('desk:v1:watches').length,1);
 const restarted={ctx:{storage},env:{}};
 assert.equal((await api.read(restarted)).journal.records.length,1,'journal survives isolate restart');
 await api.tick(owner);assert.equal((await api.read(owner)).journal.records[0].status,'WAITING');
