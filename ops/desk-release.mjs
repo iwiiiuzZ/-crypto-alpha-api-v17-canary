@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { cloudflareSnapshot, requestJson } from "./diagnostics.mjs";
 import { assessCurrentRelease } from "./current-release.mjs";
 
-export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r7";
+export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r8";
 
 export function isAuthorizedDeskDispatch(env = process.env) {
   if(isAuthorizedOwnerRelease(env))return true;
@@ -37,8 +37,8 @@ export async function deskPreflight(config, baseline, env = process.env) {
   // production window. For this repair require its exact previously observed
   // physical version, every identity gate, and a currently healthy authenticated owner.
   const pinnedRepair=baseline.status==='VERIFIED_PHYSICAL_DEPLOYMENT' && isAuthorizedDeskDispatch(env)
-    && baseline.versionId==='b503d09e-e2fe-478e-bb86-1bf0b2308dad' && baseline.deploymentId==='297b6c7f-7e58-4c8f-8489-32ca1b9271e5'
-    && baseline.sourceGitBlobSha==='ef2f98bc803519d7e7129ae0e5d2399c3631cac4'
+    && baseline.versionId==='6b924f35-60bc-4531-91f1-7ca6ed66ef75' && baseline.deploymentId==='10b580c6-749d-446e-872e-63aa8c72f191'
+    && baseline.sourceGitBlobSha==='b258960209596f03cbd5581fc06c1b6ffe58d886'
     && reviewed.failedGates.length===1 && reviewed.failedGates[0]==='verifiedWindow';
   if ((!reviewed.alreadyDeployed && !pinnedRepair) || scanner.status !== "ok" || scanner.build !== baseline.build
       || scanner.backendIdentity?.matched !== true || scanner.diagnostics?.stateReadSucceeded !== true) {

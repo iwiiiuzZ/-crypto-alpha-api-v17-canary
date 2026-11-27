@@ -23,7 +23,7 @@ jobs:
       - name: Checkout pinned official source relay only
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: e6c389b936ee5c6b177a8357a4f2f1d8834a3cf3
+          ref: 8a78aa3531f5c3212562c315ae3c25da4d936245
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
