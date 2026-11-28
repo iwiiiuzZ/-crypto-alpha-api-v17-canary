@@ -41,12 +41,12 @@ function market(now) {
     trend:'UP',structure:'HH_HL',indicators:{atr14:10},levels:{resistance20:140,resistance50:160,support20:60,support50:50}};
   const asset={ticker:{status:'ok',last:100.5,bid:100.49,ask:100.51,source:'OKX_USDT_PERPETUAL',exchangeTimestamp:new Date(now).toISOString()},timeframes:{'15m':structuredClone(tf),'1h':structuredClone(tf),'4h':structuredClone(tf)},
     marketRegimeRouter:{regime:'TREND'},executionLiquidity:{status:'ok'},derivatives:{openInterest:{status:'ok'},funding:{status:'ok'}},capitalFlow:{status:'unavailable'}};
-  return {decisionState:'DATA_READY',coverage:{openNowDataReady:true},assets:{ETHUSDT:asset,BTCUSDT:structuredClone(asset)}};
+  return {decisionState:'DATA_READY',coverage:{openNowDataReady:true},assets:{ZECUSDT:asset,BTCUSDT:structuredClone(asset)}};
 }
-function observation(f,extra={}){return {recordType:'OBSERVATION',notificationMode:'ALL_STAGES',symbol:'ETHUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',
+function observation(f,extra={}){return {recordType:'OBSERVATION',notificationMode:'ALL_STAGES',symbol:'ZECUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',
   observationZone:{min:100,max:101},observationInvalidation:{level:95,mode:'PRICE'},strategySummary:'Synthetic breakout retest',pendingCondition:'15m key close over 102 with protected low; review model afterwards',
   sourceAnalysisAt:new Date(f.now()).toISOString(),expiresAt:new Date(f.now()+3600000).toISOString(),...extra};}
-function plan(f){return f.t.normalizeTradingPlan({planId:'old-plan',symbol:'ETHUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',opportunityGrade:'A',timeframe:'SHORT',
+function plan(f){return f.t.normalizeTradingPlan({planId:'old-plan',symbol:'ZECUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',opportunityGrade:'A',timeframe:'SHORT',
   modelInvalidation:'Loss of protected low',location:{quality:'GOOD',type:'RETEST',rangePosition:'EDGE',rationale:'Breakout retest'},
   trigger:{type:'BOS',meaningful:true,level:100,acceptanceLevel:99,protectiveStructure:{type:'HL',price:96}},
   entryZone:{min:100,max:101},invalidationPrice:95,stopLoss:95,takeProfits:[{price:120,allocationPct:100}],firstRealisticTarget:{price:120,basis:'First structural resistance'},

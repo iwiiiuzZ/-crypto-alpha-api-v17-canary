@@ -18,25 +18,25 @@ function fx(){
  let tail=Promise.resolve();const storage={get:async k=>structuredClone(db.get(k)),put:async(k,v)=>db.set(k,structuredClone(v)),delete:async k=>db.delete(k),transaction(fn){const t=tail.then(()=>fn(storage));tail=t.catch(()=>{});return t;}};
  const owner=new c.t.ScannerState({storage});
  const env={SCANNER_TOKEN:'synthetic-token',SCANNER_STATE:{getByName(){return{fetch:(url,init)=>owner.fetch(new Request(url,init))};}}};
- const ticker=(id='ETH-USDT-SWAP')=>({instId:id,last:'100',bidPx:'99.99',askPx:'100.01',ts:String(now)});
- const mark=()=>[{instId:'ETH-USDT-SWAP',markPx:'100',ts:String(now)}];
+ const ticker=(id='ZEC-USDT-SWAP')=>({instId:id,last:'100',bidPx:'99.99',askPx:'100.01',ts:String(now)});
+ const mark=()=>[{instId:'ZEC-USDT-SWAP',markPx:'100',ts:String(now)}];
  return {c,t:c.t,env,owner,db,calls,storage,ticker,mark,now:()=>now,advance:n=>now+=n,setHandler:h=>handler=h,put:(k,v)=>db.set(k,{value:v,expiresAt:now+86400000})};
 }
 const ok=data=>Response.json({code:'0',data});
 const rate=()=>new Response('limited',{status:429,headers:{'retry-after':'60'}});
 await test('mark-only never becomes executable last price',()=>{
- const f=fx(),q=f.t.parseOkxExecutionPrice(f.mark(),[],'ETH-USDT-SWAP');
+ const f=fx(),q=f.t.parseOkxExecutionPrice(f.mark(),[],'ZEC-USDT-SWAP');
  assert.equal(q.status,'partial');assert.equal(q.last,null);assert.equal(q.markPrice,100);assert.equal(f.t.genuineExecutionQuote(q),false);
 });
 await test('reject zero, crossed, future and stale quote rows',()=>{
  for(const change of [{bidPx:'0'},{bidPx:'101',askPx:'100'},{ts:String(Date.parse('2026-10-14T02:41:00Z'))},{ts:String(Date.parse('2026-10-14T02:39:00Z'))}]){
-  const f=fx(),q=f.t.parseOkxExecutionPrice(f.mark(),[{...f.ticker(),...change}],'ETH-USDT-SWAP');assert.equal(q.last,null);
+  const f=fx(),q=f.t.parseOkxExecutionPrice(f.mark(),[{...f.ticker(),...change}],'ZEC-USDT-SWAP');assert.equal(q.last,null);
  }
 });
-await test('fresh real quote does not require mark endpoint',()=>{const f=fx(),q=f.t.parseOkxExecutionPrice([], [f.ticker()], 'ETH-USDT-SWAP');assert.equal(f.t.genuineExecutionQuote(q),true);assert.equal(q.markPrice,null);});
-function readyAssets(f){const a=market(f.now()).assets;for(const v of Object.values(a)){v.ticker=f.t.parseOkxExecutionPrice([], [f.ticker()], 'ETH-USDT-SWAP');v.derivatives={openInterest:{status:'ok'},funding:{status:'ok'}};}return a;}
-await test('execution blocked but observation preserved on quote failure',()=>{const f=fx(),a=readyAssets(f);a.ETHUSDT.ticker=f.t.parseOkxExecutionPrice(f.mark(),[],'ETH-USDT-SWAP');const r=f.t.snapshotReadiness(a);assert.equal(r.observationDataReady,true);assert.equal(r.criticalReady,false);});
-await test('BTC missing execution quote alone does not veto ETH',()=>{const f=fx(),a=readyAssets(f);a.BTCUSDT.ticker={status:'unavailable'};assert.equal(f.t.snapshotReadiness(a).criticalReady,true);a.BTCUSDT.timeframes['4h'].quality.passed=false;assert.equal(f.t.snapshotReadiness(a).criticalReady,false);});
+await test('fresh real quote does not require mark endpoint',()=>{const f=fx(),q=f.t.parseOkxExecutionPrice([], [f.ticker()], 'ZEC-USDT-SWAP');assert.equal(f.t.genuineExecutionQuote(q),true);assert.equal(q.markPrice,null);});
+function readyAssets(f){const a=market(f.now()).assets;for(const v of Object.values(a)){v.ticker=f.t.parseOkxExecutionPrice([], [f.ticker()], 'ZEC-USDT-SWAP');v.derivatives={openInterest:{status:'ok'},funding:{status:'ok'}};}return a;}
+await test('execution blocked but observation preserved on quote failure',()=>{const f=fx(),a=readyAssets(f);a.ZECUSDT.ticker=f.t.parseOkxExecutionPrice(f.mark(),[],'ZEC-USDT-SWAP');const r=f.t.snapshotReadiness(a);assert.equal(r.observationDataReady,true);assert.equal(r.criticalReady,false);});
+await test('BTC missing execution quote alone does not veto ZEC',()=>{const f=fx(),a=readyAssets(f);a.BTCUSDT.ticker={status:'unavailable'};assert.equal(f.t.snapshotReadiness(a).criticalReady,true);a.BTCUSDT.timeframes['4h'].quality.passed=false;assert.equal(f.t.snapshotReadiness(a).criticalReady,false);});
 await test('cached response recomputes execution quote age',()=>{const f=fx(),s={assets:readyAssets(f),coverage:{},decisionState:'DATA_READY'};f.advance(36000);assert.equal(f.t.refreshServedSnapshot(s).decisionState,'DATA_BLOCKED');});
 await test('ten concurrent consumers share sixteen shared public requests with multi-venue recheck kept separate',async()=>{
  const f=fx();f.setHandler(u=>u.pathname==='/api/v5/market/tickers'&&u.searchParams.get('instType')==='SWAP'?ok([f.ticker('BTC-USDT-SWAP'),f.ticker()]):u.pathname==='/api/v5/market/books'?ok([{ts:String(f.now()),bids:[['99.99','100','0','1']],asks:[['100.01','100','0','1']]}]):ok([]));
@@ -54,20 +54,20 @@ function quoteFallback(f,{fullOnly=false,failAll=false}={}){
   if(u.pathname.endsWith('/ticker'))return rate();
   if(u.pathname.endsWith('/mark-price'))return ok([]);
   if(failAll)return rate();
-  if(u.pathname.endsWith('/trades'))return ok([{instId:'ETH-USDT-SWAP',px:'100',ts:String(f.now())}]);
+  if(u.pathname.endsWith('/trades'))return ok([{instId:'ZEC-USDT-SWAP',px:'100',ts:String(f.now())}]);
   if(u.pathname.endsWith('/books')&&fullOnly)return rate();
   if(/\/books(?:-full)?$/.test(u.pathname))return ok([{bids:[['99.99','10']],asks:[['100.01','10']],ts:String(f.now())}]);
   return ok([]);
  });
 }
-await test('single ticker outage uses actual trade plus perpetual book',async()=>{const f=fx();quoteFallback(f);const q=await f.t.verifyOkxScannerPrice('ETHUSDT',f.env);assert.equal(q.last,100);assert.equal(q.primaryEndpoint,'OKX_SWAP_TRADES_PLUS_BOOK');assert.equal(q.verification.passed,true);assert.ok(q.bookTimestamp&&q.lastTradeTimestamp);});
-await test('books outage uses books-full without disguising other exchange',async()=>{const f=fx();quoteFallback(f,{fullOnly:true});const q=await f.t.verifyOkxScannerPrice('ETHUSDT',f.env);assert.equal(q.source,'OKX_USDT_PERPETUAL_DIRECT_VERIFIED');assert.ok(f.calls.some(u=>u.includes('/books-full?')));});
+await test('single ticker outage uses actual trade plus perpetual book',async()=>{const f=fx();quoteFallback(f);const q=await f.t.verifyOkxScannerPrice('ZECUSDT',f.env);assert.equal(q.last,100);assert.equal(q.primaryEndpoint,'OKX_SWAP_TRADES_PLUS_BOOK');assert.equal(q.verification.passed,true);assert.ok(q.bookTimestamp&&q.lastTradeTimestamp);});
+await test('books outage uses books-full without disguising other exchange',async()=>{const f=fx();quoteFallback(f,{fullOnly:true});const q=await f.t.verifyOkxScannerPrice('ZECUSDT',f.env);assert.equal(q.source,'OKX_USDT_PERPETUAL_DIRECT_VERIFIED');assert.ok(f.calls.some(u=>u.includes('/books-full?')));});
 await test('all quote paths rate limited: no fabricated price, cooldown persists',async()=>{
- const f=fx();quoteFallback(f,{failAll:true});await assert.rejects(()=>f.t.coordinatedDirectQuote(f.owner,'ETHUSDT'));
- const n=f.calls.length;const owner=new f.t.ScannerState({storage:f.storage});await assert.rejects(()=>f.t.coordinatedDirectQuote(owner,'ETHUSDT'));assert.equal(f.calls.length,n);
+ const f=fx();quoteFallback(f,{failAll:true});await assert.rejects(()=>f.t.coordinatedDirectQuote(f.owner,'ZECUSDT'));
+ const n=f.calls.length;const owner=new f.t.ScannerState({storage:f.storage});await assert.rejects(()=>f.t.coordinatedDirectQuote(owner,'ZECUSDT'));assert.equal(f.calls.length,n);
 });
-await test('direct reminder double sample really fetches twice',async()=>{const f=fx();f.setHandler(u=>u.pathname.endsWith('/ticker')?ok([f.ticker()]):ok([]));const q=await f.t.verifyOkxScannerZone('ETHUSDT',{min:99,max:101},f.env);assert.equal(q.confirmed,true);assert.equal(f.calls.filter(u=>u.includes('/ticker?')).length,2);});
-await test('stale recent trade cannot be combined with a fresh book',async()=>{const f=fx();quoteFallback(f);const base=f.c.fetch;f.c.fetch=async(u,o)=>String(u).includes('/trades?')?ok([{instId:'ETH-USDT-SWAP',px:'100',ts:String(f.now()-60000)}]):base(u,o);await assert.rejects(()=>f.t.verifyOkxScannerPrice('ETHUSDT',f.env));});
+await test('direct reminder double sample really fetches twice',async()=>{const f=fx();f.setHandler(u=>u.pathname.endsWith('/ticker')?ok([f.ticker()]):ok([]));const q=await f.t.verifyOkxScannerZone('ZECUSDT',{min:99,max:101},f.env);assert.equal(q.confirmed,true);assert.equal(f.calls.filter(u=>u.includes('/ticker?')).length,2);});
+await test('stale recent trade cannot be combined with a fresh book',async()=>{const f=fx();quoteFallback(f);const base=f.c.fetch;f.c.fetch=async(u,o)=>String(u).includes('/trades?')?ok([{instId:'ZEC-USDT-SWAP',px:'100',ts:String(f.now()-60000)}]):base(u,o);await assert.rejects(()=>f.t.verifyOkxScannerPrice('ZECUSDT',f.env));});
 await test('state endpoint read retries a transient failure then recovers',async()=>{const f=fx();let n=0;const original=f.storage.get;f.storage.get=async k=>{if(n++===0)throw new Error('transient database');return original(k);};const r=await f.t.scannerStatus(f.env);assert.equal(r.status,'ok');assert.equal(r.diagnostics.stateReadSucceeded,true);});
 await test('persistent state error is readable degraded JSON and does not erase state',async()=>{const f=fx();f.put('scanner:observations:v23',{records:[{observationId:'keep',state:'OBSERVING'}]});f.storage.get=async()=>{throw new Error('database unavailable');};const r=await(await f.c.worker.fetch(authRequest('/scanner/status'),f.env,{})).json();assert.equal(r.status,'degraded');assert.equal(r.diagnostics.heartbeatHealthy,false);assert.equal(r.observations,null);assert.equal(f.db.get('scanner:observations:v23').value.records[0].observationId,'keep');});
 await test('malformed legacy records are reported not iterated or deleted',async()=>{const f=fx();f.put('scanner:observations:v23',{records:{bad:true}});const r=await f.t.scannerStatus(f.env);assert.equal(r.status,'degraded');assert.equal(r.diagnostics.stateFormatIssue,'OBSERVATION_RECORDS_NOT_ARRAY');assert.deepEqual(f.db.get('scanner:observations:v23').value.records,{bad:true});});
@@ -84,7 +84,7 @@ await test('close-based invalidation still works during quote outage',()=>{const
 await test('price-based observation is retained when quote is unavailable',()=>{const f=fixture(),o=observation(f);const r=f.t.evaluateObservation(o,f.market(),null);assert.equal(r.state,'DATA_BLOCKED');assert.equal(r.observationRetained,true);});
 await test('manual priority no longer starves discovery and scanner heartbeat',async()=>{const f=fixture();f.put('scanner:manual-priority',{until:f.now()+60000});await f.t.runScanner(f.env);assert.ok(f.reads.snapshots>0);assert.equal(f.get('scanner:heartbeat:v23').status,'completed');});
 await test('scheduled entry point runs despite active manual priority',async()=>{const f=fx();let scans=0;f.put('scanner:manual-priority',{until:f.now()+60000});f.c.scanFake=async()=>{scans++;};vm.runInContext('loadDurableStructureRecords=async()=>({});runScanner=scanFake;',f.c);await f.c.worker.scheduled({},f.env,{});assert.equal(scans,1);});
-await test('MARK_PRICE_ONLY cannot invalidate a formal plan or confirm entry',()=>{const f=fixture(),p=plan(f),s=f.market();s.assets.ETHUSDT.ticker={status:'ok',source:'OKX_USDT_PERPETUAL',priceType:'MARK_PRICE_ONLY',last:94,markPrice:94};assert.equal(f.t.evaluateTradingPlan(p,s,{},null).state,'DATA_BLOCKED');});
+await test('MARK_PRICE_ONLY cannot invalidate a formal plan or confirm entry',()=>{const f=fixture(),p=plan(f),s=f.market();s.assets.ZECUSDT.ticker={status:'ok',source:'OKX_USDT_PERPETUAL',priceType:'MARK_PRICE_ONLY',last:94,markPrice:94};assert.equal(f.t.evaluateTradingPlan(p,s,{},null).state,'DATA_BLOCKED');});
 await test('missing asset set cannot claim observation readiness',()=>{assert.equal(fx().t.snapshotReadiness({}).observationDataReady,false);});
 await test('malformed book write is refused and original content preserved',async()=>{const f=fixture();f.put('scanner:observations:v23',{records:{unknown:'preserve'}});await assert.rejects(()=>f.t.saveObservation(f.env,observation(f)),/FORMAT_INVALID/);assert.equal(f.get('scanner:observations:v23').records.unknown,'preserve');});
 console.log(JSON.stringify({passed,failed,total:passed+failed,results},null,2));process.exitCode=failed?1:0;

@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 const rows=[];
 for(const endpoint of ['books','books-full']){
- const url='https://www.okx.com/api/v5/market/'+endpoint+'?instId=ETH-USDT-SWAP&sz=400';
+ const url='https://www.okx.com/api/v5/market/'+endpoint+'?instId=ZEC-USDT-SWAP&sz=400';
  try{
   const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(10000)});
   const body=await response.json(),book=body?.data?.[0];

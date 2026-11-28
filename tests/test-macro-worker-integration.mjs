@@ -14,6 +14,7 @@ const scratch=fs.mkdtempSync(join(tmpdir(),'alpha-desk-macro-'));
 let r5i;
 try {
  fs.writeFileSync(join(scratch,'main-v188.js'),raw);
+ execFileSync('git',['apply','--reverse',fileURLToPath(new URL('./baselines/desk-dual-r9.patch',import.meta.url))],{cwd:scratch});
  execFileSync('git',['apply','--reverse',fileURLToPath(new URL('./baselines/desk-dual-r8.patch',import.meta.url))],{cwd:scratch});
  execFileSync('git',['apply','--reverse',fileURLToPath(new URL('./baselines/desk-dual-r7.patch',import.meta.url))],{cwd:scratch});
  execFileSync('git',['apply','--reverse',fileURLToPath(new URL('./baselines/desk-dual-r6.patch',import.meta.url))],{cwd:scratch});

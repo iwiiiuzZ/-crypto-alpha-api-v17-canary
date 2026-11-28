@@ -8,8 +8,8 @@ const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 let now=Date.parse('2026-10-31T03:07:17.060Z');
 class Clock extends Date {constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
 const calls=[],state=new Map();let mode='ok';
-const primary='/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400';
-const fallback='/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400';
+const primary='/api/v5/market/books?instId=ZEC-USDT-SWAP&sz=400';
+const fallback='/api/v5/market/books-full?instId=ZEC-USDT-SWAP&sz=400';
 const book=()=>({ts:String(now),bids:[['2399.99','100','3']],asks:[['2400.01','100','4']]});
 const c={Date:Clock,URL,Response,Request,Headers,AbortController,structuredClone,console,setTimeout,clearTimeout,
  fetch:async url=>{
@@ -20,8 +20,8 @@ const c={Date:Clock,URL,Response,Request,Headers,AbortController,structuredClone
    const b=book();if(mode==='stale')b.ts=String(now-10001);if(mode==='crossed')b.bids[0][0]='2401';
    return Response.json({code:'0',data:[b]});
   }
-  if(p.includes('/instruments?'))return Response.json({code:'0',data:[{instId:'ETH-USDT-SWAP',ctType:'linear',ctValCcy:'ETH',settleCcy:'USDT',ctVal:'0.1',ctMult:'1'}]});
-  if(p.includes('/trades?'))return Response.json({code:'0',data:[{instId:'ETH-USDT-SWAP',tradeId:String(now),ts:String(now),px:'2400',sz:'100',side:'buy'}]});
+  if(p.includes('/instruments?'))return Response.json({code:'0',data:[{instId:'ZEC-USDT-SWAP',ctType:'linear',ctValCcy:'ZEC',settleCcy:'USDT',ctVal:'0.1',ctMult:'1'}]});
+  if(p.includes('/trades?'))return Response.json({code:'0',data:[{instId:'ZEC-USDT-SWAP',tradeId:String(now),ts:String(now),px:'2400',sz:'100',side:'buy'}]});
   return new Response('',{status:503});
  }};
 vm.createContext(c);vm.runInContext(source.replaceAll('export class ','class ').replaceAll('export function ','function ').replace('export default {','globalThis.worker={'),c);

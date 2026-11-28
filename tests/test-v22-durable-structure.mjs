@@ -58,7 +58,7 @@ const context = {
       const contract = url.searchParams.get("contract");
       const timeframe = url.searchParams.get("interval");
       const count = Number(url.searchParams.get("limit"));
-      const rows = candles(contract.startsWith("BTC") ? "BTC" : "ETH", timeframe, count).map((row) => ({
+      const rows = candles(contract.startsWith("BTC") ? "BTC" : "ZEC", timeframe, count).map((row) => ({
         t: String(row.timestamp / 1000), o: String(row.open), h: String(row.high), l: String(row.low), c: String(row.close), v: String(row.volume), sum: String(row.volume * row.close),
       }));
       return Response.json(rows);
@@ -70,7 +70,7 @@ const context = {
       const bar = url.searchParams.get("bar");
       const timeframe = bar.toLowerCase();
       const count = Number(url.searchParams.get("limit"));
-      const rows = candles(instrument.startsWith("BTC") ? "BTC" : "ETH", timeframe, count).map((row, index, all) => [
+      const rows = candles(instrument.startsWith("BTC") ? "BTC" : "ZEC", timeframe, count).map((row, index, all) => [
         String(row.timestamp), String(row.open), String(row.high), String(row.low), String(row.close), String(row.volume), String(row.volume), String(row.volume * row.close), index === all.length - 1 ? "0" : "1",
       ]).reverse();
       return Response.json({ code: "0", data: rows });

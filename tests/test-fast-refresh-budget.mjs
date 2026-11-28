@@ -5,7 +5,7 @@ const source=fs.readFileSync(new URL('../main-v188.js',import.meta.url),'utf8');
 let now=Date.parse('2026-10-31T04:40:47.514Z');
 class Clock extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
 let calls=0;const c={Date:Clock,Response,Request,Headers,URL,AbortController,structuredClone,console,setTimeout,clearTimeout,
- fetch:async()=>{calls++;return Response.json({code:'0',data:[{ts:String(now),instId:'ETH-USDT-SWAP',tradeId:'current',px:'2400',sz:'1',side:'buy'}]});}};
+ fetch:async()=>{calls++;return Response.json({code:'0',data:[{ts:String(now),instId:'ZEC-USDT-SWAP',tradeId:'current',px:'2400',sz:'1',side:'buy'}]});}};
 vm.createContext(c);vm.runInContext(source.replaceAll('export class ','class ').replaceAll('export function ','function ').replace('export default {','globalThis.worker={'),c);
 const x=vm.runInContext('({nextFastAlarmAt,compactFastMonitor,coordinatedPublicEndpoint,persistPublicMarketIfChanged,runFastMonitorAlarm,FAST_MONITOR_KEY,PUBLIC_MARKET_STATE_KEY})',c);
 const state={status:'ok',lastTickAt:Date.parse('2026-10-31T04:40:47.231Z'),lastSuccessAt:new Date(now).toISOString(),
@@ -18,7 +18,7 @@ const healthyAt=at=>{const saved=now;now=at;const healthy=x.compactFastMonitor(s
 assert.equal(healthyAt(next+observedLateMs+boundedObservedNetworkMs),true,'original quote remains inside 10s at repaired handoff');
 assert.equal(healthyAt(oldDue+observedLateMs+boundedObservedNetworkMs),false,'same old quote still expires at the original hard threshold');
 
-const path='/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500',db=new Map();let writes=0,fail=false;
+const path='/api/v5/market/trades?instId=ZEC-USDT-SWAP&limit=500',db=new Map();let writes=0,fail=false;
 const owner={ctx:{storage:{async get(k){return db.get(k);},async put(k,v){writes++;if(fail){fail=false;throw Error('ISOLATED_STORAGE_FAILURE');}db.set(k,structuredClone(v));}}}};
 db.set(x.PUBLIC_MARKET_STATE_KEY,{entries:{[path]:{rows:[{ts:String(now-5000)}],storedAt:now-1000,state:'live'}},cooldowns:{}});
 const current=await x.coordinatedPublicEndpoint(owner,path,{freshSeconds:4,staleSeconds:0});
@@ -38,7 +38,7 @@ owner.publicRecords.cooldowns.book+=1000;fail=true;
 await assert.rejects(()=>x.persistPublicMarketIfChanged(owner),/ISOLATED_STORAGE_FAILURE/);
 await x.persistPublicMarketIfChanged(owner);
 assert.equal(db.get(x.PUBLIC_MARKET_STATE_KEY).cooldowns.book,owner.publicRecords.cooldowns.book,'failed durable write cannot suppress recovery');
-const ordinary='/api/v5/market/ticker?instId=ETH-USDT-SWAP';
+const ordinary='/api/v5/market/ticker?instId=ZEC-USDT-SWAP';
 const beforeChurn=writes;
 for(let i=0;i<60;i++){
  now+=1000;
@@ -56,8 +56,8 @@ owner.ctx.storage.setAlarm=async()=>{alarmWrites++;};
 const put=owner.ctx.storage.put;
 owner.ctx.storage.put=async(k,v)=>{if(k===x.FAST_MONITOR_KEY)fastWrites++;return put(k,v);};
 c.fakeFlow=async(_o,path)=>({state:'live',storedAt:now,rows:path.includes('instruments')?
- [{instId:'ETH-USDT-SWAP',ctType:'linear',ctVal:'0.1',ctValCcy:'ETH',settleCcy:'USDT'}]:path.includes('trades')?
- [{instId:'ETH-USDT-SWAP',tradeId:String(now),ts:String(now),px:'2400',sz:'1',side:'buy'}]:
+ [{instId:'ZEC-USDT-SWAP',ctType:'linear',ctVal:'0.1',ctValCcy:'ZEC',settleCcy:'USDT'}]:path.includes('trades')?
+ [{instId:'ZEC-USDT-SWAP',tradeId:String(now),ts:String(now),px:'2400',sz:'1',side:'buy'}]:
  [{ts:String(now),bids:[['2399.99','100','0','1']],asks:[['2400.01','100','0','1']]}]});
 vm.runInContext('coordinatedPublicEndpoint=fakeFlow;maintainFastModelReview=async()=>{};',c);
 for(let i=0;i<24;i++){now+=2500;const tick=await x.runFastMonitorAlarm(owner);assert.equal(tick.quoteHealthy,true);}

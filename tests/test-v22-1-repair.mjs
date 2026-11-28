@@ -10,7 +10,7 @@ const {normalizeTradingPlan, evaluateCourseDecision, evaluateTradingPlan, planNe
 let passed = 0, failed = 0;
 function test(name, fn) { try { fn(); passed++; } catch (error) { failed++; console.error(name, error.message); } }
 function input() {return {
-  symbol:'ETHUSDT', direction:'LONG', model:'B', submodel:'B1', marketRegime:'TREND', opportunityGrade:'A', timeframe:'SHORT',
+  symbol:'ZECUSDT', direction:'LONG', model:'B', submodel:'B1', marketRegime:'TREND', opportunityGrade:'A', timeframe:'SHORT',
   modelInvalidation:'Loss of protected low', location:{quality:'GOOD',type:'RETEST',rangePosition:'EDGE',rationale:'Breakout retest'},
   trigger:{type:'BOS',meaningful:true,level:100,acceptanceLevel:99,protectiveStructure:{type:'HL',price:96}},
   entryZone:{min:100,max:101},stopLoss:95,invalidationPrice:95,takeProfits:[{price:120,allocationPct:100}],firstRealisticTarget:{price:120,basis:'First overhead resistance'},
@@ -42,17 +42,17 @@ test('raw RR is not rounded up across threshold',()=>{const p={direction:'LONG',
 function snapshot(regime='TREND', rangeZone='LOWER_EDGE') {
  const tf=()=>({status:'ok',source:'GATE_USDT_PERPETUAL',quality:{passed:true},dataFreshness:{state:'fresh'},trend:'UP',structure:'HH_HL',indicators:{atr14:1},levels:{},recentCandles:[{ts:new Date(Math.floor(Date.now()/900000)*900000-900000).toISOString(),o:100,h:102,l:99,c:101,confirmed:true}]});
  const asset={ticker:{status:'ok',last:100.5,source:'OKX_USDT_PERPETUAL',bid:100.49,ask:100.51,exchangeTimestamp:new Date().toISOString()},timeframes:{'15m':tf(),'1h':tf(),'4h':tf()},marketRegimeRouter:{regime},rangeContext:{confirmed:true,locationZone:rangeZone},capitalFlow:{status:'unavailable'},liquidityRisk:{visibleLiquidityPools:{equalLowClusters:[],equalHighClusters:[]},recentSweep:{bullishSweepReclaim:true}}};
- return {decisionState:'DATA_READY',assets:{ETHUSDT:asset,BTCUSDT:structuredClone(asset)}};
+ return {decisionState:'DATA_READY',assets:{ZECUSDT:asset,BTCUSDT:structuredClone(asset)}};
 }
 const verification={confirmed:true,rule:'TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE'};
 function evaluate(p,s) {return evaluateTradingPlan(p,s,{zoneAlertSentAt:new Date().toISOString()},verification);}
 test('breakout watch-to-trend promotion no deadlock',()=>{const x=input();x.marketRegime='COMPRESSION';const p=normalizeTradingPlan(x);p.confirmation.requireFlowSupport=false;const r=evaluate(p,snapshot());assert.equal(r.state,'MARKET_CONFIRMED',JSON.stringify(r.failedChecks));});
 test('unexpected regime change still blocked',()=>{const p=normalizeTradingPlan(input());p.confirmation.requireFlowSupport=false;assert.notEqual(evaluate(p,snapshot('RANGE')).state,'MARKET_CONFIRMED');});
-test('range reversal not vetoed by 1h range leg',()=>{const x=input();x.model='C';x.submodel='C1';x.marketRegime='RANGE';x.trigger.reclaimLevel=99;x.location.rangePosition='LOWER_EDGE';const p=normalizeTradingPlan(x);p.confirmation.requireFlowSupport=false;const s=snapshot('RANGE');s.assets.ETHUSDT.timeframes['1h'].trend='DOWN';s.assets.ETHUSDT.timeframes['1h'].structure='LH_LL';assert.equal(evaluate(p,s).state,'MARKET_CONFIRMED');});
+test('range reversal not vetoed by 1h range leg',()=>{const x=input();x.model='C';x.submodel='C1';x.marketRegime='RANGE';x.trigger.reclaimLevel=99;x.location.rangePosition='LOWER_EDGE';const p=normalizeTradingPlan(x);p.confirmation.requireFlowSupport=false;const s=snapshot('RANGE');s.assets.ZECUSDT.timeframes['1h'].trend='DOWN';s.assets.ZECUSDT.timeframes['1h'].structure='LH_LL';assert.equal(evaluate(p,s).state,'MARKET_CONFIRMED');});
 test('saved edge cannot authorize current range middle',()=>{const x=input();x.model='C';x.submodel='C1';x.marketRegime='RANGE';x.trigger.reclaimLevel=99;x.location.rangePosition='LOWER_EDGE';const p=normalizeTradingPlan(x);p.confirmation.requireFlowSupport=false;assert.notEqual(evaluate(p,snapshot('RANGE','MIDDLE')).state,'MARKET_CONFIRMED');});
 test('scanner never grants execution',()=>{const p=normalizeTradingPlan(input());p.confirmation.requireFlowSupport=false;assert.equal(evaluate(p,snapshot()).openNowAllowed,false);});
 test('expired plan cannot confirm',()=>{const p=normalizeTradingPlan(input());p.expiresAt=new Date(Date.now()-1).toISOString();assert.equal(evaluate(p,snapshot()).state,'EXPIRED');});
-test('model invalidation still cancels',()=>{const p=normalizeTradingPlan(input());const s=snapshot();s.assets.ETHUSDT.ticker.last=94;assert.equal(evaluate(p,s).state,'INVALIDATED');});
+test('model invalidation still cancels',()=>{const p=normalizeTradingPlan(input());const s=snapshot();s.assets.ZECUSDT.ticker.last=94;assert.equal(evaluate(p,s).state,'INVALIDATED');});
 test('registered trigger level is actually checked',()=>{const x=input();x.trigger.level=105;const p=normalizeTradingPlan(x);p.confirmation.requireFlowSupport=false;assert.notEqual(evaluate(p,snapshot()).state,'MARKET_CONFIRMED');});
 test('legacy correlated risk is user managed',()=>{const x=input();x.risk.correlatedRiskPct=8;assert.equal(normalizeTradingPlan(x).risk.management,'USER_MANAGED');});
 test('unknown correlated risk not invented',()=>{const x=input();delete x.risk.correlatedRiskPct;assert.equal(normalizeTradingPlan(x).risk.correlatedRiskPct,undefined);});
@@ -81,13 +81,13 @@ await testAsync('actual health reports partial automatic coverage',async()=>{con
 await testAsync('actual cancellation preserves no-auto-trade policy',async()=>{const response=await context.worker.fetch(request('/scanner/cancel',{}),env,{});assert.equal(response.status,200);assert.equal(db.get('scanner:active-plan').status,'CANCELLED');});
 await testAsync('discovery missing optional flow does not erase structure candidate',async()=>{
  const isolated={...context};vm.createContext(isolated);vm.runInContext(source,isolated);
- isolated.full=snapshot();isolated.full.coverage={openNowDataReady:true};isolated.full.assets.ETHUSDT.executionLiquidity={status:'ok'};
+ isolated.full=snapshot();isolated.full.coverage={openNowDataReady:true};isolated.full.assets.ZECUSDT.executionLiquidity={status:'ok'};
  vm.runInContext(`
  breakoutProgress=()=>({state:'STRUCTURE_READY'});
  opportunityAssessment=()=>({candidate:{model:'B',submodel:'B1',direction:'LONG',boundary:100,candleAt:'fixture',entryZone:{min:100,max:101}}});
  planLiquidityRisk=()=>({passed:true});
  `,isolated);
- const r=vm.runInContext(`evaluateObservation({symbol:'ETHUSDT',direction:'LONG',origin:'AUTONOMOUS',seed:{kind:'BREAKOUT'},observationZone:{min:100,max:101},observationInvalidation:{level:95,mode:'PRICE'},expiresAt:new Date(Date.now()+600000).toISOString()}, full, {confirmed:true,current:{last:100.5},samples:[{last:100.5},{last:100.5}]})`,isolated);
+ const r=vm.runInContext(`evaluateObservation({symbol:'ZECUSDT',direction:'LONG',origin:'AUTONOMOUS',seed:{kind:'BREAKOUT'},observationZone:{min:100,max:101},observationInvalidation:{level:95,mode:'PRICE'},expiresAt:new Date(Date.now()+600000).toISOString()}, full, {confirmed:true,current:{last:100.5},samples:[{last:100.5},{last:100.5}]})`,isolated);
  assert.equal(r.state,'MARKET_CANDIDATE');assert.equal(r.openNowAllowed,false);assert.ok(r.candidate.softWarnings.includes('AUXILIARY_FLOW_UNAVAILABLE_REVIEW_REQUIRED'));
 });
 console.log(JSON.stringify({passed,failed,total:passed+failed}));process.exitCode=failed?1:0;

@@ -9,9 +9,9 @@ const enumCode=v=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{0,119}$/.test(v)?v:null;
 const age=(v,now)=>Number.isFinite(at(v))?(now-at(v))/1000:null;
 const fresh=(v,now,max)=>{const a=age(v,now);return a!==null&&a>=-5&&a<=max;};
 const NEWS_IDS=['JIN10','BEA_RELEASES','BOJ_RELEASES','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_PPI','BLS_EMPLOYMENT','BLS_CALENDAR','US_TREASURY_YIELD_DAILY','NYFED_CALENDAR'];
-const FAST_FEEDS={'/api/v5/public/instruments?instType=SWAP&instId=ETH-USDT-SWAP':'CONTRACT',
- '/api/v5/market/trades?instId=ETH-USDT-SWAP&limit=500':'TRADES',
- '/api/v5/market/books?instId=ETH-USDT-SWAP&sz=400':'BOOK'};
+const FAST_FEEDS={'/api/v5/public/instruments?instType=SWAP&instId=ZEC-USDT-SWAP':'CONTRACT',
+ '/api/v5/market/trades?instId=ZEC-USDT-SWAP&limit=500':'TRADES',
+ '/api/v5/market/books?instId=ZEC-USDT-SWAP&sz=400':'BOOK'};
 export function summarizeFastFailures(f={}){
  return {status:['ok','partial','degraded'].includes(f.status)?f.status:null,
   lastAttemptAt:stamp(f.lastAttemptAt),nextAlarmAt:stamp(f.nextAlarmAt),flowRetryAt:stamp(f.flowRetryAt),failureCount:number(f.failureCount),actualAlarmLatenessSeconds:number(f.actualAlarmLatenessSeconds),lastTickDurationSeconds:number(f.lastTickDurationSeconds),
@@ -20,7 +20,7 @@ export function summarizeFastFailures(f={}){
    httpStatus:Number.isInteger(r.httpStatus)&&r.httpStatus>=100&&r.httpStatus<=599?r.httpStatus:null,
    localCooldown:r.localCooldown===true,retryAt:stamp(r.retryAt),upstreamFailedAt:stamp(r.upstreamFailedAt),
    bookFallback:r.failover?{primaryHttpStatus:number(r.failover.primaryHttpStatus),primaryRetryAt:stamp(r.failover.primaryRetryAt),
-    fallbackSource:r.failover.fallbackEndpoint==='/api/v5/market/books-full?instId=ETH-USDT-SWAP&sz=400'?'OKX_OFFICIAL_FULL_BOOK_400':null,
+    fallbackSource:r.failover.fallbackEndpoint==='/api/v5/market/books-full?instId=ZEC-USDT-SWAP&sz=400'?'OKX_OFFICIAL_FULL_BOOK_400':null,
     succeeded:r.failover.fallbackSucceeded===true}:null}))};
 }
 export class OpsError extends Error {constructor(code){super(code);this.code=code;}}
@@ -64,17 +64,17 @@ export function summarizeResponseBudget(body){
  return {originalUtf8Bytes:number(t.originalUtf8Bytes),transferredUtf8Bytes:number(t.transferredUtf8Bytes),attemptedCompactedUtf8Bytes:number(t.attemptedCompactedUtf8Bytes),
   compacted:t.compacted===true,modelAssessmentsTransferredInFull:t.modelAssessmentsTransferredInFull===true,
   referenceCount:t.references&&typeof t.references==='object'?Object.keys(t.references).length:0,
-  sections:{newsContext:number(s.newsContext),analysisContract:number(s.analysisContract),assets:Object.fromEntries(['ETHUSDT','BTCUSDT'].map(symbol=>[symbol,Object.fromEntries(['timeframes','opportunityEngine','crossVenueLiquidity','publicOrderflow','capitalFlow','liquidityRisk'].map(key=>[key,number(s.assets?.[symbol]?.[key])]))]))}};
+  sections:{newsContext:number(s.newsContext),analysisContract:number(s.analysisContract),assets:Object.fromEntries(['ZECUSDT','BTCUSDT'].map(symbol=>[symbol,Object.fromEntries(['timeframes','opportunityEngine','crossVenueLiquidity','publicOrderflow','capitalFlow','liquidityRisk'].map(key=>[key,number(s.assets?.[symbol]?.[key])]))]))}};
 }
 export function summarizeReadContext(market,news){
  const sources=news?.newsContext?.sources||{};
  return {marketGeneratedAt:stamp(market?.generatedAt),decisionState:word(market?.decisionState),marketTransport:summarizeResponseBudget(market),
-  structure:['ETHUSDT','BTCUSDT'].flatMap(symbol=>['15m','1h','4h'].map(tf=>{
+  structure:['ZECUSDT','BTCUSDT'].flatMap(symbol=>['15m','1h','4h'].map(tf=>{
    const t=market?.assets?.[symbol]?.timeframes?.[tf],q=t?.quality||{};
    return {symbol,timeframe:tf,status:word(t?.status),source:word(t?.source),qualityPassed:q.passed===true,
     count:number(t?.candleCount),newestClosedAt:stamp(q.newestClosedCandleAt),expectedClosedAt:stamp(q.expectedLastClosedStart),continuityRatio:number(q.continuityRatio),nonZeroVolumeRatio:number(q.nonZeroVolumeRatio),collectionAgeSeconds:number(t?.coordinator?.collectionAgeSeconds)};
   })),
-  models:(market?.assets?.ETHUSDT?.opportunityEngine?.models||[]).map(m=>({model:word(m.submodel),state:word(m.state),failedGate:enumCode(m.failedGate),swingState:word(m.swingAssessment?.state),swingReason:enumCode(m.swingAssessment?.reason)})),
+  models:(market?.assets?.ZECUSDT?.opportunityEngine?.models||[]).map(m=>({model:word(m.submodel),state:word(m.state),failedGate:enumCode(m.failedGate),swingState:word(m.swingAssessment?.state),swingReason:enumCode(m.swingAssessment?.reason)})),
   newsCheckedAt:stamp(news?.newsContext?.checkedAt),newsSources:Object.entries(sources).filter(([k])=>NEWS_IDS.includes(k)).map(([source,v])=>({source,status:word(v.status),httpStatus:number(v.httpStatus),fetchedAt:stamp(v.fetchedAt),publishedAt:stamp(v.latestPublishedAt),retryAt:stamp(v.nextAttemptAt),lastAttemptAt:stamp(v.lastAttemptAt),cacheState:word(v.cacheState),sourceProvenance:word(v.sourceProvenance),directHttpStatus:number(v.directHttpStatus),relayReceivedAt:stamp(v.relayReceivedAt)})),
   evidenceScope:'FOREGROUND_READ_AFTER_AUTONOMOUS_WINDOW_NOT_BACKGROUND_PROOF'};
 }

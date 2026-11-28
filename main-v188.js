@@ -79,7 +79,7 @@ function createDeskAiBridge() {
 }
 
 const DeskAiBridge=createDeskAiBridge();
-const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r8";
+const BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r9";
 const STATE_OWNER_CONTRACT="owner-local-dispatch-v1";
 const LOCAL_SCANNER_OWNER=Symbol('localScannerOwner');
 const API_VERSION = "7.6.0";
@@ -148,7 +148,7 @@ function genuineExecutionQuote(ticker, maximumSeconds = 35) {
     && (!ticker.lastTradeTimestamp || usableTimestamp(Date.parse(ticker.lastTradeTimestamp),maximumSeconds))
     && (!ticker.bookTimestamp || usableTimestamp(Date.parse(ticker.bookTimestamp),maximumSeconds));
 }
-function orderflowPaths(base = "ETH") {
+function orderflowPaths(base = "ZEC") {
   const id = ASSETS[base + "USDT"].instrumentId;
   return ["/api/v5/public/instruments?instType=SWAP&instId=" + id,
     "/api/v5/market/trades?instId=" + id + "&limit=500",
@@ -185,7 +185,7 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
     const state=owner.publicRecords, old=state.entries[path], family=cooldownKey(OKX_BASE+path);
     const age=old?(Date.now()-old.storedAt)/1000:Infinity;
     if(old && !force && age>=0 && age<=policy.freshSeconds){
-      const tradeFlow=/market\/trades\?instId=(ETH|BTC)-USDT-SWAP&limit=500$/.test(path),bookFlow=/market\/books(?:-full)?\?instId=(ETH|BTC)-USDT-SWAP&sz=400$/.test(path);
+      const tradeFlow=/market\/trades\?instId=(ZEC|BTC)-USDT-SWAP&limit=500$/.test(path),bookFlow=/market\/books(?:-full)?\?instId=(ZEC|BTC)-USDT-SWAP&sz=400$/.test(path);
       const exchangeAt=tradeFlow?Math.max(...(old.rows||[]).map(r=>Number(r.ts))):bookFlow?Number(old.rows?.[0]?.ts):null;
       // Collection age alone is insufficient: a cached response can already
       // contain older exchange trades. Reserve room for the next delayed tick.
@@ -229,7 +229,7 @@ async function coordinatedPublicEndpoint(owner,path,policy,force=false) {
 // never clear the primary circuit, rotate hosts, or accept an aged snapshot.
 async function coordinatedOrderflowEndpoint(owner,path,policy,force=false) {
   const primary=await coordinatedPublicEndpoint(owner,path,policy,force);
-  if(!["ETH","BTC"].some(base=>path===orderflowPaths(base)[2]))return primary;
+  if(!["ZEC","BTC"].some(base=>path===orderflowPaths(base)[2]))return primary;
   const valid=item=>!item?.error&&["live","shared-fresh-cache"].includes(item?.state)
     &&usableTimestamp(item.rows?.[0]?.ts,10)&&Number(item.rows[0].bids?.[0]?.[0])>0
     &&Number(item.rows[0].asks?.[0]?.[0])>0&&Number(item.rows[0].bids[0][0])<=Number(item.rows[0].asks[0][0]);
@@ -253,7 +253,7 @@ async function coordinatedOrderflowEndpoint(owner,path,policy,force=false) {
   return recovered;
 }
 function publicMarketPersistable(records) {
-  const ephemeral=new Set(["ETH","BTC"].flatMap(base=>orderflowPaths(base).slice(1)));
+  const ephemeral=new Set(["ZEC","BTC"].flatMap(base=>orderflowPaths(base).slice(1)));
   return {...records,entries:Object.fromEntries(Object.entries(records.entries).filter(([path])=>!ephemeral.has(path)))};
 }
 async function persistPublicMarketIfChanged(owner) {
@@ -322,9 +322,9 @@ async function coordinatedMarketBundle(owner) {
     modules[key]={...original,rows:recovered,storedAt:Date.now(),state:original.state==="live"?"live":"shared-or-fallback",error:original.error};
     let orderflow;
     try {
-      const previous=await owner.ctx.storage.get("market:orderflow:eth:v1");
+      const previous=await owner.ctx.storage.get("market:orderflow:zec:v1");
       orderflow=analyzePublicOrderflow(modules,previous);
-      if(orderflow.nextState)await owner.ctx.storage.put("market:orderflow:eth:v1",orderflow.nextState);
+      if(orderflow.nextState)await owner.ctx.storage.put("market:orderflow:zec:v1",orderflow.nextState);
     } catch(error) {
       orderflow={report:{status:"unavailable",reason:"ORDERFLOW_STATE_OR_ANALYSIS_FAILED",error:String(error?.message||error),standaloneEntryPermission:false}};
     }
@@ -348,15 +348,15 @@ async function coordinatedDirectQuote(owner,symbol) {
 // Sampled public level-2 evidence, not whale identities or a full exchange tape.
 function analyzePublicOrderflow(modules,previous=null,now=Date.now()) {
   const paths=orderflowPaths(),items=paths.map(p=>modules?.[p]);
-  const report={status:"unavailable",source:"OKX_ETH_USDT_PERPETUAL_PUBLIC",instrumentId:"ETH-USDT-SWAP",asOf:new Date(now).toISOString(),
+  const report={status:"unavailable",source:"OKX_ZEC_USDT_PERPETUAL_PUBLIC",instrumentId:"ZEC-USDT-SWAP",asOf:new Date(now).toISOString(),
     cost:"NO_MARKET_DATA_API_KEY",standaloneEntryPermission:false,autoOrderPermission:false,
     limitations:["AGGREGATED_PRICE_LEVELS_NOT_INDIVIDUAL_WHALE_ORDERS","REST_SAMPLES_NOT_CONTINUOUS_TAPE","WALL_DECREASE_IS_NOT_PROVEN_FILL_OR_CANCEL","ABSORPTION_IS_UNCALIBRATED_EVIDENCE_NOT_A_TRADE_SIGNAL"],
     freshness:{maximumTradeAndBookAgeSeconds:10},endpoints:items.map((x,i)=>({path:paths[i],state:x?.state||"missing",refreshError:x?.error||null})),reason:null};
   const fail=reason=>({report:{...report,reason},nextState:null});
   if(items.some(x=>!Array.isArray(x?.rows)||x.error||!["live","shared-fresh-cache"].includes(x.state)))return fail("PUBLIC_ENDPOINT_UNAVAILABLE_OR_REFRESH_FAILED");
-  const meta=items[0].rows.find(x=>x.instId==="ETH-USDT-SWAP");
+  const meta=items[0].rows.find(x=>x.instId==="ZEC-USDT-SWAP");
   // OKX linear notional formula is contracts * ctVal * price; ctMult is disclosed, not multiplied twice.
-  if(meta?.ctType!=="linear"||meta.ctValCcy!=="ETH"||meta.settleCcy!=="USDT"||!(Number(meta.ctVal)>0))return fail("CONTRACT_UNITS_NOT_VERIFIED");
+  if(meta?.ctType!=="linear"||meta.ctValCcy!=="ZEC"||meta.settleCcy!=="USDT"||!(Number(meta.ctVal)>0))return fail("CONTRACT_UNITS_NOT_VERIFIED");
   if(!Number.isFinite(items[0].storedAt)||items[0].storedAt>now+2000||now-items[0].storedAt>86400000)return fail("CONTRACT_METADATA_EXPIRED");
   const unit=Number(meta.ctVal),book=items[2].rows[0],stamp=Number(book?.ts);
   const validTime=t=>Number.isFinite(t)&&t<=now+2000&&now-t<=10000;
@@ -366,7 +366,7 @@ function analyzePublicOrderflow(modules,previous=null,now=Date.now()) {
   const bids=parseLevels(book.bids,"BID").sort((a,b)=>b.price-a.price),asks=parseLevels(book.asks,"ASK").sort((a,b)=>a.price-b.price);
   if(!bids.length||!asks.length||bids[0].price>asks[0].price)return fail("BOOK_INVALID_OR_CROSSED");
   const seen=new Map();let invalid=0;
-  for(const r of items[1].rows){const t=Number(r.ts),price=Number(r.px),contracts=Number(r.sz);if(r.instId!=="ETH-USDT-SWAP"||!r.tradeId||!["buy","sell"].includes(r.side)||!(price>0&&contracts>0)||!Number.isFinite(price*contracts)||!Number.isFinite(t)||t>now+2000||t<now-300000){invalid++;continue;}seen.set(String(r.tradeId),{id:String(r.tradeId),ts:t,price,notionalUsdt:price*contracts*unit,side:r.side});}
+  for(const r of items[1].rows){const t=Number(r.ts),price=Number(r.px),contracts=Number(r.sz);if(r.instId!=="ZEC-USDT-SWAP"||!r.tradeId||!["buy","sell"].includes(r.side)||!(price>0&&contracts>0)||!Number.isFinite(price*contracts)||!Number.isFinite(t)||t>now+2000||t<now-300000){invalid++;continue;}seen.set(String(r.tradeId),{id:String(r.tradeId),ts:t,price,notionalUsdt:price*contracts*unit,side:r.side});}
   const trades=[...seen.values()].sort((a,b)=>a.ts-b.ts||a.id.localeCompare(b.id)),last=trades.at(-1);
   if(!last||!validTime(last.ts))return fail("TRADE_WINDOW_EXPIRED_OR_MISSING");
   const duration=(last.ts-trades[0].ts)/1000,buy=trades.filter(t=>t.side==="buy").reduce((n,t)=>n+t.notionalUsdt,0),sell=trades.filter(t=>t.side==="sell").reduce((n,t)=>n+t.notionalUsdt,0),total=buy+sell;
@@ -413,15 +413,15 @@ function wallPublic(x) {
 }
 
 // V27.4: free public perpetual liquidity, explicitly limited to connected venues.
-const LIQUIDITY_STATE_KEY="market:multi-venue-eth:v1";
+const LIQUIDITY_STATE_KEY="market:multi-venue-zec:v1";
 const LIQUIDITY_VENUES=["OKX","BINANCE","BYBIT","GATE"];
-function liquidityFeedDefinitions(base = "ETH"){return {
+function liquidityFeedDefinitions(base = "ZEC"){return {
  BINANCE:{meta:"https://fapi.binance.com/fapi/v1/exchangeInfo",book:"https://fapi.binance.com/fapi/v1/depth?symbol=" + base + "USDT&limit=500",trades:"https://fapi.binance.com/fapi/v1/trades?symbol=" + base + "USDT&limit=500"},
  BYBIT:{meta:"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=" + base + "USDT",book:"https://api.bybit.com/v5/market/orderbook?category=linear&symbol=" + base + "USDT&limit=1000",trades:"https://api.bybit.com/v5/market/recent-trade?category=linear&symbol=" + base + "USDT&limit=1000"},
  GATE:{meta:"https://api.gateio.ws/api/v4/futures/usdt/contracts/" + base + "_USDT",book:"https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=" + base + "_USDT&limit=100&with_id=true",trades:"https://api.gateio.ws/api/v4/futures/usdt/trades?contract=" + base + "_USDT&limit=500"}
 };}
 
-async function liquidityFeed(owner,url,metadata=false,force=false,base="ETH"){
+async function liquidityFeed(owner,url,metadata=false,force=false,base="ZEC"){
  owner.liquidityCache ||= new Map();owner.liquidityInflight ||= new Map();
  const persistent=owner.liquidityPersistent;persistent.failures ||= {};persistent.lastSuccess ||= {};
  const cached=owner.liquidityCache.get(url),age=cached?(Date.now()-cached.fetchedAt)/1000:Infinity;
@@ -439,7 +439,7 @@ async function liquidityFeed(owner,url,metadata=false,force=false,base="ETH"){
    return {...failure,retryAt:persistent.cooldowns[url]?new Date(persistent.cooldowns[url]).toISOString():null,lastSuccessAt:persistent.lastSuccess[url]||null,fetchedAt:null};}
  })();owner.liquidityInflight.set(url,work);try{return await work;}finally{owner.liquidityInflight.delete(url);}
 }
-function normalizeLiquidityVenue(venue,input,now=Date.now(),base="ETH"){
+function normalizeLiquidityVenue(venue,input,now=Date.now(),base="ZEC"){
  const symbol=base+"USDT",instId=base+"-USDT-SWAP",gateId=base+"_USDT";
  const fail=reason=>({venue,status:"unavailable",reason,diagnostics:Object.fromEntries(["meta","book","trades"].map(k=>{const x=input?.[k];return [k,{httpStatus:x?.httpStatus??null,failedAt:x?.failedAt||null,retryAt:x?.retryAt||null,lastSuccessAt:x?.lastSuccessAt||(Number.isFinite(x?.fetchedAt)?new Date(x.fetchedAt).toISOString():null)}];}))});
  if(!input||[input.meta,input.book,input.trades].some(x=>!x||x.error))return fail([input?.meta,input?.book,input?.trades].map(x=>x?.error).filter(Boolean).join(';')||"MISSING_PUBLIC_FEED");
@@ -463,7 +463,7 @@ function normalizeLiquidityVenue(venue,input,now=Date.now(),base="ETH"){
  const trades=[...unique.values()].sort((a,b)=>a.ts-b.ts),latest=trades.at(-1),tradeAge=latest?(now-latest.ts)/1000:null;
  return {status:"ok",venue,mid:(bids[0].price+asks[0].price)/2,bids,asks,bookAt,bookId,bookAge:age,tradeAge,trades,rejected,tradeFresh:Number.isFinite(tradeAge)&&tradeAge>=-2&&tradeAge<=10,unit};
 }
-function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(),base="ETH"){
+function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(),base="ZEC"){
  const okx=venues.find(v=>v.venue==="OKX"&&v.status==="ok"),reference=okx?.mid;
  const report={status:"unavailable",source:"PUBLIC_MULTI_VENUE_"+base+"_USDT_PERPETUAL",checkedAt:new Date(now).toISOString(),referencePrice:reference||null,
   requestedVenues:LIQUIDITY_VENUES,connectedVenues:[],allMarketCoverage:false,exactOrderFillOrCancelKnown:false,continuousCoverageVerified:false,priceMapping:"OKX_MID_DIVIDED_BY_VENUE_MID",maximumAgeSeconds:10,venues:[],clusters:[],changes:[],arrivalRecheck:{passed:false}};
@@ -511,14 +511,14 @@ function aggregateVenueLiquidity(venues,previous={},firstWave=null,now=Date.now(
  report.limitations=["SAMPLED_L2_NOT_IDENTIFIABLE_ORDERS","MISSING_TRADE_OVERLAP_PREVENTS_CANCEL_FILL_ATTRIBUTION","NO_WALL_IS_A_GUARANTEED_SUPPORT","VISIBLE_DEPTH_AND_CONNECTED_VENUES_ONLY"];
  return {report,state};
 }
-async function collectCrossVenueLiquidity(publicOwner, modules, base = "ETH") {
+async function collectCrossVenueLiquidity(publicOwner, modules, base = "ZEC") {
  const owner = base === "BTC" ? (publicOwner.deskBtcLiquidityOwner ||= {ctx:publicOwner.ctx}) : publicOwner;
  if (owner.liquidityCollection) return owner.liquidityCollection;
  owner.liquidityCollection = sampleCrossVenueLiquidity(owner, publicOwner, modules, base);
  try { return await owner.liquidityCollection; } finally { owner.liquidityCollection = null; }
 }
 async function sampleCrossVenueLiquidity(owner,publicOwner,modules,base){
- const storageKey=base==="ETH"?LIQUIDITY_STATE_KEY:LIQUIDITY_STATE_KEY+":BTC";
+ const storageKey=base==="ZEC"?LIQUIDITY_STATE_KEY:LIQUIDITY_STATE_KEY+":BTC";
  owner.liquidityReady ||= (async()=>{owner.liquidityPersistent=await owner.ctx.storage.get(storageKey)||{metadata:{},cooldowns:{},tracking:{}};owner.liquidityPersistent.metadata ||= {};owner.liquidityPersistent.cooldowns ||= {};owner.liquidityCache=new Map(Object.entries(owner.liquidityPersistent.metadata));})();await owner.liquidityReady;
  const defs=liquidityFeedDefinitions(base);
  const wave=async force=>{
@@ -627,9 +627,9 @@ async function coordinatedLiquidityRecheck(owner){
  })();owner.crossLiquidityWork=work;try{return await work;}finally{owner.crossLiquidityWork=null;}
 }
 async function attachArrivalLiquidity(env,snapshot){
- if(!snapshot?.assets?.ETHUSDT?.crossVenueLiquidity||!scannerStateStub(env))return snapshot;
- try{const checked=await durableStateCall(env,{op:'liquidityRecheck'});snapshot.assets.ETHUSDT.crossVenueLiquidity=checked.crossVenueLiquidity||{status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
- catch(e){snapshot.assets.ETHUSDT.crossVenueLiquidity={status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
+ if(!snapshot?.assets?.ZECUSDT?.crossVenueLiquidity||!scannerStateStub(env))return snapshot;
+ try{const checked=await durableStateCall(env,{op:'liquidityRecheck'});snapshot.assets.ZECUSDT.crossVenueLiquidity=checked.crossVenueLiquidity||{status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
+ catch(e){snapshot.assets.ZECUSDT.crossVenueLiquidity={status:'unavailable',reason:'ARRIVAL_RECHECK_FAILED',arrivalRecheck:{passed:false}};}
  return snapshot;
 }
 
@@ -646,7 +646,7 @@ function modelEventEvidence(seed,progress={}){
   triggerAt:progress?.triggerAt||seed.triggerAt||null,stopLoss:progress?.stopLoss??null,
   twoCloseInvalidation:seed.model==='B'?{operator:long?'<':'>',level:long?seed.boundary-.1*atr:seed.boundary+.1*atr,count:2}:null};
 }
-const HOLDING_PROFILE={mode:'SWING_FIRST',preferredHoldingDays:[2,14],contextTimeframes:['4h','1h'],entryTimeframe:'15m',minimumFirstTargetMoveUsd:40,minimumFirstTargetMovePct:1.5,minimumFirstTargetAtr4h:1,
+const HOLDING_PROFILE={mode:'SWING_FIRST',preferredHoldingDays:[2,14],contextTimeframes:['4h','1h'],entryTimeframe:'15m',minimumFirstTargetMoveUsd:0,minimumFirstTargetMovePct:1.5,minimumFirstTargetAtr4h:1,
  leveragePreference:[30,50],leverageIsSizingGate:false,shortTermDefault:'SECONDARY_NO_AUTOMATIC_PREPARED_ALERT',winRateVerified:false};
 function holdingFundingScenarios(asset,direction,entry,stop,target){
  const f=asset.derivatives?.funding,interval=(Date.parse(f?.nextFundingAt)-Date.parse(f?.fundingAt))/3600000,rate=f?.ratePct;
@@ -761,7 +761,7 @@ function fastWindowFromTrades(previous,venue,now=Date.now()){
   minimumObservedPrice:prices.length?Math.min(...prices):null,maximumObservedPrice:prices.length?Math.max(...prices):null,overlapsPreviousSample:overlap,samplingGapReset:reset,continuousCoverageVerified:false}};
 }
 function fastMaterialEvent(window,price,atr15,now=Date.now(),baseline=undefined){
- const threshold=baseline===undefined?Math.max(12,price*.005,(Number(atr15)||0)*1.25):Number.isFinite(baseline?.threshold)&&baseline.threshold>0&&now-Date.parse(baseline.checkedAt)>=0&&now-Date.parse(baseline.checkedAt)<300000?baseline.threshold:Infinity,sameDirection=window.direction==='BUY'?window.priceChangeUsd>0:window.direction==='SELL'?window.priceChangeUsd<0:false;
+ const threshold=baseline===undefined?Math.max(price*.005,(Number(atr15)||0)*1.25):Number.isFinite(baseline?.threshold)&&baseline.threshold>0&&now-Date.parse(baseline.checkedAt)>=0&&now-Date.parse(baseline.checkedAt)<300000?baseline.threshold:Infinity,sameDirection=window.direction==='BUY'?window.priceChangeUsd>0:window.direction==='SELL'?window.priceChangeUsd<0:false;
  const eligible=window.newRecords>0&&window.seconds>=30&&window.sampledRecords>=20&&(window.buyUsdt+window.sellUsdt)>=500000&&window.dominantShare>=.7&&sameDirection&&Math.abs(window.priceChangeUsd)>=threshold;
  return {eligible,direction:window.direction,moveUsd:window.priceChangeUsd,movePct:window.priceChangePct,thresholdUsd:Number.isFinite(threshold)?round(threshold,3):null,volatilityBaselineReady:Number.isFinite(threshold),firstObservedAt:window.startAt,lastObservedAt:window.endAt,detectedAt:new Date(now).toISOString(),kind:'SAMPLED_EXECUTED_FLOW_AND_PRICE_CHANGE',standaloneEntryPermission:false};
 }
@@ -773,7 +773,7 @@ async function fastSendPending(owner,state,event,now=Date.now()){
  const pending=state.pendingAlert||{eventId:[event.direction,event.firstObservedAt].join(':'),direction:event.direction,createdAt:new Date(now).toISOString(),attempts:0,nextAttemptAt:0};
  if(pending.nextAttemptAt>now)return;
  state.pendingAlert=pending;await writeFastCheckpoint(owner,state);
- let result;try{result=await sendBark(fastLocalEnvironment(owner),{title:'ETH（以太坊）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
+ let result;try{result=await sendBark(fastLocalEnvironment(owner),{title:'ZEC（大零币）'+(event.direction==='BUY'?'买方':'卖方')+'成交与价格显著推进｜方案复核中',
   body:'采样窗口价格变化 '+formatPrice(event.moveUsd)+' 美元（'+round(event.movePct,2)+'%），本次门槛 '+formatPrice(event.thresholdUsd)+' 美元。主动'+(event.direction==='BUY'?'买入':'卖出')+'占比 '+round(state.window.dominantShare*100,1)+'%。\n行情时间 '+chinaTime(event.lastObservedAt)+'；检测时间 '+chinaTime(now)+'。这是机会进展提醒，完整模型正在复核，尚非开仓许可。采样不等于全市场逐笔覆盖。',level:'timeSensitive'},{kind:'FAST_FLOW',eventId:pending.eventId,stage:'MATERIAL_EXECUTED_FLOW'});}catch(e){result={sent:false,reason:String(e?.message||e)};}
  pending.attempts++;
  if(result.sent){state.lastAcceptedByDirection={...(state.lastAcceptedByDirection||{}),[event.direction]:new Date(now).toISOString()};state.lastAlert={eventId:pending.eventId,detectedAt:event.detectedAt,providerAcceptedAt:new Date().toISOString(),deliveryMeaning:'PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT',direction:event.direction};state.pendingAlert=null;}
@@ -940,8 +940,8 @@ async function maintainFastModelReview(owner,state,now=Date.now()){
 }
 async function refreshFastQuoteDuringFlowFailure(owner,state){
  // Independent, normally rate-limited quote service; never bypass a depth/trade circuit.
- const item=await coordinatedPublicEndpoint(owner,'/api/v5/market/ticker?instId=ETH-USDT-SWAP',{freshSeconds:4,staleSeconds:0},false);
- const row=item.rows?.find(r=>r.instId==='ETH-USDT-SWAP');if(item.error||!tickerRowValid(row,10))return false;
+ const item=await coordinatedPublicEndpoint(owner,'/api/v5/market/ticker?instId=ZEC-USDT-SWAP',{freshSeconds:4,staleSeconds:0},false);
+ const row=item.rows?.find(r=>r.instId==='ZEC-USDT-SWAP');if(item.error||!tickerRowValid(row,10))return false;
  const q={status:'ok',source:'OKX_USDT_PERPETUAL',last:Number(row.last),bid:Number(row.bidPx),ask:Number(row.askPx),exchangeTimestamp:new Date(Number(row.ts)).toISOString(),
    priceType:'LAST_TICKER_WITH_BBO',timestampMeaning:'TICKER_GENERATION_NOT_INDEPENDENT_TRADE_TIMESTAMP',primaryEndpoint:item.endpoint};
  if(!genuineExecutionQuote(q,10))return false;
@@ -984,7 +984,7 @@ async function runFastMonitorAlarm(owner){
     exchangeTimestamp:new Date(Math.min(last.ts,venue.bookAt)).toISOString(),lastTradeTimestamp:new Date(last.ts).toISOString(),bookTimestamp:new Date(venue.bookAt).toISOString()};
    if(!genuineExecutionQuote(quote,10))throw Error('FAST_QUOTE_EXPIRED');
    const mid=(quote.bid+quote.ask)/2;if((quote.ask-quote.bid)/mid*10000>20||Math.abs(quote.last/mid-1)*10000>25)throw Error('FAST_EXECUTION_SPREAD_OR_TRADE_BOOK_MISMATCH');
-   const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,baseline=(await refreshDeskVolatility(owner))?.ETH,event=fastMaterialEvent(window.window,quote.last,model?.atr15,Date.now(),baseline||null);
+   const window=fastWindowFromTrades(state,venue),model=(await owner.ctx.storage.get('market:liquidity-proposals:v1'))?.value,baseline=(await refreshDeskVolatility(owner))?.ZEC,event=fastMaterialEvent(window.window,quote.last,model?.atr15,Date.now(),baseline||null);
    state.trades=window.rows;state.buckets=window.buckets;state.lastTradeAt=window.latestTradeAt;state.window=window.window;state.executionQuote=quote;state.materialEvent=event;state.status='ok';state.lastSuccessAt=new Date().toISOString();state.quoteLastSuccessAt=state.lastSuccessAt;state.nextFlowAttemptAt=0;state.lastError=null;state.failureCount=0;
    const noticeBefore=JSON.stringify([state.lastAlert,state.pendingAlert,state.lastAcceptedByDirection]);
    await fastSendPending(owner,state,event);
@@ -1023,7 +1023,7 @@ async function processOpportunityProgress(env,record,evaluation,deadlineAt){
  const now=Date.now();book.pending=Object.fromEntries(Object.entries(book.pending||{}).filter(([,p])=>p.expiresAt>now));
  const pending=book.pending[key]||{createdAt:now,expiresAt:Math.min(Date.parse(record.expiresAt),now+120000),attempts:0,nextAttemptAt:now};
  if(pending.nextAttemptAt>now)return null;
- let push;try{push=await sendBark(env,{title:'ETH（以太坊）'+record.submodel+' 入场结构已推进｜波段条件待复核',body:
+ let push;try{push=await sendBark(env,{title:'ZEC（大零币）'+record.submodel+' 入场结构已推进｜波段条件待复核',body:
   (record.direction==='LONG'?'做多':'做空')+'；当前价 '+formatPrice(evaluation.price)+'。原模型触发和净盈亏比已出现技术候选，但波段主方案仍缺：'+String(evaluation.swingReview?.reason||'高周期及持仓成本复核')+'。\n此条不是开仓许可，也不是普通到区提醒。请复核当前价格、保护、目标和消息；不得按旧价追单。时间 '+chinaTime(Date.now()),level:'active'},{kind:'OPPORTUNITY_PROGRESS',eventId:key,stage:'TECHNICAL_PROGRESS'});}catch(e){push={sent:false,reason:String(e?.message||e)};}
  if(push.sent){book.sent=[...book.sent,{key,at:new Date().toISOString()}].slice(-64);delete book.pending[key];}
  else{pending.attempts++;pending.nextAttemptAt=now+Math.min(60000,10000*2**Math.min(pending.attempts-1,3));pending.reason=String(push.reason||'PUSH_FAILED').slice(0,180);book.pending[key]=pending;}
@@ -1033,7 +1033,7 @@ async function processOpportunityProgress(env,record,evaluation,deadlineAt){
 
 function snapshotReadiness(assets) {
   const required=Object.keys(ASSETS).map(k=>assets[k]);
-  const executionPriceReady=genuineExecutionQuote(assets.ETHUSDT?.ticker);
+  const executionPriceReady=genuineExecutionQuote(assets.ZECUSDT?.ticker);
   const semanticQualityReady=required.every(a=>["15m","1h","4h"].every(tf=>a?.timeframes?.[tf]?.status==="ok"&&a.timeframes[tf].quality?.passed===true));
   const perpetualStructureReady=required.every(a=>["15m","1h","4h"].every(tf=>isExecutionStructureTimeframe(a?.timeframes?.[tf])&&structureCurrentAtRead(a?.timeframes?.[tf],tf)));
   const derivativesReady=required.every(a=>a?.derivatives?.openInterest?.status==="ok"&&a?.derivatives?.funding?.status==="ok");
@@ -1071,23 +1071,23 @@ function compactStatusValue(value, depth=0) {
 }
 function refreshServedSnapshot(snapshot) {
   const readiness=snapshotReadiness(snapshot.assets||{});
-  const flow=snapshot.assets?.ETHUSDT?.publicOrderflow;
+  const flow=snapshot.assets?.ZECUSDT?.publicOrderflow;
   if(flow?.status==="ok") {
     const tradeAge=(Date.now()-Date.parse(flow.freshness?.tradeAt))/1000,bookAge=(Date.now()-Date.parse(flow.freshness?.bookAt))/1000;
     flow.freshness={...flow.freshness,tradeAgeSeconds:round(tradeAge,3),bookAgeSeconds:round(bookAge,3),checkedAt:new Date().toISOString()};
     if(!Number.isFinite(tradeAge)||!Number.isFinite(bookAge)||tradeAge>10||bookAge>10||tradeAge< -2||bookAge< -2) {
       // Expired historical evidence must not survive as a current absorption classification.
-      snapshot.assets.ETHUSDT.publicOrderflow={status:"unavailable",source:flow.source,reason:"ORDERFLOW_EXPIRED_AT_READ",freshness:flow.freshness,standaloneEntryPermission:false};
+      snapshot.assets.ZECUSDT.publicOrderflow={status:"unavailable",source:flow.source,reason:"ORDERFLOW_EXPIRED_AT_READ",freshness:flow.freshness,standaloneEntryPermission:false};
     }
   }
   snapshot.coverage={...snapshot.coverage,...readiness,executionDataReady:readiness.criticalReady,openNowDataReady:readiness.criticalReady,
     priceAgeSeconds:Object.fromEntries(Object.entries(snapshot.assets||{}).map(([k,a])=>[k,a.ticker?.exchangeTimestamp?(Date.now()-Date.parse(a.ticker.exchangeTimestamp))/1000:null]))};
   snapshot.status=readiness.criticalReady?"ok":"partial";
   snapshot.decisionState=readiness.criticalReady?"DATA_READY":"DATA_BLOCKED";
-  const cross=snapshot.assets?.ETHUSDT?.crossVenueLiquidity;
+  const cross=snapshot.assets?.ZECUSDT?.crossVenueLiquidity;
   if(cross&&!liquidityContextCurrent(cross)){
-    if(Date.now()-Date.parse(cross.checkedAt)>10000){snapshot.assets.ETHUSDT.crossVenueLiquidity={status:"unavailable",reason:"MULTI_VENUE_CONTEXT_EXPIRED_AT_READ",arrivalRecheck:{passed:false}};}
-    for(const model of snapshot.assets?.ETHUSDT?.opportunityEngine?.models||[])if(model.liquidityPricing){model.liquidityPricing.freshRecheckPassed=false;model.liquidityPricing.entryReviewPassed=false;if(model.candidate){model.candidate=null;model.state="WAIT_PRICE";model.failedGate="FRESH_MULTI_VENUE_RECHECK_PENDING";}}
+    if(Date.now()-Date.parse(cross.checkedAt)>10000){snapshot.assets.ZECUSDT.crossVenueLiquidity={status:"unavailable",reason:"MULTI_VENUE_CONTEXT_EXPIRED_AT_READ",arrivalRecheck:{passed:false}};}
+    for(const model of snapshot.assets?.ZECUSDT?.opportunityEngine?.models||[])if(model.liquidityPricing){model.liquidityPricing.freshRecheckPassed=false;model.liquidityPricing.entryReviewPassed=false;if(model.candidate){model.candidate=null;model.state="WAIT_PRICE";model.failedGate="FRESH_MULTI_VENUE_RECHECK_PENDING";}}
   }
   snapshot.servedAt=new Date().toISOString();
   return snapshot;
@@ -1509,7 +1509,7 @@ function newsItem(item,source,fetchedAt) {
     if(u.protocol==="https:"&&!u.username&&!u.password)url=u.href;}catch{}
   if(!title||!publishedAt||!url)return null;
   const text=title+" "+newsText(item.content,200);
-  const relevant=/gross domestic product|\bGDP\b|statement on monetary policy|outlook for economic activity and prices|change in the guideline for money market operations|ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|personal income|personal consumption expenditures|\bCPI\b|\bPCE\b|\bPPI\b|jobless claims|initial claims|unemployment claims|treasury yields?|\bDXY\b|dollar index|interest rate|bank of japan|\bBOJ\b|monetary policy|policy board|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|美元指数|个人消费支出|初请失业金|失业救济|日本央行|日本銀行|日銀|货币政策|金融政策|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
+  const relevant=/zcash|\bZEC\b|gross domestic product|\bGDP\b|statement on monetary policy|outlook for economic activity and prices|change in the guideline for money market operations|ethereum|bitcoin|crypto|ether\b|\bBTC\b|\bETH\b|federal reserve|\bfed\b|\bFOMC\b|inflation|consumer price|producer price|employment situation|payroll|personal income|personal consumption expenditures|\bCPI\b|\bPCE\b|\bPPI\b|jobless claims|initial claims|unemployment claims|treasury yields?|\bDXY\b|dollar index|interest rate|bank of japan|\bBOJ\b|monetary policy|policy board|hormuz|以太|比特|加密|美联储|利率|通胀|非农|国债|央行|地缘|美元指数|个人消费支出|初请失业金|失业救济|日本央行|日本銀行|日銀|货币政策|金融政策|ETF|交易所|清算|停提|黑客|hack|exploit|withdrawal|war|missile/i.test(text);
   const riskTags=[];
   if(/hack|exploit|halt.{0,15}withdraw|withdraw.{0,15}halt|停提|黑客|攻击|宕机/i.test(text))riskTags.push("EXCHANGE_SECURITY_REVIEW");
   if(/gross domestic product|\bGDP\b|FOMC|federal funds|rate decision|consumer price|producer price|inflation|payroll|employment situation|personal income|personal consumption expenditures|\bPCE\b|\bPPI\b|initial claims|jobless claims|unemployment claims|议息|利率决议|通胀|个人消费支出|初请失业金|失业救济|CPI|非农/i.test(text))riskTags.push("MACRO_EVENT_REVIEW");
@@ -1808,7 +1808,7 @@ async function processNewsReassessment(env,context,asset,old={},deadlineAt=Infin
   const selected=fresh.find(i=>i.id===old.pending?.id)||fresh[0];
   const pending=old.pending?.id===selected.id?old.pending:{id:selected.id,attempts:0,nextAttemptAt:0};
   if(pending.nextAttemptAt>now||now+6500>deadlineAt)return {...next,pending,reason:"NEWS_PUSH_RETRY_PENDING"};
-  try{const result=await sendBark(env,{title:"ETH（以太坊）重要消息与价格变化｜复核",body:newsText(selected.title,150)+"；价格位移"+formatPrice(move.observedMoveUsd)+"美元。消息与波动同期出现，因果未确认；重新检查八模型及旧方案。",level:"timeSensitive"},{kind:"NEWS",eventId:String(selected.id),stage:"MATERIAL_NEWS_PRICE_EVENT"});
+  try{const result=await sendBark(env,{title:"ZEC（大零币）重要消息与价格变化｜复核",body:newsText(selected.title,150)+"；价格位移"+formatPrice(move.observedMoveUsd)+"美元。消息与波动同期出现，因果未确认；重新检查八模型及旧方案。",level:"timeSensitive"},{kind:"NEWS",eventId:String(selected.id),stage:"MATERIAL_NEWS_PRICE_EVENT"});
     if(result.sent!==true)throw new Error("PUSH_NOT_ACCEPTED");
     return {...next,pending:null,seen:[...new Set([...seen,selected.id])].slice(-100),sent:true,lastSentAt:new Date(now).toISOString(),reason:"NEWS_PLUS_MATERIAL_PRICE_RESPONSE",deliveryMeaning:"PROVIDER_ACCEPTED_NOT_DEVICE_RECEIPT"};}
   catch{return {...next,seen:old.seen||[],pending:{...pending,attempts:pending.attempts+1,nextAttemptAt:now+Math.min(15,2**Math.min(pending.attempts+1,4))*60000},reason:"NEWS_PUSH_FAILED_WILL_RETRY"};}
@@ -2109,10 +2109,10 @@ function opportunityAssessmentBase(seed,asset,btc) {
   if(!observationStructureReady(btc))return {...result,failedGate:"BTC_STRUCTURE_DATA_UNAVAILABLE"};
   const externalAcceptance=seed.model==="B"&&confirmedExternalBreakoutAcceptance(direction,seed.boundary,asset);
   if(asset.marketRegimeRouter?.regime!=="TREND"&&!externalAcceptance)return {...result,failedGate:"REGIME_ACCEPTANCE_PENDING"};
-  const ethConflict=seed.model==="A"?fourHourTrendDirection(asset)!==direction
+  const assetConflict=seed.model==="A"?fourHourTrendDirection(asset)!==direction
     :trendAgainst(direction,t["4h"])||(!externalAcceptance&&trendAgainst(direction,t["1h"]));
   const btcConflict=trendAgainst(direction,btc.timeframes["4h"])&&trendAgainst(direction,btc.timeframes["1h"]);
-  if(ethConflict||btcConflict)return {...result,failedGate:ethConflict?"ETH_TREND_CONFLICT":"BTC_SYSTEMIC_CONFLICT"};
+  if(assetConflict||btcConflict)return {...result,failedGate:assetConflict?"ASSET_TREND_CONFLICT":"BTC_SYSTEMIC_CONFLICT"};
   const last=finite(asset.ticker?.last),price=finite(long?asset.ticker?.ask:asset.ticker?.bid,last);
   const target=nearestStructuralTarget(direction,asset,long?seed.entryZone.min:seed.entryZone.max,seed);
   if(Number.isFinite(target)&&(long?price>=target:price<=target))return {...result,failedGate:"FIRST_REALISTIC_TARGET_ALREADY_PASSED"};
@@ -2151,7 +2151,7 @@ function dynamicMarketContext(asset) {
     ?flowDirection==="BUY"?(response>0.02?"BUY_FLOW_PRICE_ADVANCE":"BUY_FLOW_POOR_ADVANCE_REVIEW_ABSORPTION")
       :(response< -0.02?"SELL_FLOW_PRICE_DECLINE":"SELL_FLOW_POOR_DECLINE_REVIEW_ABSORPTION"):"UNKNOWN";
   const closedShock=observationStructureReady(asset)&&rangeAtr>=2.5&&volumeRatio>=2;
-  const price=finite(asset?.ticker?.last,latest?.c), minMove=Math.max(12,price*0.005,(atr||0)*1.25);
+  const price=finite(asset?.ticker?.last,latest?.c), minMove=Math.max(price*0.005,(atr||0)*1.25);
   const flowMove=flowFresh?Math.abs(finite(trades?.priceResponse?.last,0)-finite(trades?.priceResponse?.first,0)):0;
   const candleMove=latest?Math.abs(latest.c-latest.o):0;
   const materialFlow=flowFresh&&flowDirection&&count>=3&&total>=500000
@@ -2228,7 +2228,7 @@ async function processDynamicAlert(env,context,previous,deadlineAt) {
   const pending=retry?old.pending:{eventKey:context.eventKey,attempts:0,nextAttemptAt:0};
   if(pending.nextAttemptAt>now||now+6500>deadlineAt)return {...next,pending};
   let result;
-  try{result=await sendBark(env,{title:"ETH（以太坊）显著价格变化，需复核",body:
+  try{result=await sendBark(env,{title:"ZEC（大零币）显著价格变化，需复核",body:
     "同窗口价格变动 "+formatPrice(context.observedMoveUsd)+" 美元（"+round(context.observedMovePct,2)+"%）；本次门槛 "+formatPrice(context.minimumAlertMoveUsd)+" 美元。"
     +"\n"+(context.materialShock?"已收盘15分钟放量扩幅。":"持续大额主动成交与价格同向响应。")
     +"后台已重新扫描八模型；本条不是开仓信号。新闻原因未核实。北京时间 "+chinaTime(now),level:"active"},{kind:"DYNAMIC_PRICE",eventId:context.eventKey,stage:"MATERIAL_PRICE_CHANGE"});}
@@ -2425,10 +2425,10 @@ async function mutateObservationBook(env, transform) {
 }
 
 function normalizeObservation(input) {
-  const now = Date.now(), symbol = scannerText(input.symbol || "ETHUSDT", "", 16).toUpperCase();
+  const now = Date.now(), symbol = scannerText(input.symbol || "ZECUSDT", "", 16).toUpperCase();
   const direction = scannerText(input.direction, "", 16).toUpperCase();
   const model = scannerText(input.model, "", 4).toUpperCase(), submodel = scannerText(input.submodel, "", 8).toUpperCase();
-  if (symbol !== "ETHUSDT") throw new Error("Observation symbol must be ETHUSDT; BTC is the environment filter");
+  if (symbol !== "ZECUSDT") throw new Error("Observation symbol must be ZECUSDT; use the dual desk for BTC watches");
   if (!["LONG", "SHORT"].includes(direction) || SUBMODEL_DEFINITIONS[submodel]?.parent !== model) throw new Error("Valid direction and matching A1/A2/B1/B2/C1/C2/D1/D2 required");
   const marketRegime = scannerText(input.marketRegime, "", 24).toUpperCase();
   if (submodelRegimePermission(model, submodel, marketRegime) === "BLOCKED") throw new Error("Observation regime does not permit this submodel");
@@ -2492,7 +2492,7 @@ function autoObservation(seed, kind, asset) {
   const atr = finite(asset.timeframes?.["15m"]?.indicators?.atr14);
   const eventAt = seed.breakoutAt || seed.eventAt || seed.candleAt;
   return { recordType: "OBSERVATION", origin: "AUTONOMOUS", notificationMode:"ACTIONABLE_ONLY", observationId: (kind === "ADAPTIVE" || kind === "PULLBACK" || seed.submodel === "B2" ? kind + ":" + seed.submodel : kind) + ":" + seed.direction + ":" + eventAt,
-    revision: 1, symbol: "ETHUSDT", model: seed.model, submodel: seed.submodel, direction: seed.direction,
+    revision: 1, symbol: "ZECUSDT", model: seed.model, submodel: seed.submodel, direction: seed.direction,
     marketRegime: asset.marketRegimeRouter?.regime, observationZone: seed.entryZone,
     observationInvalidation: { level: seed.observationInvalidationPrice || (long ? seed.entryZone.min - atr : seed.entryZone.max + atr), mode: "CLOSE_15M" },
     observationTrigger: null, strategySummary: kind === "ADAPTIVE" ? "局部真实突破或外部扫荡收回；冻结事件、保护位和合格入场范围" : kind === "PULLBACK" ? "完整4小时趋势内的1小时位置回调，等待15分钟保护结构及关键转变" : kind === "BREAKOUT" ? "固定突破边界，等待回测接受和结构推进" : "确认区间边缘，等待扫荡/假突破、收回和关键结构转变",
@@ -2611,7 +2611,7 @@ function observationAlert(record, evaluation) {
   const detailed=record.notificationMode==="ALL_STAGES";
   const card=candidateCard(evaluation.candidate,record,evaluation.checkedAt);
   if(evaluation.state==="MARKET_CANDIDATE"&&card)return {
-    title:"ETH（以太坊）"+record.submodel+" 技术预案已就绪｜消息与成本待复核",
+    title:"ZEC（大零币）"+record.submodel+" 技术预案已就绪｜消息与成本待复核",
     body:"方向："+(record.direction==="LONG"?"做多":"做空")+"；核验价 "+formatPrice(card.entry)
       +"\n准备入场范围 "+formatPrice(card.entryZone.min)+"—"+formatPrice(card.entryZone.max)
       +"；结构止损 "+formatPrice(card.stopLoss)+"；第一现实目标 "+formatPrice(card.firstTarget)
@@ -2622,7 +2622,7 @@ function observationAlert(record, evaluation) {
   if(!detailed&&(!terminal||!previouslyNotified))return null;
   const labels={APPROACHING:"接近研究区（未备妥）",IN_ZONE:"已到研究区（未备妥）",TRIGGER_MET:"登记收盘条件满足（未完成全审）",EXPIRED:"预案/研究已到期",INVALIDATED:"预案/研究已失效"};
   if(!labels[evaluation.state])return null;
-  return {title:"ETH（以太坊）"+record.submodel+" "+labels[evaluation.state],body:
+  return {title:"ZEC（大零币）"+record.submodel+" "+labels[evaluation.state],body:
     "方向："+(record.direction==="LONG"?"做多":"做空")+"；研究区 "+formatPrice(record.observationZone.min)+"—"+formatPrice(record.observationZone.max)
     +"；核验价 "+formatPrice(evaluation.price)+"；时间 "+chinaTime(evaluation.checkedAt)
     +"\n"+record.pendingCondition+"。"+(terminal?"本记录停止，自动发现继续。":"这是研究进度，不是开仓准备或执行许可。"),level:"active"};
@@ -2743,7 +2743,7 @@ function advanceForwardRecord(record,asset,now) {
 async function updateForwardStudy(env,snapshot,selected) {
   const now=Date.now(),old=await scannerStateGet(env,FORWARD_STUDY_KEY);
   if(old&&!Array.isArray(old.records))return {status:"degraded",reason:"FORWARD_RECORDS_INVALID_PRESERVED"};
-  const book=old?structuredClone(old):{records:[]},asset=snapshot?.assets?.ETHUSDT;
+  const book=old?structuredClone(old):{records:[]},asset=snapshot?.assets?.ZECUSDT;
   book.records=book.records.map(r=>advanceForwardRecord(r,asset,now));
   const c=selected?.evaluation?.candidate,record=selected?.record;
   const key=c&&[c.submodel,c.direction,c.eventAt||c.breakoutAt||c.candleAt].join(":");
@@ -2802,7 +2802,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   if (due) {
     try {
       full = await cycle.getSnapshot();
-      const asset = full.assets?.ETHUSDT;
+      const asset = full.assets?.ZECUSDT;
       if (!observationStructureReady(asset)) reason = "DISCOVERY_STRUCTURE_DATA_BLOCKED";
       else {
         const breakout = [...compressionSeeds(asset), ...breakoutSeeds(asset)];
@@ -2832,18 +2832,18 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   const evaluations = [], notifications = [];
   let verification = null, priceError = null;
   if (active.some(r => Date.parse(r.expiresAt) > now)) {
-    try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { priceError = String(error?.message || error); }
+    try { verification = await cycle.getPrices("ZECUSDT"); priceError=null; } catch (error) { priceError = String(error?.message || error); }
     // Closed-candle invalidation is checked even when price is outside a zone.
     if (!full) { try { full = await cycle.getSnapshot(); } catch (error) { discoveryError = String(error?.message || error); } }
     // Slow upstream recovery must not turn earlier samples into a current-price alert.
-    if (verification) { try { verification = await cycle.getPrices("ETHUSDT"); priceError=null; } catch (error) { verification = null; priceError = String(error?.message || error); } }
-    if(full?.assets?.ETHUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
+    if (verification) { try { verification = await cycle.getPrices("ZECUSDT"); priceError=null; } catch (error) { verification = null; priceError = String(error?.message || error); } }
+    if(full?.assets?.ZECUSDT&&verification?.samples?.some(p=>active.some(r=>priceInsideEntryZone(p.last,r.observationZone)))){
       await attachArrivalLiquidity(env,full);
-      try{verification=await cycle.getPrices("ETHUSDT");priceError=null;}catch(error){verification=null;priceError=String(error?.message||error);}
+      try{verification=await cycle.getPrices("ZECUSDT");priceError=null;}catch(error){verification=null;priceError=String(error?.message||error);}
     }
-    if (full?.assets?.ETHUSDT && verification?.current) {
-      full.assets.ETHUSDT.ticker = verification.current;
-      full.assets.ETHUSDT.executionLiquidity=buildExecutionLiquidity(full.assets.ETHUSDT);
+    if (full?.assets?.ZECUSDT && verification?.current) {
+      full.assets.ZECUSDT.ticker = verification.current;
+      full.assets.ZECUSDT.executionLiquidity=buildExecutionLiquidity(full.assets.ZECUSDT);
       refreshServedSnapshot(full);
     }
   }
@@ -2863,9 +2863,9 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
   let forwardStudy;
   try{forwardStudy=await updateForwardStudy(env,full,prepared[0]);}
   catch(error){forwardStudy={status:"degraded",reason:String(error?.message||error).slice(0,200)};}
-  const opportunityAudit = full?.assets?.ETHUSDT ? buildOpportunityScan(full.assets.ETHUSDT, full.assets.BTCUSDT) : null;
+  const opportunityAudit = full?.assets?.ZECUSDT ? buildOpportunityScan(full.assets.ZECUSDT, full.assets.BTCUSDT) : null;
   const dynamicAlert = enabled && opportunityAudit ? await processDynamicAlert(env, opportunityAudit.dynamicContext, old.dynamicAlert, cycle.deadlineAt) : old.dynamicAlert || null;
-  const newsAlert=full?.newsContext&&!(dynamicAlert?.lastAcceptedAt&&Date.now()-Date.parse(dynamicAlert.lastAcceptedAt)<1800000)?await processNewsReassessment(env,full.newsContext,full.assets?.ETHUSDT,old.newsAlert||{},cycle.deadlineAt):old.newsAlert||null;
+  const newsAlert=full?.newsContext&&!(dynamicAlert?.lastAcceptedAt&&Date.now()-Date.parse(dynamicAlert.lastAcceptedAt)<1800000)?await processNewsReassessment(env,full.newsContext,full.assets?.ZECUSDT,old.newsAlert||{},cycle.deadlineAt):old.newsAlert||null;
   const rejectionFunnel=due?await updateRejectionFunnel(env,opportunityAudit):old.rejectionFunnel||null;
   const detail = { ...old, opportunityAudit, dynamicAlert,forwardStudy,newsAlert,rejectionFunnel,newsStatus:full?.newsContext?{
     status:full.newsContext.status,checkedAt:full.newsContext.checkedAt,consumedAt:new Date().toISOString(),
@@ -2874,7 +2874,7 @@ async function runDiscovery(env, cycle = scannerCycle(env)) {
     coordinatorFailure:full.newsContext.coordinatorFailure||null,backgroundRefreshFailure:full.newsContext.backgroundRefreshFailure||null,sources:full.newsContext.sources||{},
     recentRiskHeadlineCount:full.newsContext.recentRiskHeadlines?.length||0,upcomingEventCount:full.newsContext.upcomingEvents?.length||0,
     jin10:full.newsContext.sources?.JIN10}:old.newsStatus||null, lastCheckedAt: new Date(now).toISOString(), lastRunAt: due ? now : old.lastRunAt || null,
-    lastSuccessAt: due && !discoveryError && observationStructureReady(full?.assets?.ETHUSDT) ? new Date(now).toISOString() : old.lastSuccessAt || null,
+    lastSuccessAt: due && !discoveryError && observationStructureReady(full?.assets?.ZECUSDT) ? new Date(now).toISOString() : old.lastSuccessAt || null,
     nextDiscoveryAt: new Date((Math.floor((due?now:finite(old.lastRunAt,now))/DISCOVERY_INTERVAL_MS)+1)*DISCOVERY_INTERVAL_MS).toISOString(),
     reason: enabled ? reason : "AUTONOMOUS_DISCOVERY_DISABLED_REGISTERED_OBSERVATIONS_CONTINUE",
     discoveryError, priceError, added, capacityReached, evaluated: evaluations.length, evaluations, notifications, openNowAllowed: false };
@@ -3038,7 +3038,7 @@ const okxWaiters = [];
 
 const ASSETS = {
   BTCUSDT: { instrumentId: "BTC-USDT-SWAP", spotInstrumentId: "BTC-USDT", futuresSymbol: "PI_XBTUSD", gateSymbol: "BTC_USDT", gateQuantoMultiplier: 0.0001, largeTradeFloorUsd: 50_000, krakenSpotPair: "XBTUSD" },
-  ETHUSDT: { instrumentId: "ETH-USDT-SWAP", spotInstrumentId: "ETH-USDT", futuresSymbol: "PI_ETHUSD", gateSymbol: "ETH_USDT", gateQuantoMultiplier: 0.01, largeTradeFloorUsd: 25_000, krakenSpotPair: "ETHUSD" },
+  ZECUSDT: { instrumentId: "ZEC-USDT-SWAP", spotInstrumentId: "ZEC-USDT", futuresSymbol: "PF_ZECUSD", gateSymbol: "ZEC_USDT", gateQuantoMultiplier: 0.01, largeTradeFloorUsd: 25_000, krakenSpotPair: "ZECUSD" },
 };
 
 const TIMEFRAMES = {
@@ -3834,10 +3834,10 @@ async function loadCoinalyzeLiquidations(apiKey) {
     });
     const selected = {
       BTCUSDT: chooseCoinalyzeMarkets(markets, "BTC"),
-      ETHUSDT: chooseCoinalyzeMarkets(markets, "ETH"),
+      ZECUSDT: chooseCoinalyzeMarkets(markets, "ZEC"),
     };
     const symbols = [...new Set(Object.values(selected).flat().map((market) => market.symbol))].slice(0, 20);
-    if (!symbols.length) throw new Error("No supported BTC/ETH stable-margined perpetual markets found on Coinalyze");
+    if (!symbols.length) throw new Error("No supported BTC/ZEC stable-margined perpetual markets found on Coinalyze");
     const now = Math.floor(Date.now() / 1000);
     const from = now - 24 * 60 * 60;
     const query = new URLSearchParams({ symbols: symbols.join(","), interval: "5min", from: String(from), to: String(now), convert_to_usd: "true" });
@@ -5062,7 +5062,7 @@ function parseOkxSpotMarket(tickerRows, tradesRows, bookRows, instrumentId) {
 }
 
 function parseOkxIndexPrice(rows, symbol) {
-  const instId = symbol === "BTCUSDT" ? "BTC-USDT" : "ETH-USDT";
+  const instId = symbol === "BTCUSDT" ? "BTC-USDT" : "ZEC-USDT";
   const row = (Array.isArray(rows) ? rows : []).find((item) => item?.instId === instId);
   const price = finite(row?.idxPx);
   const timestamp = finite(row?.ts);
@@ -5544,7 +5544,7 @@ async function buildSnapshot(options = {}) {
     asset.liquidityRisk = buildMarketLiquidityContext(asset);
     asset.estimatedLiquidationPressureZones = buildEstimatedLiquidationPressureZones(asset);
     asset.largeParticipantProxy = buildLargeParticipantProxy(asset);
-    if(symbol==="ETHUSDT") {
+    if(symbol==="ZECUSDT") {
       const shared=sharedMarketPromise?await sharedMarketPromise:null;
       asset.crossVenueLiquidity=shared?.crossVenueLiquidity||{status:"unavailable",reason:"MULTI_VENUE_COORDINATOR_UNAVAILABLE",arrivalRecheck:{passed:false}};
       asset.publicOrderflow=shared?.orderflow||{status:"unavailable",reason:"SHARED_PUBLIC_ORDERFLOW_UNAVAILABLE",standaloneEntryPermission:false};
@@ -5567,11 +5567,11 @@ async function buildSnapshot(options = {}) {
 
   const newsContext=await newsPromise;
   for(const a of Object.values(assets))a.newsEvidenceAvailable=Object.values(newsContext.sources||{}).some(source=>source.status==="ok"&&source.transportAgeSeconds>=0&&source.transportAgeSeconds<=300);
-  assets.ETHUSDT.holdingProfile = HOLDING_PROFILE;
-  assets.ETHUSDT.opportunityEngine = buildOpportunityScan(assets.ETHUSDT, assets.BTCUSDT);
-  if(scannerStateStub(options.env))try{await scannerStatePut(options.env,"market:liquidity-proposals:v1",{generatedAt:new Date().toISOString(),dataReady:snapshotReadiness(assets).criticalReady,closedBarAt:assets.ETHUSDT.opportunityEngine.closedBarAt,
-    structureValidUntil:Math.min(...Object.entries(assets.ETHUSDT.timeframes).map(([tf,t])=>Date.parse(t.coordinator?.lastRefreshAt||t.dataFreshness?.storedAt||new Date().toISOString())+STRUCTURE_MAX_COLLECTION_AGE_SECONDS[tf]*1000)),atr15:assets.ETHUSDT.timeframes?.['15m']?.indicators?.atr14,
-    proposals:assets.ETHUSDT.opportunityEngine.models.flatMap(m=>[m.swingAssessment?.candidate||m.swingAssessment?.pendingCandidate,m.candidate||(Number.isFinite(m.stopLoss)&&Number.isFinite(m.target)?m:null)].filter(Boolean).map(c=>({submodel:m.submodel,direction:c.direction||m.direction,modelState:m.state,tradeHorizon:c.tradeHorizon||"INTRADAY",entryZone:c.rrQualifiedEntryZone||c.entryZone||m.eventEvidence?.frozenEntryZone,stopLoss:c.stopLoss,modelInvalidationPrice:liquidityProtectionLevel(c),expiresAt:c.expiresAt||m.eventEvidence?.expiresAt||null,target:(c.tradeHorizon==="SWING"?m.swingAssessment?.structuralFirstTarget:null)||c.liquidityPricing?.structuralTarget||c.target,estimatedRoundTripCostPct:c.estimatedRoundTripCostPct}))).filter(p=>p.entryZone)},120);}catch{}
+  assets.ZECUSDT.holdingProfile = HOLDING_PROFILE;
+  assets.ZECUSDT.opportunityEngine = buildOpportunityScan(assets.ZECUSDT, assets.BTCUSDT);
+  if(scannerStateStub(options.env))try{await scannerStatePut(options.env,"market:liquidity-proposals:v1",{generatedAt:new Date().toISOString(),dataReady:snapshotReadiness(assets).criticalReady,closedBarAt:assets.ZECUSDT.opportunityEngine.closedBarAt,
+    structureValidUntil:Math.min(...Object.entries(assets.ZECUSDT.timeframes).map(([tf,t])=>Date.parse(t.coordinator?.lastRefreshAt||t.dataFreshness?.storedAt||new Date().toISOString())+STRUCTURE_MAX_COLLECTION_AGE_SECONDS[tf]*1000)),atr15:assets.ZECUSDT.timeframes?.['15m']?.indicators?.atr14,
+    proposals:assets.ZECUSDT.opportunityEngine.models.flatMap(m=>[m.swingAssessment?.candidate||m.swingAssessment?.pendingCandidate,m.candidate||(Number.isFinite(m.stopLoss)&&Number.isFinite(m.target)?m:null)].filter(Boolean).map(c=>({submodel:m.submodel,direction:c.direction||m.direction,modelState:m.state,tradeHorizon:c.tradeHorizon||"INTRADAY",entryZone:c.rrQualifiedEntryZone||c.entryZone||m.eventEvidence?.frozenEntryZone,stopLoss:c.stopLoss,modelInvalidationPrice:liquidityProtectionLevel(c),expiresAt:c.expiresAt||m.eventEvidence?.expiresAt||null,target:(c.tradeHorizon==="SWING"?m.swingAssessment?.structuralFirstTarget:null)||c.liquidityPricing?.structuralTarget||c.target,estimatedRoundTripCostPct:c.estimatedRoundTripCostPct}))).filter(p=>p.entryZone)},120);}catch{}
   const modules = [];
   for (const asset of Object.values(assets)) modules.push(asset.ticker, ...Object.values(asset.timeframes), asset.derivatives.openInterest, asset.derivatives.funding);
   const available = modules.filter((module) => module.status === "ok").length;
@@ -5681,7 +5681,7 @@ async function buildSnapshot(options = {}) {
         marketTrendAndEnvironment: "4H",
         structureAndDirectionValidity: "1H",
         entryLocationAndTrigger: "15M",
-        btcRole: "ETH_ENVIRONMENT_FILTER",
+        btcRole: "EXECUTABLE_AND_ZEC_ENVIRONMENT_FILTER",
         dailyDataPolicy: "MISSING_1D_ALONE_MUST_NOT_CAUSE_DATA_BLOCKED_UNLESS_USER_EXPLICITLY_REQUESTS_LONGER_HORIZON",
       },
       newsResearchContract: {
@@ -5906,8 +5906,8 @@ function scannerText(value, fallback = "", maximum = 500) {
 function normalizeTradingPlan(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Plan body must be an object");
   const now = Date.now();
-  const symbol = scannerText(input.symbol || "ETHUSDT", "ETHUSDT", 16).toUpperCase();
-  if (!ASSETS[symbol]) throw new Error("symbol must be BTCUSDT or ETHUSDT");
+  const symbol = scannerText(input.symbol || "ZECUSDT", "ZECUSDT", 16).toUpperCase();
+  if (!ASSETS[symbol]) throw new Error("symbol must be BTCUSDT or ZECUSDT");
   const direction = scannerText(input.direction, "", 16).toUpperCase();
   if (!['LONG', 'SHORT'].includes(direction)) throw new Error("direction must be LONG or SHORT");
   const modelAliases = { A: "A", MODEL_A: "A", B: "B", MODEL_B: "B", C: "C", MODEL_C: "C", D: "D", MODEL_D: "D" };
@@ -6478,7 +6478,7 @@ function scannerNotification(plan, evaluation) {
   const currentZone=evaluation.multiVenuePricing?.rrQualifiedEntryZone||plan.entryZone;
   const currentTarget=evaluation.multiVenuePricing?.liquidityAdjustedFirstTarget??plan.takeProfits[0]?.price;
   if (evaluation.state === "MARKET_CONFIRMED") return {
-    title: `✅ ETH（以太坊）技术预案已就绪｜消息与成本待复核`,
+    title: `✅ ${plan.symbol === "BTCUSDT" ? "BTC（比特币）" : "ZEC（大零币）"}技术预案已就绪｜消息与成本待复核`,
     body: `${direction}｜核验价 ${formatPrice(evaluation.price)}\n准备入场区 ${formatPrice(currentZone.min)}—${formatPrice(currentZone.max)}｜结构止损 ${formatPrice(plan.stopLoss)}｜第一现实目标 ${formatPrice(currentTarget)}\n净盈亏比 ${round(evaluation.netRR,2)}｜15分钟关键收盘 ${formatPrice(evaluation.confirmed15mClose)}\n核验时间 ${chinaTime(evaluation.checkedAt)}。技术条件已通过；复核当前报价、消息及实际成本通过后即可自行执行，无需重新等待同一触发。有效期 ${chinaTime(plan.expiresAt)}；离区或失效不追单。`,
     level: "timeSensitive",
   };
@@ -6997,7 +6997,7 @@ function openApi(origin) {
     properties: {
       recordType: { type: "string", enum: ["PLAN"], default: "PLAN" },
       planId: { type: "string", description: "Stable identifier for this exact final GPT plan; omit to auto-generate." },
-      symbol: { type: "string", enum: ["ETHUSDT", "BTCUSDT"] },
+      symbol: { type: "string", enum: ["ZECUSDT", "BTCUSDT"] },
       direction: { type: "string", enum: ["LONG", "SHORT"] },
       model: { type: "string", enum: ["A", "B", "C", "D"], description: "Original A/B/C plus explicit adaptive D1/D2 extension. No model means no plan." },
       submodel: { type: "string", enum: ["A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2"], description: "Required child of A/B/C/D. D1/D2 require frozen adaptiveEvidence returned by the detector." },
@@ -7095,8 +7095,8 @@ function openApi(origin) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Crypto Alpha BTC ETH Realtime",
-      description: "ETH/BTC perpetual data, eight entry models, swing-first holding assessments and fresh multi-venue liquidity pricing. The full 32-lesson knowledge remains; signals do not place orders or guarantee profits.",
+      title: "Crypto Alpha BTC ZEC Realtime",
+      description: "ZEC/BTC perpetual data, eight entry models, swing-first holding assessments and fresh multi-venue liquidity pricing. The full 32-lesson knowledge remains; signals do not place orders or guarantee profits.",
       version: API_VERSION,
     },
     servers: [{ url: origin }],
@@ -7104,10 +7104,10 @@ function openApi(origin) {
       "/": {
         get: {
           operationId: "getCryptoAlphaData",
-          summary: "Get realtime BTC and ETH perpetual market data",
-          description: "Live ETH/BTC data, eight entry models and swing assessments. market supports recheck=true; liquidity rechecks multi-venue entry pricing; fast reports actual background sampling and review freshness. News is timestamped. Private scanner records require Bearer authentication.",
+          summary: "Get realtime BTC and ZEC perpetual market data",
+          description: "Live ZEC/BTC data, eight entry models and swing assessments. market supports recheck=true; liquidity rechecks multi-venue entry pricing; fast reports actual background sampling and review freshness. News is timestamped. Private scanner records require Bearer authentication.",
           security: [],
-          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","fast","news","diagnostics","scanner-status","desk"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; fast: compact actual sampling/review telemetry; news: feeds/calendar; desk: both BTC and ETH, all 16 model results and first-target net RR; diagnostics: connectivity; scanner-status: private Bearer."}],
+          parameters:[{name:"recheck",in:"query",required:false,schema:{type:"boolean",default:false},description:"true: bypass snapshot cache for a fresh pre-entry multi-venue book/trade and risk-reward recheck."},{name:"view",in:"query",required:false,schema:{type:"string",enum:["market","liquidity","fast","news","diagnostics","scanner-status","desk"],default:"market"},description:"market: core market/models; liquidity: fresh multi-venue pre-entry books, trades and linked RR; fast: compact actual sampling/review telemetry; news: feeds/calendar; desk: both BTC and ZEC, all 16 model results and first-target net RR; diagnostics: connectivity; scanner-status: private Bearer."}],
           responses: {
             200: {
               description: "Realtime market snapshot",
@@ -7158,7 +7158,7 @@ function openApi(origin) {
                       },
                       assets: {
                         type: "object",
-                        properties: { BTCUSDT: assetSchema, ETHUSDT: assetSchema },
+                        properties: { BTCUSDT: assetSchema, ZECUSDT: assetSchema },
                       },
                       fallbacks: {
                         type: "array",
@@ -7270,7 +7270,7 @@ function openApi(origin) {
 }
 
 function privacy(origin) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ETH 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数与六组永续结构K线基线保存在 Cloudflare Durable Object 中；系统仅增量更新到期K线，并保存自动候选扫描的最近运行与提醒去重时间，以及有限公开新闻标题、发布时间和来源状态。Bark 设备密钥、扫描令牌、可选金十官方令牌和 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率；Gate USDT 永续作为持久结构K线主源，OKX永续仅在Gate持久基线不可用时完整恢复；OKX现货提供最新成交、订单簿和真实逐笔成交样本。现货样本不冒充持久CVD。Gate还提供主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用或持久数据过期时返回数据阻断，不使用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-10-18</p></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Crypto Alpha Privacy</title><body style="font-family:system-ui;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.7"><h1>Crypto Alpha 隐私政策</h1><p>本服务提供 BTC/ZEC 市场数据、保存用户主动提交的交易监控参数并发送提醒；不自动下单，不接收交易所交易密钥，不收集姓名、邮箱、账户或付款信息。</p><p>监控参数与六组永续结构K线基线保存在 Cloudflare Durable Object 中；系统仅增量更新到期K线，并保存自动候选扫描的最近运行与提醒去重时间，以及有限公开新闻标题、发布时间和来源状态。Bark 设备密钥、扫描令牌、可选金十官方令牌和 Coinalyze 数据密钥以 Cloudflare Secret 保存，不写入接口响应。</p><p>为保障稳定性，服务提供商可能保留短期技术日志，例如请求时间、错误信息与网络元数据。日志仅用于故障排查。</p><p>执行数据来源：OKX USDT 永续实时价格、指数、标记价、OI和资金费率；Gate USDT 永续作为持久结构K线主源，OKX永续仅在Gate持久基线不可用时完整恢复；OKX现货提供最新成交、订单簿和真实逐笔成交样本。现货样本不冒充持久CVD。Gate还提供主动买卖估算、大额成交估算、订单簿、已发生强平和多空比等辅助证据。可选 Coinalyze 仅补充所选市场已经发生的清算历史。系统估算的压力区不是未来全市场清算地图，大额参与足迹也不是精确巨鲸账户仓位。所有确认数据均不能单独制造开仓方向。结构源全部不可用或持久数据过期时返回数据阻断，不使用现货K线补位。服务地址：${origin}</p><p>最后更新：2026-10-18</p></body></html>`;
 }
 
 function publicConnectionDiagnostic(request, env) {
@@ -7305,7 +7305,7 @@ function referenceRepeatedMarketEvidence(out) {
   };
   // These decision-bearing sections remain inline and unchanged. References
   // elsewhere can point at them, but can never replace their contents.
-  for(const symbol of ["ETHUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(!a)continue;
+  for(const symbol of ["ZECUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(!a)continue;
     for(const key of ["opportunityEngine","timeframes","ticker"])seed(a[key],"assets."+symbol+"."+key);
   }
   seed(out.newsContext?.sources,"newsContext.sources");seed(out.newsContext?.recentRiskHeadlines,"newsContext.recentRiskHeadlines");
@@ -7321,14 +7321,14 @@ function referenceRepeatedMarketEvidence(out) {
   // Only known response modules participate; unknown extensions still fail
   // closed when oversized. No values are rounded, truncated or discarded.
   const modules=["spotMarket","derivatives","capitalFlow","executionLiquidity","liquidationRiskProxy","liquidityRisk","estimatedLiquidationPressureZones","largeParticipantProxy","crossVenueLiquidity","publicOrderflow","effortVsResult","rangeContext","marketRegimeRouter","dynamicContext","dataGaps","holdingProfile"];
-  for(const symbol of ["ETHUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(a)for(const key of modules)walk(a,key,"assets."+symbol+"."+key);}
+  for(const symbol of ["ZECUSDT","BTCUSDT"]){const a=out.assets?.[symbol];if(a)for(const key of modules)walk(a,key,"assets."+symbol+"."+key);}
   if(out.newsContext)walk(out.newsContext,"headlines","newsContext.headlines");
   return count;
 }
 function marketResponseSectionBytes(out) {
   const size=v=>v===undefined?0:jsonUtf8Size(JSON.stringify(v));
   return {newsContext:size(out.newsContext),analysisContract:size(out.analysisContract),
-    assets:Object.fromEntries(["ETHUSDT","BTCUSDT"].map(symbol=>[symbol,Object.fromEntries(["timeframes","opportunityEngine","crossVenueLiquidity","publicOrderflow","capitalFlow","liquidityRisk"].map(key=>[key,size(out.assets?.[symbol]?.[key])]))]))};
+    assets:Object.fromEntries(["ZECUSDT","BTCUSDT"].map(symbol=>[symbol,Object.fromEntries(["timeframes","opportunityEngine","crossVenueLiquidity","publicOrderflow","capitalFlow","liquidityRisk"].map(key=>[key,size(out.assets?.[symbol]?.[key])]))]))};
 }
 function boundedMarketSnapshot(snapshot) {
   const original=JSON.stringify(snapshot),budget=90000;
@@ -7380,9 +7380,9 @@ function boundedMarketSnapshot(snapshot) {
     if(fits())break;
     let reduced=false;
     for(const [symbol,asset] of Object.entries(out.assets||{}))for(const [tf,t] of Object.entries(asset.timeframes||{})){
-      // Leave a recent ETH preview even under pressure. Full event/trigger,
+      // Leave a recent ZEC preview even under pressure. Full event/trigger,
       // protective structures, quality and every model candidate remain exact.
-      const cap=symbol==="ETHUSDT"?Math.max(4,limit):limit;
+      const cap=symbol==="ZECUSDT"?Math.max(4,limit):limit;
       if(Array.isArray(t.recentCandles)&&t.recentCandles.length>cap){
         const path="assets."+symbol+".timeframes."+tf+".recentCandles";
         const previous=out.transportDiagnostics.previewLimits[path];
@@ -7390,7 +7390,7 @@ function boundedMarketSnapshot(snapshot) {
         t.recentCandles=cap?t.recentCandles.slice(-cap):[];reduced=true;
       }
     }
-    if(reduced)note("RAW_CANDLE_PREVIEW_LIMIT_"+limit+"_ETH_MINIMUM_4");
+    if(reduced)note("RAW_CANDLE_PREVIEW_LIMIT_"+limit+"_ZEC_MINIMUM_4");
   }
   if(!fits()){
     // The standalone news view exposes the full title list; risk headlines,
@@ -7472,7 +7472,7 @@ async function buildManualResponse(request, env, ctx) {
       const cached=await cache.match(cacheKey);
       if(cached){
         const saved=await cached.json();
-        if(!saved||typeof saved!=="object"||!saved.assets?.ETHUSDT||!saved.assets?.BTCUSDT)throw new Error("INVALID_CACHED_SNAPSHOT");
+        if(!saved||typeof saved!=="object"||!saved.assets?.ZECUSDT||!saved.assets?.BTCUSDT)throw new Error("INVALID_CACHED_SNAPSHOT");
         return marketSnapshotResponse(refreshServedSnapshot(saved));
       }
     }catch{snapshotCacheWarning="SNAPSHOT_CACHE_READ_FAILED_LIVE_FETCH_USED";}
@@ -7768,7 +7768,7 @@ function macroSummary(context) {
     IBIT_HOLDINGS: "IBIT（比特币基金）持仓", ETHA_HOLDINGS: "ETHA（以太坊基金）持仓",
     OKX_BTC_OPTIONS: "欧易 BTC（比特币）期权", OKX_ETH_OPTIONS: "欧易 ETH（以太坊）期权" };
   for (const row of context?.macroReferences?.sources ?? []) {
-    if (row.status !== "ok" || !row.data || !labels[row.id]) continue;
+    if (["ETHA_HOLDINGS","OKX_ETH_OPTIONS"].includes(row.id) || row.status !== "ok" || !row.data || !labels[row.id]) continue;
     const data = row.data;
     const observedAt = dateOrNull(data.asOf ?? data.weekEnding ?? data.exchangeTimestamp ?? row.fetchedAt);
     const value = isNum(data.count) ? data.count.toLocaleString("zh-CN") + " 人（周度）"
@@ -7782,7 +7782,7 @@ function macroSummary(context) {
 
 function deskAnalysis(snapshot, { origin = "site-engine", monitor = false, now = Date.now() } = {}) {
   const capturedAt = new Date(now).toISOString();
-  const assets = Object.fromEntries(["BTC", "ETH"].map(symbol => [
+  const assets = Object.fromEntries(["BTC", "ZEC"].map(symbol => [
     symbol, assetSummary(snapshot?.assets?.[symbol + "USDT"], symbol, capturedAt),
   ]));
   const plans = Object.values(assets).flatMap(a => a.plans);
@@ -7911,9 +7911,9 @@ const reply = (body, status = 200) => ({ body, status });
 const problem = (status, error) => reply({ connected: false, watches: [], error }, status);
 
 function requestId(value) {
-  return value && /^(BTC|ETH)-[ABCD][12]-(LONG|SHORT)-(SWING|INTRADAY)-[a-z0-9]{1,12}$/.test(value.id)
+  return value && /^(BTC|ZEC)-[ABCD][12]-(LONG|SHORT)-(SWING|INTRADAY)-[a-z0-9]{1,12}$/.test(value.id)
     && /^[a-z0-9]{1,12}$/.test(value.revision)
-    && ["BTC", "ETH"].includes(value.asset) && value.id.startsWith(value.asset + "-");
+    && ["BTC", "ZEC"].includes(value.asset) && value.id.startsWith(value.asset + "-");
 }
 
 async function signedPayload(request, path) {
@@ -8312,7 +8312,7 @@ async function deskQueueAlert(tx,id,title,body){
 async function deskAlert(owner,id,title,body){await owner.ctx.storage.transaction(tx=>deskQueueAlert(tx,id,title,body));}
 async function deskClosedBars(owner,symbol,now,recover=false,timeframe='1h'){
  const ms=TIMEFRAMES[timeframe].intervalMs, key=symbol+':'+timeframe;
- const instrument=symbol==='ZECUSDT'?{instrumentId:'ZEC-USDT-SWAP',gateSymbol:'ZEC_USDT'}:ASSETS[symbol];
+ const instrument=ASSETS[symbol];
  const lastStart=Math.floor(now/ms)*ms-ms;
  const cache=owner.deskHourHistory||(owner.deskHourHistory=new Map());
  const current=cache.get(key);
@@ -8343,19 +8343,14 @@ async function recordDeskMarketScan(owner,snapshot){
  await Promise.all(Object.entries(snapshot.assets||{}).map(async([symbol,asset])=>{
   const timeframes={...asset.timeframes};
   await Promise.all(['15m','1h','4h'].map(async tf=>{
-   if(tf==='1h'){
-    const bars=await deskClosedBars(owner,symbol,now,true);
+   if(tf==='1h'||symbol==='ZECUSDT'){
+    const bars=await deskClosedBars(owner,symbol,now,true,tf);
     if(bars.length){timeframes[tf]={status:'ok',quality:{passed:true},recentCandles:bars};return;}
    }
    const envelope=await storage.get(structureRecordKey(symbol,tf)),record=envelope?.value;
    if(record&&structureRecordUsable(record,tf,now))timeframes[tf]={...timeframes[tf],recentCandles:record.candles.slice(-80).map(c=>({ts:c.ts,o:c.open,h:c.high,l:c.low,c:c.close,volume:finite(c.volumeBase,c.volumeContracts),confirmed:c.confirmed}))};
   }));assets[symbol]={timeframes};
  }));
- const zecFrames=await Promise.all(Object.keys(TIMEFRAMES).map(async tf=>{
-  const bars=await deskClosedBars(owner,'ZECUSDT',now,true,tf);
-  return [tf,bars.length?{status:'ok',quality:{passed:true},recentCandles:bars}:null];
- }));
- assets.ZECUSDT={timeframes:Object.fromEntries(zecFrames)};
  const report=AlphaDeskMarket.scanMarket({assets},now);
  await storage.transaction(async tx=>{
   const previous=await tx.get('desk:v2:market-scanner')||{cursors:{},events:[]};const cursors={...previous.cursors},fresh=[];
@@ -8390,10 +8385,11 @@ async function deskLedgerStatistics(owner){
  for(let page=0;page<100;page++){
   const batch=await owner.ctx.storage.list({prefix:DESK_JOURNAL_PREFIX,reverse:true,limit:100,...(cursor?{end:cursor}:{})});
   const entries=[...batch.entries()];
-  for(const [,r] of entries)compact.push({status:r.status,uncertain:r.uncertain,closedAt:r.closedAt,exit:r.exit?{netR:r.exit.netR}:null});
+  for(const [,r] of entries)compact.push({asset:r.plan?.asset,status:r.status,uncertain:r.uncertain,closedAt:r.closedAt,exit:r.exit?{netR:r.exit.netR}:null});
   if(entries.length<100){complete=true;break;}cursor=entries.at(-1)[0];
  }
- const value={...AlphaDeskAutonomy.statistics(compact),complete,recordCount:compact.length,asOf:new Date().toISOString(),
+ const byAsset=Object.fromEntries(["ZEC","BTC"].map(asset=>[asset,AlphaDeskAutonomy.statistics(compact.filter(r=>r.asset===asset))]));
+ const value={...AlphaDeskAutonomy.statistics(compact),byAsset,complete,recordCount:compact.length,asOf:new Date().toISOString(),
   superseded:compact.filter(r=>r.status==='SUPERSEDED').length};
  if((owner.deskLedgerGeneration||0)===generation)owner.deskLedgerSummary={generation,at:Date.now(),value};
  return value;
@@ -8406,7 +8402,7 @@ async function deskJournal(owner,before=null){
 async function deskOperations(owner){
  const storage=owner.ctx.storage;const [settings,journal,alerts,tapes,health,marketScanner]=await Promise.all([deskSettings(owner),deskJournal(owner),storage.get(DESK_ALERT_KEY),storage.list({prefix:'desk:v2:tape:'}),storage.get('desk:v2:health'),storage.get('desk:v2:market-scanner')]);
  return {capability:'desk-autonomy-v1',build:BUILD,settings,journal,alerts:(alerts||[]).slice(0,30),health:health||null,marketScanner:marketScanner||null,notificationPolicy:{technicalPhoneAlerts:false,marketSignals:true,paperEntryAndExit:true},
-  tapes:[...tapes.entries()].map(([key,value])=>{const {ids,...safe}=value;return {asset:key.split(':')[3],venue:key.split(':')[4],...safe};}),
+  tapes:[...tapes.entries()].filter(([key])=>ASSETS[key.split(':')[3]+'USDT']).map(([key,value])=>{const {ids,...safe}=value;return {asset:key.split(':')[3],venue:key.split(':')[4],...safe};}),
   analysisMode:'DETERMINISTIC_RULES',customGptInvoked:false,llmConfigured:false,liquidationMap:{available:false,reason:'需要授权的模型热图接口；深度挂单不是清算地图'}};
 }
 async function deskControl(owner,input){
@@ -8435,7 +8431,7 @@ async function refreshDeskVolatility(owner){
  const now=Date.now();
  if(owner.deskVolatility&&Object.values(owner.deskVolatility).every(v=>now-Date.parse(v.checkedAt)<60000))return owner.deskVolatility;
  const volatility={};
- for(const symbol of ['BTC','ETH']){
+ for(const symbol of ['BTC','ZEC']){
   const candles=await deskClosedBars(owner,symbol+'USDT',now);
   volatility[symbol]=AlphaDeskAutonomy.volatility({timeframes:{'1h':{candles}}},now);
  }
@@ -8450,9 +8446,9 @@ function deskStructureKey(plan){
 async function captureDeskPlans(owner,result,snapshot){
  const now=Date.now(),volatility=await refreshDeskVolatility(owner);
  result.analysisReceipt={id:crypto.randomUUID(),startedAt:owner.deskScanStartedAt||result.capturedAt,completedAt:result.capturedAt,mode:'DETERMINISTIC_RULES',customGptInvoked:false,
-  rules:'V27 八模型 / BTC+ETH / 净RR≥2 / 波段优先',stages:['独立成交与盘口','三周期已收盘结构','八模型逐一核验','跨所流动性及成本情景','新闻来源状态'],
+  rules:'V27 八模型 / BTC+ZEC / 净RR≥2 / 波段优先',stages:['独立成交与盘口','三周期已收盘结构','八模型逐一核验','跨所流动性及成本情景','新闻来源状态'],
   limitations:['未调用自定义GPT或语言模型','订单流/CVD为辅助采样，缺失不得视为零','消息和实际成本仍待人工终审'],
-  assets:Object.fromEntries(['BTC','ETH'].map(a=>[a,{volatility:volatility[a],orderflowStatus:snapshot.assets[a+'USDT'].publicOrderflow?.status||'unavailable'}]))};
+  assets:Object.fromEntries(['BTC','ZEC'].map(a=>[a,{volatility:volatility[a],orderflowStatus:snapshot.assets[a+'USDT'].publicOrderflow?.status||'unavailable'}]))};
  owner.deskVolatility=Object.fromEntries(Object.entries(result.analysisReceipt.assets).map(([a,v])=>[a,v.volatility]));
  if(!owner.ctx.storage?.transaction)return;
  await deskSerial(owner,async()=>{
@@ -8488,7 +8484,7 @@ async function captureDeskPlans(owner,result,snapshot){
    if(settings.enabled&&keepWatching)await DeskBridge.discover(owner,keepWatching);
   }
   const previous=await storage.get('desk:v2:health');const missing=Object.values(result.assets).filter(a=>!a.ready).map(a=>a.asset);
-  const volatilityMissing=['BTC','ETH'].filter(a=>!(volatility[a]?.threshold>0));
+  const volatilityMissing=['BTC','ZEC'].filter(a=>!(volatility[a]?.threshold>0));
   const healthySince=missing.length?null:(previous?.healthySince||now);
   const incidentOpen=missing.length?true:Boolean(previous?.incidentOpen&&now-healthySince<60000);
   const health={healthySince,incidentOpen,checkedAt:result.capturedAt,missing,volatilityMissing,receiptId:result.analysisReceipt.id,quoteMode:'OKX_REAL_BOOK',autoDiscovery:settings.enabled};await storage.put('desk:v2:health',health);
@@ -8497,7 +8493,7 @@ async function captureDeskPlans(owner,result,snapshot){
 async function deskPaperTick(owner,entryPlan=null,ticker=null){
  return deskSerial(owner,async()=>{
   const storage=owner.ctx.storage,active=await storage.get(DESK_ACTIVE_KEY)||[];if(!active.length)return;
-  const quotes={};for(const symbol of ['BTC','ETH']){try{quotes[symbol]=AlphaDeskDecision.deskQuote(entryPlan?.asset===symbol?ticker:await deskDirectQuote(owner,symbol));}catch{quotes[symbol]=null;}}
+  const quotes={};for(const symbol of ['BTC','ZEC']){try{quotes[symbol]=AlphaDeskDecision.deskQuote(entryPlan?.asset===symbol?ticker:await deskDirectQuote(owner,symbol));}catch{quotes[symbol]=null;}}
   const next=[];
   owner.deskLastQuote ||= new Map();
   for(const key of active){
@@ -8538,12 +8534,12 @@ async function sharedDeskAnalysis(owner, force = false) {
     owner.deskScanStartedAt=new Date().toISOString();
     const env=fastLocalEnvironment(owner);
     const snapshot=await buildSnapshot({env,scannerMode:true,coinalyzeApiKey:env.COINALYZE_API_KEY});
-    const btc=snapshot.assets.BTCUSDT,eth=snapshot.assets.ETHUSDT;
-    const [btcLiquidity,ethLiquidity]=await Promise.all([
+    const btc=snapshot.assets.BTCUSDT,zec=snapshot.assets.ZECUSDT;
+    const [btcLiquidity,zecLiquidity]=await Promise.all([
       collectCrossVenueLiquidity(owner, {}, "BTC").catch(()=>null),
-      collectCrossVenueLiquidity(owner, {}, "ETH").catch(()=>null),
+      collectCrossVenueLiquidity(owner, {}, "ZEC").catch(()=>null),
     ]);
-    await Promise.all([[btc,"BTC",btcLiquidity],[eth,"ETH",ethLiquidity]].map(async ([asset,symbol,liquidity])=>{
+    await Promise.all([[btc,"BTC",btcLiquidity],[zec,"ZEC",zecLiquidity]].map(async ([asset,symbol,liquidity])=>{
       asset.crossVenueLiquidity=liquidity||{status:"unavailable",reason:"LIQUIDITY_RECHECK_FAILED",arrivalRecheck:{passed:false}};
       const sampled=liquidity?.executionQuote;
       const quote=sampled&&genuineExecutionQuote(sampled)?sampled:await deskDirectQuote(owner,symbol).catch(()=>null);
@@ -8551,7 +8547,7 @@ async function sharedDeskAnalysis(owner, force = false) {
     }));
     btc.holdingProfile={...HOLDING_PROFILE,minimumFirstTargetMoveUsd:0};
     btc.opportunityEngine=buildDeskOpportunityScan(btc,null);
-    eth.opportunityEngine=buildDeskOpportunityScan(eth,btc);
+    zec.opportunityEngine=buildDeskOpportunityScan(zec,btc);
     const result=AlphaDeskDecision.deskAnalysis(snapshot,{origin:"shared-worker",monitor:fastMonitorConfigured(owner.env)});
     await captureDeskPlans(owner,result,snapshot);
     await recordDeskMarketScan(owner,snapshot);
@@ -8580,10 +8576,62 @@ const DeskBridge=AlphaDeskBridge.createDeskBridge({
   notify:(owner,notification,eventId)=>sendBark(fastLocalEnvironment(owner),notification,{kind:"PLAN",eventId:"DESK:"+eventId,stage:"VERIFIED_ENTRY_ZONE_PENDING_FINAL_REVIEW"}),
 });
 
+async function retireEtherMonitoring(storage) {
+  const marker = 'desk:universe:btc-zec:v1';
+  if (await storage.get(marker)) return;
+  await storage.transaction(async tx => {
+    if (await tx.get(marker)) return;
+    const at = new Date().toISOString();
+    const archive = 'archive:eth-before-zec:';
+    const plan = await tx.get(ACTIVE_PLAN_KEY);
+    const keys = [OBSERVATIONS_KEY, DISCOVERY_STATE_KEY, FORWARD_STUDY_KEY, FAST_MONITOR_KEY,
+      FAST_REVIEW_KEY, SCANNER_REVIEW_REQUEST_KEY, SCANNER_CYCLE_RESULT_KEY, PROGRESS_ALERT_KEY,
+      'market:liquidity-proposals:v1', 'desk:v2:health', 'desk:v2:volatility'];
+    if (plan?.value?.symbol !== 'BTCUSDT') keys.push(ACTIVE_PLAN_KEY, SCANNER_RUNTIME_KEY);
+    for (const key of keys) {
+      const old = await tx.get(key);
+      if (old !== undefined && old !== null) {
+        await tx.put(archive + key, old);
+        await tx.delete(key);
+      }
+    }
+    const watchesKey = 'desk:v1:watches';
+    const watches = await tx.get(watchesKey) || [];
+    const retired = w => w.plan?.asset === 'ETH';
+    if (watches.some(retired)) {
+      await tx.put(archive + watchesKey, watches.filter(retired));
+      await tx.put(watchesKey, watches.filter(w => !retired(w)));
+    }
+    const active = await tx.get(DESK_ACTIVE_KEY) || [];
+    const keep = [];
+    for (const key of active) {
+      const ticket = await tx.get(key);
+      if (ticket?.plan?.asset !== 'ETH') { keep.push(key); continue; }
+      if (['WAITING','OPEN'].includes(ticket.status)) await tx.put(key, { ...ticket,
+        status: ticket.entry ? 'UNRESOLVED' : 'RETIRED', uncertain: Boolean(ticket.entry),
+        closedAt: at, review: 'ETH 已移出监控。保留原始计划与已有成交，未核实退出不计胜率。' });
+    }
+    if (keep.length !== active.length) await tx.put(DESK_ACTIVE_KEY, keep);
+    const alerts = await tx.get(DESK_ALERT_KEY) || [];
+    const removed = row => /(?:^|[^A-Z])ETH(?:USDT|[^A-Z]|$)|以太坊/.test(row.id + ' ' + row.title);
+    if (alerts.some(removed)) {
+      await tx.put(archive + DESK_ALERT_KEY, alerts.filter(removed));
+      await tx.put(DESK_ALERT_KEY, alerts.filter(row => !removed(row)));
+    }
+    const scanKey = 'desk:v2:market-scanner';
+    const scan = await tx.get(scanKey);
+    if (scan) await tx.put(scanKey,{...scan,frames:(scan.frames||[]).filter(f=>f.asset!=='ETH'),
+      events:(scan.events||[]).filter(e=>e.asset!=='ETH'),
+      cursors:Object.fromEntries(Object.entries(scan.cursors||{}).filter(([k])=>!k.startsWith('ETH:')))});
+    await tx.put(marker, {at, assets:['BTC','ZEC']});
+  });
+}
+
 export class ScannerState {
   constructor(ctx, env = {}) {
     this.ctx = ctx;
     this.env = env;
+    ctx.blockConcurrencyWhile?.(() => retireEtherMonitoring(ctx.storage));
   }
 
   async alarm() {

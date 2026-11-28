@@ -1,3 +1,4 @@
+import {pairBaseline} from './pair-baseline.mjs';
 import {stripMonitorExtensions} from './preservation-monitor.mjs';
 import assert from 'node:assert/strict';
 import {summarizeMacroReferences,MACRO_REFERENCE_REVISION} from '../ops/macro-reference-cache.mjs';
@@ -13,13 +14,13 @@ async function test(name,fn){try{await fn();passed++;cases.push({name,passed:tru
 const plain=v=>JSON.parse(JSON.stringify(v)),byteSize=v=>Buffer.byteLength(JSON.stringify(v));
 function load(source){const c={Date,Response,Request,Headers,URL,console,structuredClone};vm.createContext(c);vm.runInContext(source.replaceAll('export class ','class ').replaceAll('export function ','function ').replace('export default {','globalThis.worker={'),c);return c;}
 const source=fs.readFileSync(new URL('main-v188.js',root),'utf8');
-const current=load(source),old=load(fs.readFileSync(new URL('tests/baselines/V27_1_1_main-v188.js',root),'utf8'));
+const current=load(source),old=load(pairBaseline(fs.readFileSync(new URL('tests/baselines/V27_1_1_main-v188.js',root),'utf8')));
 const project=(c,m)=>{c.snapshot=m;return plain(vm.runInContext('boundedMarketSnapshot(snapshot)',c));};
 const full=()=>JSON.parse(fs.readFileSync(new URL('tests/fixtures/full-market-synthetic.json',root),'utf8'));
 function connected(m){
   const at=m.generatedAt;
   m.newsContext={status:'PARTIAL_VERIFIED_FEEDS',checkedAt:at,sources:Object.fromEntries(['JIN10','COINDESK','FED_PRESS','FED_SPEECH','BLS_CPI','BLS_EMPLOYMENT','BLS_CALENDAR'].map(id=>[id,{status:'ok',httpStatus:200,fetchedAt:at,latestPublishedAt:at,parserRevision:'27.1.1',itemCount:20,parseDiagnostics:{rawItemCount:20,acceptedItemCount:20,rejectedItemCount:0,parserRevision:'27.1.1'}}])),
-    headlines:Array.from({length:16},(_,i)=>({id:'fixture-'+i,source:'JIN10',title:'ETH 以太坊风险消息中文与 emoji 😀 '.repeat(8),url:'https://example.invalid/'+i,publishedAt:at,fetchedAt:at,riskTags:['RISK_REASSESSMENT'],relevant:true})),recentRiskHeadlines:[],upcomingEvents:[],eventWindow:[]};
+    headlines:Array.from({length:16},(_,i)=>({id:'fixture-'+i,source:'JIN10',title:'ZEC 大零币风险消息中文与 emoji 😀 '.repeat(8),url:'https://example.invalid/'+i,publishedAt:at,fetchedAt:at,riskTags:['RISK_REASSESSMENT'],relevant:true})),recentRiskHeadlines:[],upcomingEvents:[],eventWindow:[]};
   m.newsContext.recentRiskHeadlines=m.newsContext.headlines.slice(0,4);
   return m;
 }
@@ -28,11 +29,11 @@ function preserve(input,out){
   assert.ok(byteSize(out)<=90000);
   assert.equal(out.transportDiagnostics.transferredUtf8Bytes,byteSize(out));
   assert.equal(out.transportDiagnostics.modelAssessmentsTransferredInFull,true);
-  for(const symbol of ['ETHUSDT','BTCUSDT']){
+  for(const symbol of ['ZECUSDT','BTCUSDT']){
     assert.deepEqual(out.assets[symbol].ticker,input.assets[symbol].ticker);
     for(const tf of ['15m','1h','4h'])for(const key of ['quality','coordinator','indicators','levels'])assert.deepEqual(out.assets[symbol].timeframes[tf][key],input.assets[symbol].timeframes[tf][key]);
   }
-  assert.deepEqual(out.assets.ETHUSDT.opportunityEngine.models,input.assets.ETHUSDT.opportunityEngine.models);
+  assert.deepEqual(out.assets.ZECUSDT.opportunityEngine.models,input.assets.ZECUSDT.opportunityEngine.models);
   assert.deepEqual(out.newsContext.sources,input.newsContext.sources);
   assert.deepEqual(out.newsContext.recentRiskHeadlines,input.newsContext.recentRiskHeadlines);
   sizes.push({originalUtf8Bytes:byteSize(input),transferredUtf8Bytes:byteSize(out),reductions:out.transportDiagnostics.omitted});
@@ -53,13 +54,13 @@ await test('connected seven-source news and long multibyte titles fit without lo
 });
 await test('all eight nonempty candidates retain every number, cost, target and frozen evidence item',()=>{
   const m=connected(full());
-  m.assets.ETHUSDT.opportunityEngine.models=m.assets.ETHUSDT.opportunityEngine.models.map((row,i)=>({...row,state:'CANDIDATE_FOR_REVIEW',failedGate:null,netRR:2+i/10,
+  m.assets.ZECUSDT.opportunityEngine.models=m.assets.ZECUSDT.opportunityEngine.models.map((row,i)=>({...row,state:'CANDIDATE_FOR_REVIEW',failedGate:null,netRR:2+i/10,
     candidate:{submodel:row.submodel,direction:'LONG',entryZone:{min:2410+i,max:2412+i},stopLoss:2400,firstRealisticTarget:{price:2442+i,basis:'NEAREST_STRUCTURAL_OBSTACLE'},target:2442+i,netRR:2+i/10,
       estimatedRoundTripCostPct:0.15,costStressMultiplier:1.5,eventAt:m.generatedAt,expiresAt:m.generatedAt,routeEvidence:{frozen:true,observations:Array.from({length:20},(_,j)=>({candleAt:m.generatedAt,close:2410+j,protectedLow:2400+j,passed:true})),rationale:'Real structural evidence must remain intact. '.repeat(20)},openNowAllowed:false}}));
   preserve(m,project(current,m));
 });
 await test('actual shadow market with maximum recent risk list and six references fits the existing wire budget',()=>{
-  const m=JSON.parse(fs.readFileSync(new URL('tests/fixtures/market-shadow-20261106.json',root),'utf8'));
+  const m=JSON.parse(pairBaseline(fs.readFileSync(new URL('tests/fixtures/market-shadow-20261106.json',root),'utf8')));
   const ref=JSON.parse(fs.readFileSync(new URL('evidence/2026-11-06-macro-reference-candidate.json',root),'utf8')).live;
   m.newsContext.macroReferences=summarizeMacroReferences({records:Object.fromEntries(ref.sources.map(s=>[s.id,{...s,revision:MACRO_REFERENCE_REVISION,lastAttemptAt:s.fetchedAt,lastSuccessAt:s.fetchedAt}]))},Date.parse(ref.checkedAt));
   m.newsContext.recentRiskHeadlines=m.newsContext.headlines.map(s=>({...s,title:'风'.repeat(220),riskTags:['MACRO_EVENT_REVIEW','CENTRAL_BANK_POLICY_REVIEW','USD_YIELD_RISK_REVIEW']}));
@@ -85,11 +86,11 @@ await test('actual shadow market with maximum recent risk list and six reference
   assert.deepEqual(news.upcomingEvents[0],m.newsContext.upcomingEvents[0]);
   assert.deepEqual(news.macroReferences.sources.map(s=>s.data),m.newsContext.macroReferences.sources.map(s=>s.data));
   for(const [id,r] of Object.entries(m.newsContext.sources))for(const k of ['status','fetchedAt','latestPublishedAt','httpStatus','directHttpStatus','sourceProvenance','parserRevision'])assert.deepEqual(news.sources[id][k]??null,r[k]??null);
-  for(const symbol of ['ETHUSDT','BTCUSDT']){
+  for(const symbol of ['ZECUSDT','BTCUSDT']){
     assert.deepEqual(out.assets[symbol].ticker,m.assets[symbol].ticker);
     for(const tf of ['15m','1h','4h'])for(const key of ['quality','coordinator','indicators','levels'])assert.deepEqual(out.assets[symbol].timeframes[tf][key],m.assets[symbol].timeframes[tf][key]);
   }
-  assert.deepEqual(out.assets.ETHUSDT.opportunityEngine.models,m.assets.ETHUSDT.opportunityEngine.models);
+  assert.deepEqual(out.assets.ZECUSDT.opportunityEngine.models,m.assets.ZECUSDT.opportunityEngine.models);
   assert.equal(JSON.stringify(m),before);
   sizes.push({originalUtf8Bytes:byteSize(m),previousAttemptedUtf8Bytes:failed.transportDiagnostics.attemptedCompactedUtf8Bytes,transferredUtf8Bytes:byteSize(out),reductions:out.transportDiagnostics.omitted});
 });
@@ -112,7 +113,7 @@ await test('old parser cache is flagged, refreshed and consumed with current-ver
   let records={records:Object.fromEntries(['FED_PRESS','FED_SPEECH'].map(id=>[id,{status:'ok',httpStatus:200,items:[],fetchedAt:at,lastAttemptAt:at,transportRevision:'27.0.2',parserRevision:'27.1.0',parseDiagnostics:{rawItemCount:id==='FED_PRESS'?20:15,acceptedItemCount:0,rejectedItemCount:id==='FED_PRESS'?20:15,contentStatus:'ALL_ITEMS_REJECTED'}}]))};
   let release;const blocked=new Promise(r=>release=r);
   const owner={env:{},ctx:{storage:{get:async()=>structuredClone(records),put:async(k,v)=>{records=structuredClone(v);}},waitUntil:p=>pending.push(p)}};
-  f.c.fetch=async url=>{await blocked;return new Response(url.endsWith('.ics')?'BEGIN:VCALENDAR\nEND:VCALENDAR':`<rss><channel><item><title>ETH Fed test</title><link>https://example.invalid/n</link><pubDate><![CDATA[${new Date(f.now()).toUTCString()}]]></pubDate></item></channel></rss>`);};
+  f.c.fetch=async url=>{await blocked;return new Response(url.endsWith('.ics')?'BEGIN:VCALENDAR\nEND:VCALENDAR':`<rss><channel><item><title>ZEC Fed test</title><link>https://example.invalid/n</link><pubDate><![CDATA[${new Date(f.now()).toUTCString()}]]></pubDate></item></channel></rss>`);};
   const stale=await x.cachedNewsContext(owner);assert.equal(stale.parserAudit.cacheNeedsRefresh,true);assert.equal(stale.sources.FED_PRESS.parseDiagnostics.acceptedItemCount,0);
   release();await Promise.all(pending);
   const refreshed=await x.cachedNewsContext(owner);assert.equal(refreshed.parserAudit.cacheNeedsRefresh,false);assert.equal(refreshed.sources.FED_PRESS.parserRevision,x.newsContextSummary({}).parserAudit.expectedRevision);assert.equal(refreshed.sources.FED_PRESS.parseDiagnostics.acceptedItemCount,1);
@@ -122,7 +123,7 @@ await test('old parser cache is flagged, refreshed and consumed with current-ver
 });
 await test('delivery and official macro-news patch preserves scanner implementation and model thresholds',()=>{
   const allowed=new Set(['collectCrossVenueLiquidity','handleSnapshot','estimatedCandidateCost','holdingFundingScenarios','assessSwingOpportunity','adaptiveAssessmentBase','opportunityAssessmentBase','discoverRangeReversalBase','fastLocalEnvironment','scannerCycleReceipt','scannerStatusRecord','processObservation','sendBark','saveTradingPlan','scanActivePlan','boundedScannerStatus','processNewsReassessment','newsItem','parseNewsXml','newsContextSummary','coordinatedNewsContext','durableStateCall','coordinatedPublicEndpoint','cooldownError','candleQuality','coordinatedLiquidityRecheck','scannerCycle','runScannerUnlocked','runScanner','scannerConfiguration','scannerStatus','buildManualResponse','evaluateObservation','runDiscovery','processDynamicAlert','openApi','advanceForwardRecord','updateForwardStudy','forwardStudySummary','candidateCard','observationAlert','scannerNotification','parseOkxFunding','updateRejectionFunnel','buildOpportunityScan','adaptiveAssessment','opportunityAssessment','discoverRangeReversal','evaluateTradingPlan','evaluateObservation','runDiscovery','scanActivePlan','durableStateCall','openApi','opportunityAssessment','discoverRangeReversal','evaluateTradingPlan','buildManualResponse','openApi','publicMarketDefinitions','coordinatedMarketBundle','coordinatedDirectQuote','refreshServedSnapshot','buildSnapshot','runDiscovery','coordinatedNewsContext','newsContextSummary','adaptiveAssessment','buildOpportunityScan','updateRejectionFunnel','buildMarketRegimeRouter','boundedMarketSnapshot','newsContextSummary','runDiscovery','scannerStatus','cachedNewsContext']);
-  const previous=fs.readFileSync(new URL('tests/baselines/V27_1_1_main-v188.js',root),'utf8');
+  const previous=pairBaseline(fs.readFileSync(new URL('tests/baselines/V27_1_1_main-v188.js',root),'utf8'));
   for(const [,n] of previous.matchAll(/^(?:export )?(?:async )?function (\w+)\(/gm))if(vm.runInContext(n+'.toString()',old)!==vm.runInContext(n+'.toString()',current))assert.ok(allowed.has(n),n);
   assert.equal(stripMonitorExtensions(vm.runInContext('ScannerState.toString()',old)).replace(/    if\(input\?\.op==="liquidityRecheck"\).*?\n/,''),stripMonitorExtensions(vm.runInContext('ScannerState.toString()',current)).replace(/    if\(input\?\.op==="liquidityRecheck"\).*?\n/,''));
 });

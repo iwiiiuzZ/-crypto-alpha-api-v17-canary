@@ -1,18 +1,18 @@
 {
   "status": "VERIFIED_PHYSICAL_DEPLOYMENT",
-  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r7",
+  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r8",
   "apiVersion": "7.6.0",
   "stateOwnerContract": "owner-local-dispatch-v1",
-  "sourceGitBlobSha": "b258960209596f03cbd5581fc06c1b6ffe58d886",
-  "deploymentId": "10b580c6-749d-446e-872e-63aa8c72f191",
-  "versionId": "6b924f35-60bc-4531-91f1-7ca6ed66ef75",
+  "sourceGitBlobSha": "047775bd99d2f7eadd589a24e90ca99177428be5",
+  "deploymentId": "c236cc2d-b30b-48c4-98ff-1ad05c1dd587",
+  "versionId": "41e9ebc2-2cc7-4f4b-a2b1-3a702efdcb56",
   "namespaceFingerprint": "aedfbcd14cd1",
   "autonomousWindowPassed": false,
   "requiredNewsCoveragePassed": false,
   "blsFourSourceConsumptionVerified": false,
-  "verifiedAt": "2026-11-22T02:58:00Z",
+  "verifiedAt": "2026-11-27T03:16:18Z",
   "finalDeliveryAccepted": false,
   "deviceReceiptVerified": false,
   "scope": "VERIFIED_RELEASE_POSTFLIGHT",
-  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/workflows/desk-reviewed-release.yml"
+  "runUrl": "https://github.com/iwiiiuzZ/-crypto-alpha-api-v17-canary/actions/runs/45932359374"
 }

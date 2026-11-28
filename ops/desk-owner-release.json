@@ -1,8 +1,8 @@
 {
   "operation": "deploy",
-  "releaseId": "owner-repair-2026-11-25",
-  "commitSubject": "Repair Worker model dispatch and freeze structural tickets",
-  "sourceGitBlobSha": "047775bd99d2f7eadd589a24e90ca99177428be5",
-  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r8",
-  "priorLiveBuild": "crypto-alpha-worker-v27.6.3-desk-dual-r7"
+  "releaseId": "owner-pair-2026-11-28",
+  "commitSubject": "Move active trading and monitoring to ZEC and BTC",
+  "sourceGitBlobSha": "32feafcb08bd981bd026dd6800eefa2967590274",
+  "build": "crypto-alpha-worker-v27.6.3-desk-dual-r9",
+  "priorLiveBuild": "crypto-alpha-worker-v27.6.3-desk-dual-r8"
 }

@@ -11,22 +11,22 @@ let price=100,pushes=0,fail=true;
 f.c.runtimeQuote=async()=>quote(price);
 f.c.runtimePush=async()=>{pushes++;return {sent:!fail,providerAcceptedAt:!fail?at(f.now()):null};};
 const api=runInContext(`deskDirectQuote=runtimeQuote;sendBark=runtimePush;fastMonitorConfigured=()=>true;ensureFastMonitor=async()=>({scheduled:true});({capture:captureDeskPlans,tick:deskPaperTick,read:deskOperations,control:deskControl,flush:deskFlushAlerts,alert:deskAlert,market:recordDeskMarketScan})`,f.c);
-const plan={id:'ETH-B1-LONG-INTRADAY-a',revision:'v1',eventAt:at(now-900000),asset:'ETH',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:at(now),expiresAt:at(now+900000)};
+const plan={id:'ZEC-B1-LONG-INTRADAY-a',revision:'v1',eventAt:at(now-900000),asset:'ZEC',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:at(now),expiresAt:at(now+900000)};
 const asset={ready:true,quote:{ready:true,independent:true},plans:[plan]};
-const scan={capturedAt:at(now),assets:{ETH:asset,BTC:{...asset,plans:[]}}};
-const snapshot={assets:{ETHUSDT:{timeframes:{}},BTCUSDT:{timeframes:{}}}};
+const scan={capturedAt:at(now),assets:{ZEC:asset,BTC:{...asset,plans:[]}}};
+const snapshot={assets:{ZECUSDT:{timeframes:{}},BTCUSDT:{timeframes:{}}}};
 await api.capture(owner,scan,snapshot);await api.capture(owner,scan,snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'scan is idempotent');
 assert.equal(state.get('desk:v1:watches').length,1,'automatic discovery needs no button');
 // The same market event must keep its first published paper ticket even when
 // recalculated ATR/cost creates a new revision every minute.
-await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[{...plan,revision:'drift',low:99.01,stop:94.99}]}}},snapshot);
+await api.capture(owner,{...scan,assets:{...scan.assets,ZEC:{...asset,plans:[{...plan,revision:'drift',low:99.01,stop:94.99}]}}},snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'same event does not create a stream of drafts');
 assert.equal((await api.read(owner)).journal.records[0].plan.revision,'v1','published prices remain frozen');
 assert.equal(state.get('desk:v1:watches')[0].plan.revision,'v1','watch and ledger use the same frozen ticket');
 // Older plans used the recalculated boundary in their ID: simulate a restart across the upgrade.
 for(const key of state.keys())if(key.startsWith('desk:v3:structure:'))state.delete(key);
-await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[{...plan,id:plan.id+'-moved',revision:'changed',low:99.03}]}}},snapshot);
+await api.capture(owner,{...scan,assets:{...scan.assets,ZEC:{...asset,plans:[{...plan,id:plan.id+'-moved',revision:'changed',low:99.03}]}}},snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'a moving boundary on the same candle retains the legacy ticket');
 assert.equal(state.get('desk:v1:watches').length,1);
 const restarted={ctx:{storage},env:{}};
@@ -34,7 +34,7 @@ assert.equal((await api.read(restarted)).journal.records.length,1,'journal survi
 await api.tick(owner);assert.equal((await api.read(owner)).journal.records[0].status,'WAITING');
 await api.tick(owner,plan,quote());assert.equal((await api.read(owner)).journal.records[0].status,'OPEN');
 assert.equal((await api.read(owner)).alerts.filter(a=>a.id.startsWith('ENTRY:')).length,1,'paper entry has its own durable notification');
-const amended={...plan,revision:'v2',target:118,capturedAt:at(f.now())};await api.capture(owner,{...scan,assets:{...scan.assets,ETH:{...asset,plans:[amended]}}},snapshot);
+const amended={...plan,revision:'v2',target:118,capturedAt:at(f.now())};await api.capture(owner,{...scan,assets:{...scan.assets,ZEC:{...asset,plans:[amended]}}},snapshot);
 assert.equal((await api.read(owner)).journal.records.length,1,'open position cannot be rewritten by a new target');
 f.advance(1000);price=117;await api.tick(owner);assert.equal((await api.read(owner)).journal.statistics.sampleSize,1);
 await api.flush(owner);assert.equal((await api.read(owner)).alerts[0].status,'FAILED');
@@ -48,7 +48,7 @@ assert.equal((await api.control(owner,{value:{action:'test-notification'}})).sta
 console.log('PASS durable auto-discovery, restart, idempotency, frozen open plan, paper lifecycle, retry, receipt confirmation and rate limit');
 
 await api.control(owner,{value:{action:'enable'}});
-const badScan={...scan,assets:{...scan.assets,ETH:{...asset,asset:'ETH',ready:false}}};
+const badScan={...scan,assets:{...scan.assets,ZEC:{...asset,asset:'ZEC',ready:false}}};
 await api.capture(owner,badScan,snapshot);
 let health=state.get('desk:v2:health');assert.equal(health.incidentOpen,true);
 const failures=()=>state.get('desk:v2:alerts').filter(r=>r.title==='聚流｜行情数据异常').length;
@@ -113,6 +113,37 @@ const zecOwner={ctx:{storage},env:{}};f.c.hourRead=async(config,tf)=>{
  return history.map((r,i)=>({...r,ts:at(end-(80-i)*ms)}));
 };
 runInContext('fetchOkxStructureCandles=hourRead;',f.c);
-await api.market(zecOwner,{assets:{}});
+await api.market(zecOwner,{assets:{ZECUSDT:{timeframes:{}}}});
 const zecFrames=state.get('desk:v2:market-scanner').frames.filter(f=>f.asset==='ZEC');
 assert.equal(zecFrames.length,3);assert.ok(zecFrames.every(f=>!f.reason&&f.source==='OKX_USDT_PERPETUAL'));
+
+// A previous installation can have both assets in its watch and paper queues.
+const migration = runInContext('retireEtherMonitoring',f.c);
+const previousStore = new Map([
+ ['scanner:active-plan',{value:{symbol:'BTCUSDT',planId:'existing'}}],
+ ['scanner:fast-market:v1',{executionQuote:{last:2200}}],
+ ['desk:v1:watches',[{plan:{asset:'BTC'}},{plan:{asset:'ETH'}}]],
+ ['desk:v2:alerts',[{id:'PLAN:ETH-B1',title:'ETH 正式模拟计划'},{id:'PLAN:BTC-B1',title:'BTC 正式模拟计划'}]],
+ ['desk:v2:active',['old-open','old-wait','live-btc']],
+ ['old-open',{status:'OPEN',plan:{asset:'ETH'},entry:{price:2200},exit:null}],
+ ['old-wait',{status:'WAITING',plan:{asset:'ETH'},entry:null}],
+ ['live-btc',{status:'OPEN',plan:{asset:'BTC'},entry:{price:75000}}],
+ ['old-win',{status:'WIN',plan:{asset:'ETH'},exit:{price:2300}}]
+]);
+const migratedStorage = {get:async k=>previousStore.get(k),put:async(k,v)=>previousStore.set(k,v),
+ delete:async k=>previousStore.delete(k),transaction:async fn=>fn(migratedStorage)};
+await migration(migratedStorage);
+assert.deepEqual(Array.from(previousStore.get('desk:v2:active')),['live-btc']);
+assert.equal(previousStore.get('old-open').status,'UNRESOLVED');
+assert.equal(previousStore.get('old-open').exit,null);
+assert.equal(previousStore.get('old-wait').status,'RETIRED');
+assert.equal(previousStore.get('old-win').status,'WIN');
+assert.equal(previousStore.get('live-btc').status,'OPEN');
+assert.equal(previousStore.get('scanner:active-plan').value.planId,'existing');
+assert.equal(previousStore.has('scanner:fast-market:v1'),false);
+assert.equal(previousStore.get('desk:v2:alerts').length,1);
+assert.equal(previousStore.get('desk:v1:watches')[0].plan.asset,'BTC');
+const once=JSON.stringify([...previousStore]);
+await migration(migratedStorage);
+assert.equal(JSON.stringify([...previousStore]),once);
+console.log('PASS retired ETH never repriced or pushed; BTC watches and settled history preserved across restart');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {observable,createRecord,advance,statistics,ingestTape,volatility} from '../modules/desk-autonomy.mjs';
 const now=Date.parse('2026-11-09T08:00:10Z'),iso=n=>new Date(n).toISOString();
-const p={id:'ETH-B1-LONG-INTRADAY-a',revision:'v1',asset:'ETH',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:iso(now),expiresAt:iso(now+900000)};
+const p={id:'ZEC-B1-LONG-INTRADAY-a',revision:'v1',asset:'ZEC',model:'B1',direction:'LONG',horizon:'INTRADAY',low:99,high:100,stop:95,invalidation:97,target:116,costPct:.15,capturedAt:iso(now),expiresAt:iso(now+900000)};
 const q=(n,price)=>({ready:true,independent:true,bid:price-.01,ask:price,last:price,bookAt:iso(n),tradeAt:iso(n)});
 assert(observable(p,{ready:true,quote:q(now,105)},now),'out-of-zone observations must be registerable without execution permission');
 assert(!observable({...p,target:101},{ready:true,quote:q(now,100)},now),'reject fake RR');

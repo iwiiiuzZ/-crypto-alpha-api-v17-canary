@@ -1,3 +1,4 @@
+import {pairBaseline} from './pair-baseline.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -15,29 +16,29 @@ function expand(root,v=root,stack=[]){
 }
 const evidence={state:'WAIT_RETEST',prices:Array.from({length:80},(_,i)=>({price:2000+i/17,at:'2026-10-25T07:06:00.000Z',qualified:i%2===0})),reason:'保留完整证据 😀'.repeat(30)};
 const model={submodel:'B1',candidate:{entry:2400.123456789,stopLoss:2370.111111111,target:2465.987654321,netRR:2.000000001,eventEvidence:evidence}};
-const base={assets:{ETHUSDT:{opportunityEngine:{models:[model]},timeframes:{'15m':{quality:{passed:true},levels:evidence}},crossVenueLiquidity:{first:evidence,second:evidence},publicOrderflow:{details:evidence}},BTCUSDT:{capitalFlow:{details:evidence}}},newsContext:{sources:{},recentRiskHeadlines:[],headlines:[]},transportDiagnostics:{references:{}}};
+const base={assets:{ZECUSDT:{opportunityEngine:{models:[model]},timeframes:{'15m':{quality:{passed:true},levels:evidence}},crossVenueLiquidity:{first:evidence,second:evidence},publicOrderflow:{details:evidence}},BTCUSDT:{capitalFlow:{details:evidence}}},newsContext:{sources:{},recentRiskHeadlines:[],headlines:[]},transportDiagnostics:{references:{}}};
 const before=structuredClone(base),out=structuredClone(base);assert.ok(x.referenceRepeatedMarketEvidence(out)>=4);
 assert.deepEqual(expand(out).assets,before.assets,'Every referenced value reconstructs exactly');
-assert.deepEqual(out.assets.ETHUSDT.opportunityEngine,before.assets.ETHUSDT.opportunityEngine,'Models remain inline');
-assert.deepEqual(out.assets.ETHUSDT.timeframes,before.assets.ETHUSDT.timeframes,'Structure remains inline');
+assert.deepEqual(out.assets.ZECUSDT.opportunityEngine,before.assets.ZECUSDT.opportunityEngine,'Models remain inline');
+assert.deepEqual(out.assets.ZECUSDT.timeframes,before.assets.ZECUSDT.timeframes,'Structure remains inline');
 assert.ok(size(out)<size(before));
 for(const [from,to] of Object.entries(out.transportDiagnostics.references))assert.deepEqual(expand(out,read(out,from)),expand(out,read(out,to)));
 
 const full=JSON.parse(fs.readFileSync(new URL('./fixtures/full-market-synthetic.json',import.meta.url),'utf8'));
-full.assets.ETHUSDT.opportunityEngine.models[0]=model;
-full.assets.ETHUSDT.crossVenueLiquidity={first:evidence,second:evidence,third:evidence};
+full.assets.ZECUSDT.opportunityEngine.models[0]=model;
+full.assets.ZECUSDT.crossVenueLiquidity={first:evidence,second:evidence,third:evidence};
 full.assets.BTCUSDT.capitalFlow.extra=evidence;
 const input=JSON.stringify(full),bounded=plain(x.boundedMarketSnapshot(full));
 assert.notEqual(bounded.decisionState,'TRANSPORT_ERROR',JSON.stringify(bounded.transportDiagnostics));
 assert.ok(size(bounded)<=90000);assert.equal(JSON.stringify(full),input);
-assert.deepEqual(bounded.assets.ETHUSDT.opportunityEngine.models,full.assets.ETHUSDT.opportunityEngine.models);
-assert.deepEqual(expand(bounded,bounded.assets.ETHUSDT.crossVenueLiquidity),full.assets.ETHUSDT.crossVenueLiquidity);
+assert.deepEqual(bounded.assets.ZECUSDT.opportunityEngine.models,full.assets.ZECUSDT.opportunityEngine.models);
+assert.deepEqual(expand(bounded,bounded.assets.ZECUSDT.crossVenueLiquidity),full.assets.ZECUSDT.crossVenueLiquidity);
 assert.deepEqual(expand(bounded,bounded.assets.BTCUSDT.capitalFlow.extra),evidence);
 assert.ok(bounded.transportDiagnostics.omitted.includes('EXACT_REPEAT_EVIDENCE_REFERENCED_WITH_SAME_RESPONSE_PATHS'));
 const impossible=structuredClone(full);impossible.unknown='unique-unmapped-field'.repeat(10000);
 const rejected=plain(x.boundedMarketSnapshot(impossible));assert.equal(rejected.error.code,'MARKET_RESPONSE_BUDGET_EXCEEDED');
 const diagnostic=JSON.stringify(rejected.transportDiagnostics.attemptedSectionUtf8Bytes);
-assert.ok(!diagnostic.includes('2400.123456789'));assert.ok(!diagnostic.includes('保留完整证据'));assert.ok(rejected.transportDiagnostics.attemptedSectionUtf8Bytes.assets.ETHUSDT.opportunityEngine>0);
+assert.ok(!diagnostic.includes('2400.123456789'));assert.ok(!diagnostic.includes('保留完整证据'));assert.ok(rejected.transportDiagnostics.attemptedSectionUtf8Bytes.assets.ZECUSDT.opportunityEngine>0);
 
 // Reproduce transport pressure with non-risk titles while preserving the
 // independent risk/event/source evidence and the full input news snapshot.
@@ -53,14 +54,14 @@ for(let pad=0;pad<=50000;pad+=1000){
   assert.ok(size(result)<=90000);assert.equal(JSON.stringify(input),original);
   assert.deepEqual(result.newsContext.headlines,[]);assert.equal(result.newsContext.headlinePreview.returned,0);assert.equal(result.newsContext.headlinePreview.available,4);assert.equal(result.newsContext.headlinePreview.completeView,'news');
   for(const key of ['recentRiskHeadlines','upcomingEvents','eventWindow','sources'])assert.deepEqual(result.newsContext[key],input.newsContext[key]);
-  assert.deepEqual(result.assets.ETHUSDT.opportunityEngine.models,input.assets.ETHUSDT.opportunityEngine.models);
+  assert.deepEqual(result.assets.ZECUSDT.opportunityEngine.models,input.assets.ZECUSDT.opportunityEngine.models);
   previewVerified=true;break;
  }
 }
 assert.equal(previewVerified,true,'The pressure fixture must exercise deferred preview');
 
 // Restore reviewed transport-only insertions for the byte-for-byte baseline comparison.
-const original=fs.readFileSync(new URL('./baselines/r2-bounded-market-function.txt',import.meta.url),'utf8');
+const original=pairBaseline(fs.readFileSync(new URL('./baselines/r2-bounded-market-function.txt',import.meta.url),'utf8'));
 const actual=x.boundedMarketSnapshot.toString()
  .replace('  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out))note("SOURCE_OPERATIONAL_DETAILS_IN_FULL_NEWS_VIEW");\n','')
  .replace('  if(!fits()&&MacroReferences.compactNewsReferenceTransport(out,{calendarPreview:true}))note("FUTURE_CALENDAR_PREVIEW_FULL_LIST_IN_NEWS_VIEW");\n','')

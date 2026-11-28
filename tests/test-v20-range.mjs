@@ -193,7 +193,7 @@ assert.equal(evaluateCourseDecision(decisionInput({ risk: { dailyRiskLimitReache
 {
   const now = new Date();
   const input = {
-    symbol: "ETHUSDT", direction: "LONG", model: "C", submodel: "C1", marketRegime: "RANGE", opportunityGrade: "B", timeframe: "SHORT",
+    symbol: "ZECUSDT", direction: "LONG", model: "C", submodel: "C1", marketRegime: "RANGE", opportunityGrade: "B", timeframe: "SHORT",
     modelInvalidation: "Accepted below the reclaimed range boundary and structural low",
     location: { quality: "GOOD", type: "LOWER_EDGE", rangePosition: "LOWER_EDGE", rationale: "Confirmed 4H range lower edge" },
     trigger: { type: "CHOCH", meaningful: true, level: 101, reclaimLevel: 100, protectiveStructure: { type: "HL", price: 99 } },
@@ -212,7 +212,7 @@ assert.equal(evaluateCourseDecision(decisionInput({ risk: { dailyRiskLimitReache
   const api = openApi("https://example.test");
   const operations = Object.values(api.paths).flatMap(path => Object.values(path).map(operation => operation.operationId).filter(Boolean));
   assert.deepEqual([...operations], ["getCryptoAlphaData", "saveTradingPlan", "getTradingPlanScannerStatus", "cancelTradingPlanMonitoring"]);
-  assert.ok(api.paths["/"].get.responses[200].content["application/json"].schema.properties.assets.properties.ETHUSDT.properties.rangeContext);
+  assert.ok(api.paths["/"].get.responses[200].content["application/json"].schema.properties.assets.properties.ZECUSDT.properties.rangeContext);
   assert.deepEqual([...scannerConfiguration({}).discovery.supportedSubmodels], ["A1", "A2", "B1", "B2", "C1", "C2", "D1", "D2"]);
 }
 

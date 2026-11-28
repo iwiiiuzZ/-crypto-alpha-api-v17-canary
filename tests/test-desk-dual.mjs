@@ -47,19 +47,19 @@ function asset(symbol, target) {
     }) },
   };
 }
-const snapshot = { build: "fixture", apiVersion: "7.6.0", assets: { BTCUSDT: asset("BTC", 116), ETHUSDT: asset("ETH", 114) } };
+const snapshot = { build: "fixture", apiVersion: "7.6.0", assets: { BTCUSDT: asset("BTC", 116), ZECUSDT: asset("ZEC", 114) } };
 let result = deskAnalysis(snapshot, { origin: "shared-worker", monitor: true, now });
 assert.equal(result.assets.BTC.models.length, 8);
-assert.equal(result.assets.ETH.models.length, 8);
+assert.equal(result.assets.ZEC.models.length, 8);
 assert.equal(result.assets.BTC.closedBarAt, closedBarAt);
 assert.equal(result.assets.BTC.liquidity.passed, true);
 assert.equal(result.best.asset, "BTC");
 
-// Exercise the production shared scan, including a concurrent ETH recheck.
+// Exercise the production shared scan, including a concurrent ZEC recheck.
 const deskFixture = fixture();
 deskFixture.advance(now - deskFixture.now());
 const runtimeSnapshot = structuredClone(snapshot);
-runtimeSnapshot.assets.ETHUSDT.crossVenueLiquidity.checkedAt = iso(now - 60000);
+runtimeSnapshot.assets.ZECUSDT.crossVenueLiquidity.checkedAt = iso(now - 60000);
 const ethStarted = Promise.withResolvers(), releaseEth = Promise.withResolvers();
 const sampledSymbols = [], fallbackSymbols = [];
 let ethUnavailable = false;
@@ -67,10 +67,10 @@ deskFixture.c.deskSnapshot = async () => structuredClone(runtimeSnapshot);
 deskFixture.c.deskModels = asset => asset.opportunityEngine;
 deskFixture.c.deskLiquidity = async (_owner, _publicOwner, _modules, symbol) => {
   sampledSymbols.push(symbol);
-  if (symbol === "ETH") {
+  if (symbol === "ZEC") {
     ethStarted.resolve();
     await releaseEth.promise;
-    if (ethUnavailable) throw Error("TEST_ETH_LIQUIDITY_OUTAGE");
+    if (ethUnavailable) throw Error("TEST_ZEC_LIQUIDITY_OUTAGE");
   }
   return { ...runtimeSnapshot.assets[symbol + "USDT"].crossVenueLiquidity, checkedAt: iso(now), executionQuote: quote(now) };
 };
@@ -91,24 +91,24 @@ await ethStarted.promise;
 const concurrentRecheck = runtime.collect(runtimeOwner, {});
 releaseEth.resolve();
 const [refreshed, ethRecheck] = await Promise.all([scan, concurrentRecheck]);
-assert.deepEqual(sampledSymbols.sort(), ["BTC", "ETH"], "concurrent ETH readers share one fresh collection");
+assert.deepEqual(sampledSymbols.sort(), ["BTC", "ZEC"], "concurrent ZEC readers share one fresh collection");
 assert.deepEqual(fallbackSymbols, [], "fresh two-venue reports provide the execution quotes");
 assert.equal(refreshed.assets.BTC.liquidity.checkedAt, iso(now));
-assert.equal(refreshed.assets.ETH.liquidity.checkedAt, ethRecheck.checkedAt);
-assert.equal(refreshed.assets.ETH.liquidity.passed, true, "the scan must replace the expired ETH cache");
+assert.equal(refreshed.assets.ZEC.liquidity.checkedAt, ethRecheck.checkedAt);
+assert.equal(refreshed.assets.ZEC.liquidity.passed, true, "the scan must replace the expired ZEC cache");
 ethUnavailable = true;
 const unavailable = await runtime.scan(runtimeOwner, true);
-assert.deepEqual(fallbackSymbols, ["ETH"]);
-assert.equal(unavailable.assets.ETH.quote.ready, true);
-assert.equal(unavailable.assets.ETH.liquidity.passed, false, "a current OKX quote cannot replace an unavailable cross-venue review");
-assert.equal(unavailable.assets.ETH.liquidity.reason, "LIQUIDITY_RECHECK_FAILED");
+assert.deepEqual(fallbackSymbols, ["ZEC"]);
+assert.equal(unavailable.assets.ZEC.quote.ready, true);
+assert.equal(unavailable.assets.ZEC.liquidity.passed, false, "a current OKX quote cannot replace an unavailable cross-venue review");
+assert.equal(unavailable.assets.ZEC.liquidity.reason, "LIQUIDITY_RECHECK_FAILED");
 
-snapshot.assets.ETHUSDT = asset("ETH", 118);
+snapshot.assets.ZECUSDT = asset("ZEC", 118);
 result = deskAnalysis(snapshot, { origin: "shared-worker", monitor: true, now });
-assert.equal(result.best.asset, "ETH");
+assert.equal(result.best.asset, "ZEC");
 assert.equal(deskNetRR("LONG", 100, 95, 110, .15) < 2, true);
 assert.equal(deskNetRR("SHORT", 100, 105, 90, .15) < 2, true);
-const btcPlan = result.assets.BTC.plans[0], ethPlan = result.assets.ETH.plans[0];
+const btcPlan = result.assets.BTC.plans[0], ethPlan = result.assets.ZEC.plans[0];
 assert.equal(AlphaDeskBridge.confirmDeskArrival(btcPlan, [quote(now - 600), quote(now)], now).price, 100);
 assert.equal(AlphaDeskBridge.confirmDeskArrival(btcPlan, [quote(now), quote(now)], now), null);
 assert.equal(AlphaDeskBridge.confirmDeskArrival(btcPlan, [quote(now - 21000), quote(now)], now), null);
@@ -119,7 +119,7 @@ assert.equal(deskAnalysis(snapshot, { now }).assets.BTC.ready, false);
 
 // Recorded 2244.37 bid and D1 zone replayed as inputs, using a synthetic target.
 // No target, fill or notification from the historical market is asserted.
-const d1Asset = asset("ETH", 114);
+const d1Asset = asset("ZEC", 114);
 const d1Zone = { min: 2241.265, max: 2242.4687 };
 const d1Target = 2205;
 const d1Stop = 2249.0532;
@@ -134,7 +134,7 @@ const b1 = { submodel: "B1", state: "WAIT_RETEST", direction: "SHORT", candidate
     retestCloseRule: { operator: "<", level: 2242.5 }, twoCloseInvalidation: { operator: ">", level: 2242.9, count: 2 } } };
 d1Asset.opportunityEngine.models = auditRows(d1, b1);
 d1Asset.ticker = quote(now, { last: 2244.38, bid: 2244.37, ask: 2244.38 });
-const d1Scan = () => deskAnalysis({ assets: { ETHUSDT: d1Asset }, newsContext: { sources: { JIN10: {
+const d1Scan = () => deskAnalysis({ assets: { ZECUSDT: d1Asset }, newsContext: { sources: { JIN10: {
   status: "unavailable", fetchedAt: iso(now - 5000), reason: "FIXTURE_ONLY", transportAgeSeconds: 5 } } } }, { now });
 const waiting = d1Scan();
 assert.equal(waiting.best, null);
@@ -145,8 +145,8 @@ assert.equal(waiting.waiting.high, d1Zone.max);
 assert.equal(waiting.waiting.stop, d1Stop);
 assert.equal(waiting.waiting.invalidation, 2247.34);
 assert.equal(waiting.waiting.monitorable, true);
-assert.equal(waiting.assets.ETH.models.find(row => row.model === "B1").next, "等 15 分钟收盘 < 2242.5");
-assert.equal(waiting.assets.ETH.models.find(row => row.model === "D1").evidence.protectivePrice, 2247.34);
+assert.equal(waiting.assets.ZEC.models.find(row => row.model === "B1").next, "等 15 分钟收盘 < 2242.5");
+assert.equal(waiting.assets.ZEC.models.find(row => row.model === "D1").evidence.protectivePrice, 2247.34);
 assert.equal(waiting.newsSources[0].reason, "FIXTURE_ONLY");
 d1Asset.ticker = quote(now, { last: 2242.01, bid: 2242, ask: 2242.01 });
 d1.liquidityPricing = undefined;
@@ -163,10 +163,10 @@ assert.equal(d1Scan().waiting.monitorable, true);
 d1.liquidityPricing = pricing(d1Target, d1Zone);
 assert.equal(d1Scan().best.state, "REVIEW");
 d1Asset.ticker = quote(now, { last: 2247.35, bid: 2247.33, ask: 2247.35 });
-assert.equal(d1Scan().assets.ETH.plans.length, 0);
+assert.equal(d1Scan().assets.ZEC.plans.length, 0);
 d1Asset.ticker = quote(now, { last: 2242.01, bid: 2242, ask: 2242.01 });
 d1Asset.opportunityEngine.models = [d1, b1];
-assert.equal(d1Scan().assets.ETH.ready, false, "missing model rows never pass scan readiness");
+assert.equal(d1Scan().assets.ZEC.ready, false, "missing model rows never pass scan readiness");
 
 const native = market(now).assets.BTCUSDT;
 native.symbol = "BTCUSDT";
@@ -178,7 +178,7 @@ Object.assign(nativeBars.at(-1), { o: 100.7, h: 104, l: 100.5, c: 103.8, volume:
 native.timeframes["15m"].indicators.atr14 = 2;
 const nativeD1 = (a, context) => buildDeskOpportunityScan(a, context).models.find(row => row.submodel === "D1");
 assert.ok(nativeD1(native, null).candidate, "real BTC D1 must not require a separate BTC structure");
-assert.equal(nativeD1({ ...native, symbol: "ETHUSDT" }, null).failedGate, "BTC_STRUCTURE_DATA_UNAVAILABLE");
+assert.equal(nativeD1({ ...native, symbol: "ZECUSDT" }, null).failedGate, "BTC_STRUCTURE_DATA_UNAVAILABLE");
 Object.assign(nativeBars.at(-3), { o: 100.7, h: 104, l: 100.5, c: 103.8, volume: 220 });
 Object.assign(nativeBars.at(-2), { o: 101.8, h: 102.4, l: 100.9, c: 101.4 });
 Object.assign(nativeBars.at(-1), { o: 101.4, h: 103.5, l: 101.3, c: 103, volume: 100 });
@@ -210,7 +210,7 @@ rangeBars.splice(-2, 1);
 assert.equal(buildDeskOpportunityScan(range, null).models.find(row => row.submodel === "C2").candidate?.expiresAt,
   undefined, "non-contiguous event cannot invent a lifecycle");
 
-const state = new Map([["scanner:active-plan", { old: "ETH legacy" }]]);
+const state = new Map([["scanner:active-plan", { old: "ZEC legacy" }]]);
 const storage = {
   get: async key => structuredClone(state.get(key)),
   put: async (key, value) => state.set(key, structuredClone(value)),
@@ -228,11 +228,11 @@ assert.equal((await change(bridge, "POST", ethPlan)).status, 200);
 assert.equal((await change(bridge, "POST", btcPlan)).body.watches.length, 2);
 const stopped = await change(bridge, "DELETE", btcPlan);
 assert.equal(stopped.body.watches.find(w => w.plan.asset === "BTC").state, "CANCELLED");
-assert.equal(stopped.body.watches.find(w => w.plan.asset === "ETH").state, "ACTIVE");
+assert.equal(stopped.body.watches.find(w => w.plan.asset === "ZEC").state, "ACTIVE");
 assert.equal((await bridge.status({ ctx: { storage } })).watches.length, 2);
-assert.deepEqual(state.get("scanner:active-plan"), { old: "ETH legacy" });
+assert.deepEqual(state.get("scanner:active-plan"), { old: "ZEC legacy" });
 const blockedArm = AlphaDeskBridge.createDeskBridge({
-  build: "fixture", analyse: async () => ({ assets: { ETH: { plans: [absentLiquidity, temporaryObstacle] } } }),
+  build: "fixture", analyse: async () => ({ assets: { ZEC: { plans: [absentLiquidity, temporaryObstacle] } } }),
   canMonitor: () => true, ensureMonitor: async () => { throw new Error("unsafe alarm arm"); },
 });
 assert.equal((await change(blockedArm, "POST", absentLiquidity)).status, 409);
@@ -242,7 +242,7 @@ let phase = "WAIT_LIQUIDITY";
 let tick = 0;
 const arrivalBridge = AlphaDeskBridge.createDeskBridge({
   build: "fixture", canMonitor: () => true,
-  analyse: async () => ({ assets: { ETH: { plans: [{ ...ethPlan, state: phase, monitorable: true,
+  analyse: async () => ({ assets: { ZEC: { plans: [{ ...ethPlan, state: phase, monitorable: true,
     liquidity: { ...ethPlan.liquidity, checkedAt: iso(Date.now()), validUntil: iso(Date.now() + 10000) } }] } } }),
   quote: async () => quote(Date.now() + ++tick),
   notify: async (_, notice) => {
@@ -258,7 +258,7 @@ await arrivalBridge.check(owner);
 assert.equal(sends, 1);
 await arrivalBridge.check(owner);
 assert.equal(sends, 1, "an accepted alert does not push a second time");
-const receipt = (await arrivalBridge.status(owner)).watches.find(watch => watch.plan.asset === "ETH").deliveryReceipt;
+const receipt = (await arrivalBridge.status(owner)).watches.find(watch => watch.plan.asset === "ZEC").deliveryReceipt;
 assert.equal(receipt.auditPersisted, true);
 assert.equal(receipt.deviceReceiptVerified, false);
 const rejected = await worker.fetch(new Request("https://alpha.invalid/desk/v1/monitors"), {}, {});

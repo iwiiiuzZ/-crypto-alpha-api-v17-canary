@@ -41,12 +41,12 @@ function market(now) {
     trend:'UP',structure:'HH_HL',indicators:{atr14:10},levels:{resistance20:140,resistance50:160,support20:60,support50:50}};
   const asset={ticker:{last:100.5},timeframes:{'15m':structuredClone(tf),'1h':structuredClone(tf),'4h':structuredClone(tf)},
     marketRegimeRouter:{regime:'TREND'},executionLiquidity:{status:'ok'},derivatives:{openInterest:{status:'ok'},funding:{status:'ok'}},capitalFlow:{status:'unavailable'}};
-  return {decisionState:'DATA_READY',coverage:{openNowDataReady:true},assets:{ETHUSDT:asset,BTCUSDT:structuredClone(asset)}};
+  return {decisionState:'DATA_READY',coverage:{openNowDataReady:true},assets:{ZECUSDT:asset,BTCUSDT:structuredClone(asset)}};
 }
-function observation(f,extra={}){return {recordType:'OBSERVATION',notificationMode:'ALL_STAGES',symbol:'ETHUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',
+function observation(f,extra={}){return {recordType:'OBSERVATION',notificationMode:'ALL_STAGES',symbol:'ZECUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',
   observationZone:{min:100,max:101},observationInvalidation:{level:95,mode:'PRICE'},strategySummary:'Synthetic breakout retest',pendingCondition:'15m key close over 102 with protected low; review model afterwards',
   sourceAnalysisAt:new Date(f.now()).toISOString(),expiresAt:new Date(f.now()+3600000).toISOString(),...extra};}
-function plan(f){return f.t.normalizeTradingPlan({planId:'old-plan',symbol:'ETHUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',opportunityGrade:'A',timeframe:'SHORT',
+function plan(f){return f.t.normalizeTradingPlan({planId:'old-plan',symbol:'ZECUSDT',direction:'LONG',model:'B',submodel:'B1',marketRegime:'TREND',opportunityGrade:'A',timeframe:'SHORT',
   modelInvalidation:'Loss of protected low',location:{quality:'GOOD',type:'RETEST',rangePosition:'EDGE',rationale:'Breakout retest'},
   trigger:{type:'BOS',meaningful:true,level:100,acceptanceLevel:99,protectiveStructure:{type:'HL',price:96}},
   entryZone:{min:100,max:101},invalidationPrice:95,stopLoss:95,takeProfits:[{price:120,allocationPct:100}],firstRealisticTarget:{price:120,basis:'First structural resistance'},
@@ -75,7 +75,7 @@ await test('approach, arrival and registered close each notify once',async()=>{
  const f=fixture();await f.t.saveObservation(f.env,observation(f,{observationTrigger:{type:'CLOSE_ABOVE',level:102,meaningful:true}}));
  f.setPrices([99,99]);await f.t.runScanner(f.env);assert.match(f.pushes[0].title,/接近/);
  f.advance(60000);f.setPrices([100.5,100.5]);await f.t.runScanner(f.env);assert.match(f.pushes[1].title,/已到/);
- f.advance(15*60000);const m=market(f.now());m.assets.ETHUSDT.timeframes['15m'].recentCandles.at(-1).c=103;f.setMarket(m);
+ f.advance(15*60000);const m=market(f.now());m.assets.ZECUSDT.timeframes['15m'].recentCandles.at(-1).c=103;f.setMarket(m);
  await f.t.runScanner(f.env);assert.match(f.pushes[2].title,/收盘条件/);await f.t.runScanner(f.env);assert.equal(f.pushes.length,3);
  assert.equal(f.get('scanner:observations:v23').records[0].openNowAllowed,false);
 });
@@ -91,24 +91,24 @@ await test('status distinguishes configuration, heartbeat and provider delivery'
 await test('four actions retained with observation fields and targeted cancel',async()=>{const f=fixture();const s=await(await f.c.worker.fetch(new Request('https://test.invalid/openapi.json'),f.env,{})).json();assert.equal(Object.values(s.paths).flatMap(p=>Object.values(p)).filter(p=>p.operationId).length,4);const schema=s.paths['/scanner/plan'].post.requestBody.content['application/json'].schema;assert.ok(schema.properties.observationZone);assert.equal(schema.required.includes('risk'),false);assert.ok(s.paths['/scanner/cancel'].post.requestBody);});
 
 function breakoutMarket(f,n=6,short=false) {
- const m=market(f.now()), rows=m.assets.ETHUSDT.timeframes['15m'].recentCandles;
+ const m=market(f.now()), rows=m.assets.ZECUSDT.timeframes['15m'].recentCandles;
  rows.forEach(c=>Object.assign(c,{o:95,h:100,l:90,c:95}));
  const i=rows.length-n;
  Object.assign(rows[i],{o:99,h:103,l:99,c:102});
  for(let j=i+1;j<rows.length;j++)Object.assign(rows[j],{o:102,h:104,l:101,c:102});
  Object.assign(rows[i+2],{o:102,h:102,l:99,c:101});
  Object.assign(rows.at(-1),{o:102,h:105,l:101,c:104});
- m.assets.ETHUSDT.ticker.last=104;
- if(short){rows.forEach(c=>{const {o,h,l,c:close}=c;Object.assign(c,{o:200-o,h:200-l,l:200-h,c:200-close});});m.assets.ETHUSDT.ticker.last=96;
+ m.assets.ZECUSDT.ticker.last=104;
+ if(short){rows.forEach(c=>{const {o,h,l,c:close}=c;Object.assign(c,{o:200-o,h:200-l,l:200-h,c:200-close});});m.assets.ZECUSDT.ticker.last=96;
  for(const a of Object.values(m.assets))for(const tf of Object.values(a.timeframes)){tf.trend='DOWN';tf.structure='LH_LL';}}
  return m;
 }
-await test('breakout progresses across six candles rather than exact last three',async()=>{const f=fixture(),m=breakoutMarket(f);const seed=f.t.breakoutSeeds(m.assets.ETHUSDT)[0];assert.equal(seed.boundary,100);assert.equal(f.t.breakoutProgress(seed,m.assets.ETHUSDT).state,'STRUCTURE_READY');assert.equal(f.t.breakoutCandidate(seed,m.assets.ETHUSDT,m.assets.BTCUSDT)?.submodel,'B1');});
-await test('short breakout is mirrored',async()=>{const f=fixture(),m=breakoutMarket(f,6,true);const seed=f.t.breakoutSeeds(m.assets.ETHUSDT)[0];assert.equal(seed.direction,'SHORT');assert.equal(f.t.breakoutCandidate(seed,m.assets.ETHUSDT,m.assets.BTCUSDT)?.direction,'SHORT');});
-await test('breakout boundary and clock stay fixed while candles append',async()=>{const f=fixture(),m=breakoutMarket(f);const seed=f.t.breakoutSeeds(m.assets.ETHUSDT)[0],original=JSON.stringify(seed);m.assets.ETHUSDT.timeframes['15m'].recentCandles[1].h=999;f.t.breakoutProgress(seed,m.assets.ETHUSDT);assert.equal(JSON.stringify(seed),original);});
-await test('two closes back inside invalidate breakout instead of infinite wait',async()=>{const f=fixture(),m=breakoutMarket(f);const seed=f.t.breakoutSeeds(m.assets.ETHUSDT)[0];m.assets.ETHUSDT.timeframes['15m'].recentCandles.at(-2).c=97;m.assets.ETHUSDT.timeframes['15m'].recentCandles.at(-1).c=97;assert.equal(f.t.breakoutProgress(seed,m.assets.ETHUSDT).state,'INVALIDATED');});
-await test('unconfirmed future candle cannot supply trigger',async()=>{const f=fixture(),m=breakoutMarket(f);m.assets.ETHUSDT.timeframes['15m'].recentCandles.at(-1).confirmed=false;const seed=f.t.breakoutSeeds(m.assets.ETHUSDT)[0];assert.notEqual(f.t.breakoutProgress(seed,m.assets.ETHUSDT).state,'STRUCTURE_READY');});
-await test('stale structure, price chasing and missing realistic target do not qualify',async()=>{const f=fixture(),m=breakoutMarket(f);const a=m.assets.ETHUSDT,b=m.assets.BTCUSDT,seed=f.t.breakoutSeeds(a)[0];a.ticker.last=115;assert.equal(f.t.breakoutCandidate(seed,a,b),null);a.ticker.last=104;a.timeframes['15m'].dataFreshness.state='stale-on-error';assert.equal(f.t.breakoutCandidate(seed,a,b),null);a.timeframes['15m'].dataFreshness.state='live';a.timeframes['1h'].levels={};a.timeframes['4h'].levels={};assert.equal(f.t.breakoutCandidate(seed,a,b),null);});
+await test('breakout progresses across six candles rather than exact last three',async()=>{const f=fixture(),m=breakoutMarket(f);const seed=f.t.breakoutSeeds(m.assets.ZECUSDT)[0];assert.equal(seed.boundary,100);assert.equal(f.t.breakoutProgress(seed,m.assets.ZECUSDT).state,'STRUCTURE_READY');assert.equal(f.t.breakoutCandidate(seed,m.assets.ZECUSDT,m.assets.BTCUSDT)?.submodel,'B1');});
+await test('short breakout is mirrored',async()=>{const f=fixture(),m=breakoutMarket(f,6,true);const seed=f.t.breakoutSeeds(m.assets.ZECUSDT)[0];assert.equal(seed.direction,'SHORT');assert.equal(f.t.breakoutCandidate(seed,m.assets.ZECUSDT,m.assets.BTCUSDT)?.direction,'SHORT');});
+await test('breakout boundary and clock stay fixed while candles append',async()=>{const f=fixture(),m=breakoutMarket(f);const seed=f.t.breakoutSeeds(m.assets.ZECUSDT)[0],original=JSON.stringify(seed);m.assets.ZECUSDT.timeframes['15m'].recentCandles[1].h=999;f.t.breakoutProgress(seed,m.assets.ZECUSDT);assert.equal(JSON.stringify(seed),original);});
+await test('two closes back inside invalidate breakout instead of infinite wait',async()=>{const f=fixture(),m=breakoutMarket(f);const seed=f.t.breakoutSeeds(m.assets.ZECUSDT)[0];m.assets.ZECUSDT.timeframes['15m'].recentCandles.at(-2).c=97;m.assets.ZECUSDT.timeframes['15m'].recentCandles.at(-1).c=97;assert.equal(f.t.breakoutProgress(seed,m.assets.ZECUSDT).state,'INVALIDATED');});
+await test('unconfirmed future candle cannot supply trigger',async()=>{const f=fixture(),m=breakoutMarket(f);m.assets.ZECUSDT.timeframes['15m'].recentCandles.at(-1).confirmed=false;const seed=f.t.breakoutSeeds(m.assets.ZECUSDT)[0];assert.notEqual(f.t.breakoutProgress(seed,m.assets.ZECUSDT).state,'STRUCTURE_READY');});
+await test('stale structure, price chasing and missing realistic target do not qualify',async()=>{const f=fixture(),m=breakoutMarket(f);const a=m.assets.ZECUSDT,b=m.assets.BTCUSDT,seed=f.t.breakoutSeeds(a)[0];a.ticker.last=115;assert.equal(f.t.breakoutCandidate(seed,a,b),null);a.ticker.last=104;a.timeframes['15m'].dataFreshness.state='stale-on-error';assert.equal(f.t.breakoutCandidate(seed,a,b),null);a.timeframes['15m'].dataFreshness.state='live';a.timeframes['1h'].levels={};a.timeframes['4h'].levels={};assert.equal(f.t.breakoutCandidate(seed,a,b),null);});
 await test('autonomous discovery creates persistent observations even with live plan',async()=>{const f=fixture();f.setMarket(breakoutMarket(f));f.setPrices([104,104]);f.put('scanner:active-plan',plan(f));vm.runInContext('planLiquidityRisk=()=>({passed:true});',f.c);const r=await f.t.runScanner(f.env);assert.equal(r.observations.status,'candidate');assert.ok(f.get('scanner:observations:v23').records.length);assert.equal(f.get('scanner:active-plan').planId,'old-plan');assert.equal(f.reads.snapshots,1);});
 await test('discovery does not require optional flow and never saves execution plan',async()=>{const f=fixture();f.setMarket(breakoutMarket(f));f.setPrices([104,104]);vm.runInContext('planLiquidityRisk=()=>({passed:true});',f.c);await f.t.runScanner(f.env);const r=f.get('scanner:observations:v23').records.find(r=>r.state==='MARKET_CANDIDATE');assert.ok(r);assert.equal(r.openNowAllowed,false);assert.equal(f.get('scanner:active-plan'),null);});
 await test('registered observation works with autonomous discovery disabled',async()=>{const f=fixture();f.env.DISCOVERY_ENABLED='false';await f.t.saveObservation(f.env,observation(f));await f.t.runScanner(f.env);assert.equal(f.get('scanner:observations:v23').records[0].state,'IN_ZONE');assert.equal(f.pushes.length,1);});

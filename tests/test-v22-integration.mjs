@@ -139,7 +139,7 @@ function stepFromInterval(interval) {
 }
 
 function bybitRows(symbol, interval) {
-  const asset = symbol.startsWith("BTC") ? "BTC" : "ETH";
+  const asset = symbol.startsWith("BTC") ? "BTC" : "ZEC";
   const rows = generatedCandles(asset, stepFromInterval(interval)).map((c) => [
     String(c.time), String(c.open), String(c.high), String(c.low), String(bybitBadPrice ? c.close * 1.03 : c.close), String(c.volume), String(c.volume * c.close),
   ]);
@@ -147,7 +147,7 @@ function bybitRows(symbol, interval) {
 }
 
 function gateRows(symbol, interval) {
-  const asset = symbol.startsWith("BTC") ? "BTC" : "ETH";
+  const asset = symbol.startsWith("BTC") ? "BTC" : "ZEC";
   const rows = generatedCandles(asset, stepFromInterval(interval)).map((c) => ({
     t: Math.floor(c.time / 1000),
     o: String(c.open),
@@ -157,7 +157,7 @@ function gateRows(symbol, interval) {
     v: String(gateZeroVolume ? 0 : c.volume),
     sum: String(gateZeroVolume ? 0 : c.volume * c.close),
   }));
-  if (interval === "1m" && asset === "ETH" && gateTouchOverride) {
+  if (interval === "1m" && asset === "ZEC" && gateTouchOverride) {
     Object.assign(rows.at(-1), {
       o: String(gateTouchOverride.open ?? gateTouchOverride.close),
       h: String(gateTouchOverride.high),
@@ -165,7 +165,7 @@ function gateRows(symbol, interval) {
       c: String(gateTouchOverride.close),
     });
   }
-  if (interval === "15m" && asset === "ETH" && gate15mSweepOverride) {
+  if (interval === "15m" && asset === "ZEC" && gate15mSweepOverride) {
     const candidateIndex = rows.length - 2;
     const priorHigh = Math.max(...rows.slice(candidateIndex - 12, candidateIndex).map((row) => Number(row.h)));
     Object.assign(rows[candidateIndex], {
@@ -179,7 +179,7 @@ function gateRows(symbol, interval) {
 }
 
 function okxCandleRows(instrumentId, bar) {
-  const asset = instrumentId.startsWith("BTC") ? "BTC" : "ETH";
+  const asset = instrumentId.startsWith("BTC") ? "BTC" : "ZEC";
   const rows = generatedCandles(asset, stepFromInterval(bar)).map((c, index, all) => [
     String(c.time), String(c.open), String(c.high), String(c.low), String(c.close),
     String(c.volume), String(c.volume), String(c.volume * c.close), index === all.length - 1 ? "0" : "1",
@@ -231,7 +231,7 @@ function gateOrderBook(symbol) {
 }
 
 function krakenSpotRows(pair, interval) {
-  const asset = pair.startsWith("XBT") ? "BTC" : "ETH";
+  const asset = pair.startsWith("XBT") ? "BTC" : "ZEC";
   return generatedCandles(asset, stepFromInterval(interval)).map((c) => [
     Math.floor(c.time / 1000), String(c.open), String(c.high), String(c.low), String(c.close), String(c.close), String(krakenSpotZeroVolume ? 0 : c.volume), 10,
   ]);
@@ -240,21 +240,21 @@ function krakenSpotRows(pair, interval) {
 function futuresTickers() {
   return [
     { symbol: "PI_XBTUSD", last: 63800, markPrice: 63801, bid: 63799, ask: 63801, high24h: 65000, low24h: 62000, open24h: 63000, volume24h: 123456, openInterest: 32100, fundingRate: 0.0001 },
-    { symbol: "PI_ETHUSD", last: 2580, markPrice: 2580.1, bid: 2579.9, ask: 2580.1, high24h: 2650, low24h: 2500, open24h: 2550, volume24h: 654321, openInterest: 880000, fundingRate: 0.00008 },
+    { symbol: "PI_ZECUSD", last: 2580, markPrice: 2580.1, bid: 2579.9, ask: 2580.1, high24h: 2650, low24h: 2500, open24h: 2550, volume24h: 654321, openInterest: 880000, fundingRate: 0.00008 },
   ];
 }
 
 function okxTickerRows(ethPrice = okxEthPrice) {
   return [
     { instType: "SWAP", instId: "BTC-USDT-SWAP", last: "63818.2", bidPx: "63818.1", askPx: "63818.3", high24h: "65000", low24h: "62000", open24h: "63000", vol24h: "123456", ts: String(Date.now()) },
-    { instType: "SWAP", instId: "ETH-USDT-SWAP", last: String(ethPrice), bidPx: String(ethPrice - 0.1), askPx: String(ethPrice + 0.1), high24h: "2650", low24h: "2500", open24h: "2550", vol24h: "654321", ts: String(Date.now()) },
+    { instType: "SWAP", instId: "ZEC-USDT-SWAP", last: String(ethPrice), bidPx: String(ethPrice - 0.1), askPx: String(ethPrice + 0.1), high24h: "2650", low24h: "2500", open24h: "2550", vol24h: "654321", ts: String(Date.now()) },
   ];
 }
 
 function okxMarkRows(ethPrice = okxEthPrice) {
   return [
     { instType: "SWAP", instId: "BTC-USDT-SWAP", markPx: "63820.5", ts: String(Date.now()) },
-    { instType: "SWAP", instId: "ETH-USDT-SWAP", markPx: String(ethPrice + 0.15), ts: String(Date.now()) },
+    { instType: "SWAP", instId: "ZEC-USDT-SWAP", markPx: String(ethPrice + 0.15), ts: String(Date.now()) },
   ];
 }
 
@@ -282,7 +282,7 @@ globalThis.fetch = async (input, options = {}) => {
     if (failBinance) return new Response("rate limited", {status:429,headers:{"Retry-After":"60"}});
     const symbol=url.searchParams.get("symbol"), tf=url.searchParams.get("interval");
     const step=stepFromInterval(tf);
-    const rows=generatedCandles(symbol.startsWith("BTC")?"BTC":"ETH",step).map(c=>[c.time,String(c.open),String(c.high),String(c.low),String(badBinance?c.close*1.04:c.close),String(c.volume),c.time+step-1,String(c.volume*c.close)]);
+    const rows=generatedCandles(symbol.startsWith("BTC")?"BTC":"ZEC",step).map(c=>[c.time,String(c.open),String(c.high),String(c.low),String(badBinance?c.close*1.04:c.close),String(c.volume),c.time+step-1,String(c.volume*c.close)]);
     return Response.json(rows);
   }
   if (url.hostname === "api.day.app" && url.pathname === "/push") {
@@ -303,9 +303,9 @@ globalThis.fetch = async (input, options = {}) => {
         { symbol: "BTCUSDT_PERP.OKX", exchange: "OKX", symbol_on_exchange: "BTC-USDT-SWAP", base_asset: "BTC", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
         { symbol: "BTCUSDT_PERP.BINANCE", exchange: "BINANCE", symbol_on_exchange: "BTCUSDT", base_asset: "BTC", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
         { symbol: "BTCUSDT_PERP.BYBIT", exchange: "BYBIT", symbol_on_exchange: "BTCUSDT", base_asset: "BTC", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
-        { symbol: "ETHUSDT_PERP.OKX", exchange: "OKX", symbol_on_exchange: "ETH-USDT-SWAP", base_asset: "ETH", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
-        { symbol: "ETHUSDT_PERP.BINANCE", exchange: "BINANCE", symbol_on_exchange: "ETHUSDT", base_asset: "ETH", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
-        { symbol: "ETHUSDT_PERP.BYBIT", exchange: "BYBIT", symbol_on_exchange: "ETHUSDT", base_asset: "ETH", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
+        { symbol: "ZECUSDT_PERP.OKX", exchange: "OKX", symbol_on_exchange: "ZEC-USDT-SWAP", base_asset: "ZEC", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
+        { symbol: "ZECUSDT_PERP.BINANCE", exchange: "BINANCE", symbol_on_exchange: "ZECUSDT", base_asset: "ZEC", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
+        { symbol: "ZECUSDT_PERP.BYBIT", exchange: "BYBIT", symbol_on_exchange: "ZECUSDT", base_asset: "ZEC", quote_asset: "USDT", is_perpetual: true, margined: "STABLE" },
       ]);
     }
     if (url.pathname.endsWith("/liquidation-history")) {
@@ -389,7 +389,7 @@ globalThis.fetch = async (input, options = {}) => {
       assert.equal(url.searchParams.get("quoteCcy"), "USDT");
       return Response.json({ code: "0", msg: "", data: [
         { instId: "BTC-USDT", idxPx: "63812.5", ts: String(Date.now()) },
-        { instId: "ETH-USDT", idxPx: "2580.8", ts: String(Date.now()) },
+        { instId: "ZEC-USDT", idxPx: "2580.8", ts: String(Date.now()) },
       ] });
     }
     if (url.pathname.endsWith("/market/ticker")) {
@@ -402,7 +402,7 @@ globalThis.fetch = async (input, options = {}) => {
       if (url.searchParams.get("instType") === "SPOT") {
         return Response.json({ code: "0", msg: "", data: [
           { instId: "BTC-USDT", last: "63810", bidPx: "63809.9", askPx: "63810.1", vol24h: "1000", volCcy24h: "63810000", ts: String(Date.now()) },
-          { instId: "ETH-USDT", last: "2580.7", bidPx: "2580.6", askPx: "2580.8", vol24h: "5000", volCcy24h: "12903500", ts: String(Date.now()) },
+          { instId: "ZEC-USDT", last: "2580.7", bidPx: "2580.6", askPx: "2580.8", vol24h: "5000", volCcy24h: "12903500", ts: String(Date.now()) },
         ] });
       }
       if (failOkxTicker) return new Response("ticker rate limited", { status: 429 });
@@ -439,7 +439,7 @@ globalThis.fetch = async (input, options = {}) => {
       assert.equal(url.searchParams.get("instId"), null);
       return Response.json({ code: "0", msg: "", data: [
         { instId: "BTC-USDT-SWAP", oi: "32100", oiCcy: "500", oiUsd: "2048000000", ts: String(Date.now()) },
-        { instId: "ETH-USDT-SWAP", oi: "880000", oiCcy: "3400", oiUsd: "2270000000", ts: String(Date.now()) },
+        { instId: "ZEC-USDT-SWAP", oi: "880000", oiCcy: "3400", oiUsd: "2270000000", ts: String(Date.now()) },
       ] });
     }
     if (url.pathname.endsWith("/open-interest-history")) {
@@ -475,7 +475,7 @@ function assertReady(body) {
   assert.equal(body.analysisContract.timeframeFramework.marketTrendAndEnvironment, "4H");
   assert.equal(body.analysisContract.timeframeFramework.structureAndDirectionValidity, "1H");
   assert.equal(body.analysisContract.timeframeFramework.entryLocationAndTrigger, "15M");
-  assert.equal(body.analysisContract.timeframeFramework.btcRole, "ETH_ENVIRONMENT_FILTER");
+  assert.equal(body.analysisContract.timeframeFramework.btcRole, "ZEC_ENVIRONMENT_FILTER");
   assert.ok(body.analysisContract.timeframeFramework.dailyDataPolicy.includes("MISSING_1D_ALONE_MUST_NOT_CAUSE_DATA_BLOCKED"));
   assert.deepEqual(body.analysisContract.newsResearchContract.requiredEveryTradingAnalysis, ["JIN10", "COINDESK"]);
   assert.equal(body.analysisContract.scannerPriceContract.rule, "TWO_INDEPENDENT_CURRENT_OKX_SAMPLES_INSIDE_ZONE");
@@ -486,7 +486,7 @@ function assertReady(body) {
   assert.equal(body.analysisContract.executionRealityContract.directionAwareRiskReward, true);
   assert.equal(body.analysisContract.executionRealityContract.firstTargetMustRemainAheadOfCurrentPrice, true);
   assert.equal(body.analysisContract.executionRealityContract.optimisticSameBarFillAllowedInValidation, false);
-  for (const symbol of ["BTCUSDT", "ETHUSDT"]) {
+  for (const symbol of ["BTCUSDT", "ZECUSDT"]) {
     assert.equal(body.assets[symbol].ticker.status, "ok");
     assert.equal(body.assets[symbol].ticker.source, "OKX_USDT_PERPETUAL");
     assert.equal(body.assets[symbol].indexPrice.status, "ok");
@@ -585,11 +585,11 @@ for (const scenario of ["primary", "gate-down", "all-candles-down", "coinalyze",
  if(["mark-only","no-okx-quotes"].includes(scenario)){
    assert.equal(b.decisionState,"DATA_BLOCKED");assert.equal(b.coverage.observationDataReady,true);
    assert.equal(b.coverage.executionDataReady,false);
-   if(scenario==="mark-only")assert.equal(b.assets.ETHUSDT.ticker.last,null);
+   if(scenario==="mark-only")assert.equal(b.assets.ZECUSDT.ticker.last,null);
  }
  if(scenario==="batch-fallback")assert.equal(b.decisionState,"DATA_READY");
  assert.ok(Buffer.byteLength(JSON.stringify(b))<=90000,"Actual UTF8 Action response budget");
- assert.equal(b.assets.ETHUSDT.opportunityEngine.models.length,8,"All eight model assessments transmitted");
+ assert.equal(b.assets.ZECUSDT.opportunityEngine.models.length,8,"All eight model assessments transmitted");
  if(["primary","coinalyze"].includes(scenario))assert.equal(b.decisionState,"DATA_READY",JSON.stringify(b.errors));
  if(["primary", "coinalyze", "auxiliary-failure"].includes(scenario)) assert.ok(sources.every(s=>s==="GATE_USDT_PERPETUAL"));
  if(scenario==="gate-down") assert.ok(sources.every(s=>s==="OKX_USDT_PERPETUAL"));

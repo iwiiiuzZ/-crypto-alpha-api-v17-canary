@@ -47,10 +47,10 @@ globalThis.caches = { default: {
 } };
 let candleCalls=0;
 globalThis.fetch = async () => { candleCalls++; return new Response('', { status: 429 }); };
-await assert.rejects(mod.fetchJson('https://www.okx.com/api/v5/market/candles?instId=ETH-USDT-SWAP&bar=15m', 'candle', 1, true), e => e.status === 429);
+await assert.rejects(mod.fetchJson('https://www.okx.com/api/v5/market/candles?instId=ZEC-USDT-SWAP&bar=15m', 'candle', 1, true), e => e.status === 429);
 assert.equal(candleCalls,1);
 mod.resetLocalRateCircuitForTest();
-await assert.rejects(mod.fetchJson('https://www.okx.com/api/v5/market/candles?instId=ETH-USDT-SWAP&bar=15m', 'candle', 1, true), e => e.status === 429 && e.message === 'UPSTREAM_RATE_LIMIT_COOLDOWN');
+await assert.rejects(mod.fetchJson('https://www.okx.com/api/v5/market/candles?instId=ZEC-USDT-SWAP&bar=15m', 'candle', 1, true), e => e.status === 429 && e.message === 'UPSTREAM_RATE_LIMIT_COOLDOWN');
 assert.equal(candleCalls,1,'shared candle circuit must block a fresh local instance without another upstream call');
 const rows = Array.from({length: 20}, (_, i) => ({ts: new Date(now - (20-i)*900000).toISOString(), o:95,h:100,l:90,c:95,confirmed:true}));
 Object.assign(rows[17], {o:99,h:103,l:99,c:102});
@@ -83,7 +83,7 @@ const env={SCANNER_STATE:{getByName(){return {async fetch(url,options){
 }};}}};
 const fullAsset={...asset,capitalFlow:{status:'ok'},executionLiquidity:{status:'ok'},derivatives:{openInterest:{status:'ok'},funding:{status:'ok'}}};
 const zone=async()=>({passed:true,confirmed:true,current:{status:'ok',last:103,bid:102.99,ask:103.01,exchangeTimestamp:new Date(now).toISOString(),source:'OKX_USDT_PERPETUAL_DIRECT_VERIFIED',verification:{passed:true}},samples:[{last:103},{last:103}]});
-mod.installDiscoveryFakes({price:async()=>{loads++;return {last:103};},candles:async()=>[{confirmed:true}],summary:()=>structuredClone(tf),snapshot:async()=>({coverage:{openNowDataReady:true},assets:{ETHUSDT:structuredClone(fullAsset),BTCUSDT:structuredClone(fullAsset)}}),zone,notify:async()=>{notifications++;return {sent:true};}});
+mod.installDiscoveryFakes({price:async()=>{loads++;return {last:103};},candles:async()=>[{confirmed:true}],summary:()=>structuredClone(tf),snapshot:async()=>({coverage:{openNowDataReady:true},assets:{ZECUSDT:structuredClone(fullAsset),BTCUSDT:structuredClone(fullAsset)}}),zone,notify:async()=>{notifications++;return {sent:true};}});
 const discovered=await mod.runDiscovery(env);
 assert.equal(discovered.status,'candidate');
 assert.equal(discovered.openNowAllowed,false);
@@ -101,7 +101,7 @@ mod.installDiscoveryFakes({price:async()=>{throw new Error('429');},candles:asyn
 assert.equal((await mod.runDiscovery(env)).status,'idle');
 assert.equal(notifications,1,'Data failure must stay silent');
 state.clear();
-mod.installDiscoveryFakes({price:async()=>({last:103}),candles:async()=>{throw new Error('OKX 429');},gateCandles:async()=>[{confirmed:true}],summary:()=>structuredClone(tf),snapshot:async()=>({coverage:{openNowDataReady:true},assets:{ETHUSDT:structuredClone(fullAsset),BTCUSDT:structuredClone(fullAsset)}}),zone,notify:async()=>{notifications++;return {sent:true};}});
+mod.installDiscoveryFakes({price:async()=>({last:103}),candles:async()=>{throw new Error('OKX 429');},gateCandles:async()=>[{confirmed:true}],summary:()=>structuredClone(tf),snapshot:async()=>({coverage:{openNowDataReady:true},assets:{ZECUSDT:structuredClone(fullAsset),BTCUSDT:structuredClone(fullAsset)}}),zone,notify:async()=>{notifications++;return {sent:true};}});
 const gateDiscovered=await mod.runDiscovery(env);
 assert.equal(gateDiscovered.status,'candidate','quality-approved Gate perpetual fallback may discover a candidate');
 assert.equal(gateDiscovered.openNowAllowed,false);

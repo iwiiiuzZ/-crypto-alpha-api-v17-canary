@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { cloudflareSnapshot, requestJson } from "./diagnostics.mjs";
 import { assessCurrentRelease } from "./current-release.mjs";
 
-export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r8";
+export const DESK_BUILD = "crypto-alpha-worker-v27.6.3-desk-dual-r9";
 
 export function isAuthorizedDeskDispatch(env = process.env) {
   if(isAuthorizedOwnerRelease(env))return true;
@@ -37,8 +37,8 @@ export async function deskPreflight(config, baseline, env = process.env) {
   // production window. For this repair require its exact previously observed
   // physical version, every identity gate, and a currently healthy authenticated owner.
   const pinnedRepair=baseline.status==='VERIFIED_PHYSICAL_DEPLOYMENT' && isAuthorizedDeskDispatch(env)
-    && baseline.versionId==='6b924f35-60bc-4531-91f1-7ca6ed66ef75' && baseline.deploymentId==='10b580c6-749d-446e-872e-63aa8c72f191'
-    && baseline.sourceGitBlobSha==='b258960209596f03cbd5581fc06c1b6ffe58d886'
+    && baseline.versionId==='41e9ebc2-2cc7-4f4b-a2b1-3a702efdcb56' && baseline.deploymentId==='c236cc2d-b30b-48c4-98ff-1ad05c1dd587'
+    && baseline.sourceGitBlobSha==='047775bd99d2f7eadd589a24e90ca99177428be5'
     && reviewed.failedGates.length===1 && reviewed.failedGates[0]==='verifiedWindow';
   if ((!reviewed.alreadyDeployed && !pinnedRepair) || scanner.status !== "ok" || scanner.build !== baseline.build
       || scanner.backendIdentity?.matched !== true || scanner.diagnostics?.stateReadSucceeded !== true) {
@@ -50,7 +50,7 @@ export async function deskPreflight(config, baseline, env = process.env) {
 
 export async function deskPostflight(config, manifest, env = process.env) {
   const modelNames = "A1,A2,B1,B2,C1,C2,D1,D2";
-  const symbols = ["BTC", "ETH"];
+  const symbols = ["BTC", "ZEC"];
   const deadline = Date.now() + 600_000;
   let matches = 0, lastState = "";
   while (Date.now() < deadline) {
@@ -74,7 +74,7 @@ export async function deskPostflight(config, manifest, env = process.env) {
         });
         const healthy = scanner.build === manifest.build && scanner.status === "ok" && scanner.backendIdentity?.matched === true
           && scanner.diagnostics?.stateReadSucceeded === true && desk.origin === "shared-worker" && desk.build === manifest.build
-          && modelsOk && liquidityRechecksFresh && cloudflare.bindingMatches === true && cloudflare.singleVersion
+          && Object.keys(desk.assets).length===2 && modelsOk && liquidityRechecksFresh && cloudflare.bindingMatches === true && cloudflare.singleVersion
           && cloudflare.binding?.namespaceFingerprint === "aedfbcd14cd1";
         matches = healthy ? matches + 1 : 0;
         if (matches >= 2) {

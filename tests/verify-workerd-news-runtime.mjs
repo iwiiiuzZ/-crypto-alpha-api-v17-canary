@@ -48,7 +48,7 @@ export default {async fetch(req){const u=new URL(req.url),now=new Date().toISOSt
   if(b.method==='initialize')result={protocolVersion:'2025-03-26',capabilities:{tools:{}}};
   if(b.method==='notifications/initialized')return new Response(null,{status:202});
   if(b.method==='tools/list')result={tools:[{name:'list_flash',inputSchema:{type:'object',properties:{}}}]};
-  if(b.method==='tools/call')result={structuredContent:{status:200,data:{items:[{id:'runtime-fixture',title:'ETH runtime fixture',time:now,url:'https://flash.jin10.com/detail/runtime-fixture'}]}}};
+  if(b.method==='tools/call')result={structuredContent:{status:200,data:{items:[{id:'runtime-fixture',title:'ZEC runtime fixture',time:now,url:'https://flash.jin10.com/detail/runtime-fixture'}]}}};
   return Response.json({jsonrpc:'2.0',id:b.id,result});
  }
  if(u.hostname==='www.newyorkfed.org'){
@@ -58,7 +58,7 @@ export default {async fetch(req){const u=new URL(req.url),now=new Date().toISOSt
  }
  if(u.hostname==='home.treasury.gov')return new Response('Date,"2 Yr","10 Yr"\\n'+new Date().toLocaleDateString('en-US',{timeZone:'UTC',month:'2-digit',day:'2-digit',year:'numeric'})+',4.61,4.98\\n');
  if(u.pathname.endsWith('.ics'))return new Response('BEGIN:VCALENDAR\\nEND:VCALENDAR');
- return new Response('<rss><channel><item><title>ETH runtime fixture</title><link>https://example.org/runtime-fixture</link><pubDate>'+new Date().toUTCString()+'</pubDate></item></channel></rss>');
+ return new Response('<rss><channel><item><title>ZEC runtime fixture</title><link>https://example.org/runtime-fixture</link><pubDate>'+new Date().toUTCString()+'</pubDate></item></channel></rss>');
 }};`);
 fs.writeFileSync(path.join(dir,'config.capnp'),`using Workerd = import "/workerd/workerd.capnp";
 const config :Workerd.Config = (
